@@ -191,6 +191,20 @@ function ProposalPage() {
             <p className="mt-1 font-semibold text-zinc-900">${priceMin.toLocaleString()} – ${priceMax.toLocaleString()}</p>
             <p className="mt-1 text-xs text-zinc-500">Final scope confirmed after kickoff call.</p>
           </section>
+
+          <section className="mt-6 rounded-lg border-2 border-[#6C63FF]/40 bg-[#6C63FF]/5 p-5">
+            <div className="flex items-center gap-2 mb-2">
+              <Mail className="h-4 w-4 text-[#6C63FF]" />
+              <h3 className="text-sm font-bold uppercase tracking-wider text-[#6C63FF]">Automated 3-Day Follow-Up Template</h3>
+            </div>
+            <p className="text-xs text-zinc-500 mb-3">Auto-sent 3 days after the initial pitch lands in their inbox.</p>
+            <Textarea
+              value={content.follow_up_email}
+              onChange={(e) => setContent((c) => ({ ...c, follow_up_email: e.target.value }))}
+              className="bg-white border-zinc-200 text-zinc-800 focus-visible:ring-zinc-300 min-h-[120px] font-mono text-xs leading-relaxed"
+              placeholder="Regenerate with AI to populate the 3-day follow-up hook..."
+            />
+          </section>
         </div>
 
         {/* Config */}
