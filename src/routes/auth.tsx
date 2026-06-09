@@ -21,28 +21,42 @@ function AuthPage() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [infoMsg, setInfoMsg] = useState<string | null>(null);
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setErrorMsg(null);
+    setInfoMsg(null);
     try {
       if (mode === "signup") {
-        const { error } = await supabase.auth.signUp({
-          email, password,
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
           options: {
-            emailRedirectTo: `${window.location.origin}/app`,
+            emailRedirectTo: `${window.location.origin}/`,
             data: { full_name: name, agency_name: agency },
           },
         });
         if (error) throw error;
-        toast.success("Account created. Welcome aboard.");
+        if (data.session) {
+          toast.success("Account created. Welcome aboard.");
+          navigate({ to: "/" });
+        } else {
+          setInfoMsg("Check your email to confirm your account.");
+          toast.success("Check your email to confirm your account.");
+        }
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
         toast.success("Welcome back.");
+        navigate({ to: "/" });
       }
-      navigate({ to: "/" });
     } catch (err: any) {
-      toast.error(err.message ?? "Authentication failed");
+      const msg = err?.message ?? "Authentication failed";
+      setErrorMsg(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
