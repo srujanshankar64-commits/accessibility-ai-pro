@@ -14,7 +14,131 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      audits: {
+        Row: {
+          category_scores: Json
+          created_at: string
+          has_proposal: boolean
+          id: string
+          overall_score: number
+          url: string
+          user_id: string
+          violations: Json
+        }
+        Insert: {
+          category_scores?: Json
+          created_at?: string
+          has_proposal?: boolean
+          id?: string
+          overall_score?: number
+          url: string
+          user_id: string
+          violations?: Json
+        }
+        Update: {
+          category_scores?: Json
+          created_at?: string
+          has_proposal?: boolean
+          id?: string
+          overall_score?: number
+          url?: string
+          user_id?: string
+          violations?: Json
+        }
+        Relationships: []
+      }
+      proposals: {
+        Row: {
+          audit_id: string | null
+          client_industry: string | null
+          client_name: string | null
+          content: Json
+          created_at: string
+          id: string
+          price_max: number | null
+          price_min: number | null
+          selected_violations: Json
+          tone: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          audit_id?: string | null
+          client_industry?: string | null
+          client_name?: string | null
+          content?: Json
+          created_at?: string
+          id?: string
+          price_max?: number | null
+          price_min?: number | null
+          selected_violations?: Json
+          tone?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          audit_id?: string | null
+          client_industry?: string | null
+          client_name?: string | null
+          content?: Json
+          created_at?: string
+          id?: string
+          price_max?: number | null
+          price_min?: number | null
+          selected_violations?: Json
+          tone?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "proposals_audit_id_fkey"
+            columns: ["audit_id"]
+            isOneToOne: false
+            referencedRelation: "audits"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      settings: {
+        Row: {
+          agency_logo_url: string | null
+          agency_name: string | null
+          audits_limit: number
+          audits_used: number
+          brand_color: string | null
+          created_at: string
+          gemini_api_key: string | null
+          plan: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          agency_logo_url?: string | null
+          agency_name?: string | null
+          audits_limit?: number
+          audits_used?: number
+          brand_color?: string | null
+          created_at?: string
+          gemini_api_key?: string | null
+          plan?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          agency_logo_url?: string | null
+          agency_name?: string | null
+          audits_limit?: number
+          audits_used?: number
+          brand_color?: string | null
+          created_at?: string
+          gemini_api_key?: string | null
+          plan?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
