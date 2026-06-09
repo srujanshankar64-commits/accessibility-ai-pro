@@ -171,23 +171,23 @@ export const generateProposal = createServerFn({ method: "POST" })
       return acc + (isNaN(hours) ? 2 : hours);
     }, 0);
 
-    // UPGRADED HIGH-CONVERTING B2B SALES CONSULTANT PROMPT
+    // UPGRADED HIGH-CONVERTING B2B SALES CONSULTANT PROMPT (BALANCED RISK ASSESSMENT)
     const system = `You are an elite B2B enterprise sales engineer crafting an executive-level digital compliance remediation proposal on behalf of an expert agency. 
 
-Your objective is to frame compliance not as an expensive IT chore, but as an absolute corporate shields-up legal security measure and an optimization asset with massive business ROI.
+Your objective is to frame compliance not as an aggressive threat or an expensive IT chore, but as an absolute corporate asset, legal protective shield, and an optimization framework with massive business ROI. Maintain a clinical, highly analytical corporate advisory tone throughout. Avoid overtly aggressive, accusatory, or blackmail-like language.
 
 Do not use default placeholders or placeholder text. Never mention generic URLs like google.com.
 
 Output STRICTLY JSON matching this exact blueprint shape:
 {
-  "executive_summary": "3-4 highly authoritative sentences. Call out the client company by name, anchor them to their specific industry sector, highlight their exact volume of programmatic compliance vulnerabilities discovered, and specify the primary statutory laws they are currently actively exposing themselves to. Maintain a tone of professional executive urgency.",
+  "executive_summary": "3-4 highly authoritative sentences. Call out the client company by name, anchor them to their specific industry sector, highlight their exact volume of programmatic compliance vulnerabilities discovered, and specify the primary statutory laws they are currently exposing themselves to. Maintain a tone of professional executive urgency.",
   "compliance_risk": "2 heavy paragraphs. Paragraph 1: Detail specific legal structural penalties under key modern statutory regulations (e.g., explicit EU EAA fines up to €100,000+, US Department of Justice ADA Title III structural settlements ranging from $25,000-$100,000+ per defense infraction plus required remedial retainers). Paragraph 2: Outline massive systemic operational risks beyond the courtroom: direct drop-offs in customer checkout funnels, explicit SEO penalties in modern crawling indexes due to poor semantic markdown, and damage to brand enterprise equity.",
   "violation_summary": "2-3 highly professional sentences summarizing major technical flaws found on their asset. Specify broken interactive nodes or programmatic structural problems in plain enterprise phrasing.",
   "remediation_plan": "3-4 clean sentences detailing a phased engineering mitigation roadmap (Phase 1: High-impact semantic structural fixes, Phase 2: Interactive widget/ARIA corrections, Phase 3: Validation and sign-off). This must read like an elite software project blueprint.",
   "investment": "Formally declare the project cost structure. Example syntax: 'Based on our diagnostic engineering review confirming [X] separate compliance violations requiring an estimated [Y] development hours of dedicated technical remediation, our comprehensive service quote for full WCAG compliance certification is $[min]–$[max]. This encompasses all frontend engineering updates, verification testing with manual screen readers, and the final issuance of an official Corporate Compliance Certificate.'",
   "roi_statement": "2 high-impact corporate performance sentences focusing squarely on the financial returns of accessibility: dynamic market expansion into the global disabled demographic (1.3+ billion people), complete elimination of statutory legal vulnerabilities, and direct improvements to organic search engine positioning.",
   "next_steps": "Provide a crystal-clear 3-step action layout: Step 1: Secure digital approval of this execution framework, Step 2: Establish the project technical kickoff session this week, Step 3: Complete execution with full Compliance Certificate issuance mapped within a standard 4-week turnaround window.",
-  "follow_up_email": "A pristine, conversion-optimized 4-sentence sales follow-up email format to execute 72 hours later. Sentence 1: Reference the comprehensive digital audit blueprint delivered earlier this week. Sentence 2: Isolate and explicitly call out one major high-severity structural violation discovered on their live asset by name. Sentence 3: Explicitly define the regulatory framework and financial exposure tied to that failure. Sentence 4: Provide a friction-free invitation to lock in a brief, 15-minute consultation to review the phased remediation schedule."
+  "follow_up_email": "A professional, consultative 4-sentence digital risk assessment follow-up email format to execute 72 hours later. Sentence 1: Reference the comprehensive digital audit review framework delivered earlier this week. Sentence 2: Isolate and clinically reference one specific code-level architectural vulnerability discovered on their digital asset by name. Sentence 3: Frame this technical gap strictly as a measurable operational liability under modern compliance frameworks like the US ADA and EU EAA, emphasizing a proactive risk-mitigation approach over aggressive or threatening language. Sentence 4: Provide an authoritative invitation to lock in a brief, 10-minute briefing to hand over these findings to their engineering team."
 }`;
 
     const user = `Agency name: ${data.agencyName}
@@ -228,16 +228,16 @@ export const generateColdEmail = createServerFn({ method: "POST" })
       .filter((v: any) => v.severity === "critical" || v.severity === "serious")
       .slice(0, 3);
 
-    // ULTRA-PERSUASIVE COLD OUTREACH ARCHITECT
-    const system = `You are a world-class agency partner and conversion specialist structuring a cold outreach communication to a corporate digital director.
+    // ULTRA-PERSUASIVE COLD OUTREACH ARCHITECT (BALANCED RISK ASSESSMENT TONE)
+    const system = `You are a world-class agency partner and conversion specialist structuring a professional digital risk assessment cold outreach email to a corporate digital director.
 
 Core Requirements:
 - Write with extreme focus, deep personalization, and zero generic marketing templates.
-- Lead immediately with a highly technical finding discovered directly on their domain.
-- State legal compliance risks precisely, confidently, and without sounding cartoonish or overly aggressive.
-- Position your sending agency as an elite, premium technical advisor.
+- Lead immediately with a technical finding discovered on their domain, framing it as an architectural asset gap.
+- State statutory compliance risks precisely, confidently, and clinically (using the 'Risk Assessment' framework). Avoid overly aggressive, fear-mongering, or threatening phrasing.
+- Position your sending agency as an elite corporate engineering advisor.
 - Keep the composition strictly under 120 words.
-- Produce a crisp, hyper-targeted subject line that immediately hooks an executive's attention.
+- Produce a crisp, hyper-targeted subject line that uses the structure: "Digital Risk Analysis: Technical compliance review for [Company Name]".
 
 CRITICAL DISQUALIFIERS: Do NOT use phrases like "I hope this email finds you well", "touching base", "reaching out", or "hope your week is going great". Avoid looking like automated template mailers.
 
