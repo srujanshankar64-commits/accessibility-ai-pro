@@ -94,16 +94,6 @@ export const generateColdEmail = createServerFn({ method: "POST" })
 
 export const searchLeads = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((data: any) => z.object({ industry: z.string(), location: z.string() }).parse(data))
-  .handler(async ({ data }) => {
-    const { industry, location } = data;
-    const system = `You are an elite B2B Market Analyst. Generate 5 high-value, realistic leads for ${industry} in ${location}. For each lead, evaluate based on enterprise-grade accessibility standards. Return JSON array matching this schema: [{ "id": string, "name": string, "website": string, "ranking": string, "score": number, "status": string, "common_flaw": string }]`;
-    const raw = await callGemini(system, `Analyze top market participants for ${industry} in ${location} and provide professional risk profiles.`);
-    const parsed = parseJSON(raw);
-    return Array.isArray(parsed) ? parsed : (parsed.leads || []);
-  });
-export const searchLeads = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
   .inputValidator((data: unknown) =>
     z.object({
       industry: z.string(),
