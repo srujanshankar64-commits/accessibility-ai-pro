@@ -60,7 +60,7 @@ function ProposalPage() {
         await supabase.from("proposals").insert({
           audit_id: seed.auditId, client_name: client, client_industry: industry,
           tone, price_min: priceMin, price_max: priceMax,
-          content: out, selected_violations: seed.violations ?? [],
+          content: out as any, selected_violations: (seed.violations ?? []) as any,
           user_id: (await supabase.auth.getUser()).data.user?.id!,
         });
       }
