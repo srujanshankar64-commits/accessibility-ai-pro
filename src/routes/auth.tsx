@@ -21,28 +21,42 @@ function AuthPage() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [infoMsg, setInfoMsg] = useState<string | null>(null);
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setErrorMsg(null);
+    setInfoMsg(null);
     try {
       if (mode === "signup") {
-        const { error } = await supabase.auth.signUp({
-          email, password,
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
           options: {
-            emailRedirectTo: `${window.location.origin}/app`,
+            emailRedirectTo: `${window.location.origin}/`,
             data: { full_name: name, agency_name: agency },
           },
         });
         if (error) throw error;
-        toast.success("Account created. Welcome aboard.");
+        if (data.session) {
+          toast.success("Account created. Welcome aboard.");
+          navigate({ to: "/" });
+        } else {
+          setInfoMsg("Check your email to confirm your account.");
+          toast.success("Check your email to confirm your account.");
+        }
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
         toast.success("Welcome back.");
+        navigate({ to: "/" });
       }
-      navigate({ to: "/" });
     } catch (err: any) {
-      toast.error(err.message ?? "Authentication failed");
+      const msg = err?.message ?? "Authentication failed";
+      setErrorMsg(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -112,9 +126,24 @@ function AuthPage() {
               <Label className="label-eyebrow">Password</Label>
               <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} placeholder="••••••••" />
             </div>
+            {errorMsg && (
+              <div role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {errorMsg}
+              </div>
+            )}
+            {infoMsg && (
+              <div className="rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-sm text-foreground">
+                {infoMsg}
+              </div>
+            )}
             <Button type="submit" disabled={loading} className="w-full h-11 bg-primary hover:bg-primary-hover text-primary-foreground">
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : mode === "login" ? "Sign in" : "Create free account"}
             </Button>
+            {mode === "login" && (
+              <p className="text-xs text-muted-foreground text-center">
+                Please confirm your email before signing in.
+              </p>
+            )}
           </form>
 
           <p className="mt-6 text-sm text-muted-foreground text-center">
