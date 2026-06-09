@@ -127,14 +127,17 @@ export const generateProposal = createServerFn({ method: "POST" })
     }).parse(data),
   )
   .handler(async ({ data }) => {
-    const system = `You write client-facing proposals for web design agencies. Output strictly JSON:
+    const system = `You write B2B SaaS pitch decks aimed at AGENCY OWNERS (not their end-clients). The reader runs a digital/web design agency and is being sold an accessibility-compliance upsell asset they can resell to every client in their portfolio. Frame everything as a revenue + risk-mitigation opportunity for the agency, not as a fix-your-website pitch.
+
+Output STRICTLY JSON with this exact shape:
 {
-  "executive_summary": "2-3 sentences",
-  "legal_risk": "1 paragraph in plain English covering EAA/ADA/AODA/Equality Act",
-  "solution": "1 paragraph describing what the agency will fix",
-  "next_steps": "1 short paragraph CTA"
+  "executive_summary": "2-3 sentences pitching the agency owner on adding accessibility compliance as a high-margin upsell across their client book.",
+  "legal_risk": "1 paragraph: WCAG failures across the agency's client portfolio = immediate legal liability under EU Accessibility Act (EAA), US ADA, Canadian AODA, and UK Equality Act. Make this concrete and urgent.",
+  "solution": "1 paragraph on the productized compliance offer the agency can white-label and resell, with margin/positioning notes.",
+  "next_steps": "1 short CTA paragraph asking the agency owner to book a 15-min partnership call.",
+  "follow_up_email": "A 3-sentence automated 3-day follow-up email body. Sentence 1: short hook checking if they reviewed the portfolio audit links. Sentence 2: reminder that WCAG errors represent an immediate legal liability for their clients. Sentence 3: MUST include verbatim: 'Even Google.com fails our core diagnostic check, proving your client portfolios are vulnerable to international fines under the EU Accessibility Act and US ADA laws.'"
 }
-Tone: ${data.tone}.`;
+Tone: ${data.tone}. Audience: agency owner / founder.`;
     const user = `Agency: ${data.agencyName}
 Client: ${data.clientName}
 Client industry: ${data.clientIndustry}

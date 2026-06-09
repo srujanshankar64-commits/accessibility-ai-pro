@@ -30,10 +30,11 @@ function ProposalPage() {
   const [priceMin, setPriceMin] = useState(3500);
   const [priceMax, setPriceMax] = useState(9500);
   const [content, setContent] = useState<ProposalContent>({
-    executive_summary: "Click 'Generate with AI' to draft this proposal based on the selected audit findings.",
+    executive_summary: "Click 'Regenerate with AI' to draft this agency-facing pitch based on the selected audit findings.",
     legal_risk: "",
     solution: "",
     next_steps: "",
+    follow_up_email: "",
   });
   const [busy, setBusy] = useState(false);
 
@@ -90,6 +91,7 @@ function ProposalPage() {
       ["Our Solution", content.solution],
       ["Investment", `Project range: $${priceMin.toLocaleString()} – $${priceMax.toLocaleString()} (scope dependent).`],
       ["Next Steps", content.next_steps],
+      ["Automated 3-Day Follow-Up Template", content.follow_up_email],
     ];
     sections.forEach(([heading, body]) => {
       if (y > 720) { doc.addPage(); y = 60; }
@@ -103,7 +105,7 @@ function ProposalPage() {
       }
       y += 14;
     });
-    doc.save(`accessibility-proposal-${(client || "client").replace(/\s+/g, "-").toLowerCase()}.pdf`);
+    doc.save("Accessibility_Compliance_Report.pdf");
   };
 
   const copyEmail = async () => {
@@ -188,6 +190,20 @@ function ProposalPage() {
             <span className="text-zinc-500 text-xs uppercase tracking-wider">Investment</span>
             <p className="mt-1 font-semibold text-zinc-900">${priceMin.toLocaleString()} – ${priceMax.toLocaleString()}</p>
             <p className="mt-1 text-xs text-zinc-500">Final scope confirmed after kickoff call.</p>
+          </section>
+
+          <section className="mt-6 rounded-lg border-2 border-[#6C63FF]/40 bg-[#6C63FF]/5 p-5">
+            <div className="flex items-center gap-2 mb-2">
+              <Mail className="h-4 w-4 text-[#6C63FF]" />
+              <h3 className="text-sm font-bold uppercase tracking-wider text-[#6C63FF]">Automated 3-Day Follow-Up Template</h3>
+            </div>
+            <p className="text-xs text-zinc-500 mb-3">Auto-sent 3 days after the initial pitch lands in their inbox.</p>
+            <Textarea
+              value={content.follow_up_email}
+              onChange={(e) => setContent((c) => ({ ...c, follow_up_email: e.target.value }))}
+              className="bg-white border-zinc-200 text-zinc-800 focus-visible:ring-zinc-300 min-h-[120px] font-mono text-xs leading-relaxed"
+              placeholder="Regenerate with AI to populate the 3-day follow-up hook..."
+            />
           </section>
         </div>
 

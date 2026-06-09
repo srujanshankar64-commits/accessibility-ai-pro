@@ -29,4 +29,6 @@ export interface ProposalContent {
   legal_risk: string;
   solution: string;
   next_steps: string;
+  follow_up_email: string;
 }
+
