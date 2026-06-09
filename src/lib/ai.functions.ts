@@ -3,7 +3,6 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 
 const GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
-// Upgraded to pro-tier capabilities via prompt sharpening
 const MODEL = "google/gemini-2.5-flash"; 
 
 async function callGemini(systemPrompt: string, userPrompt: string): Promise<string> {
@@ -44,259 +43,62 @@ export const runAudit = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => z.object({ url: z.string().url() }).parse(data))
   .handler(async ({ data, context }) => {
     const { url } = data;
-
     let pageSnippet = "";
     try {
-      const r = await fetch(url, {
-        headers: { "User-Agent": "AccessAuditAI/1.0 (WCAG Compliance Scanner)" },
-      });
+      const r = await fetch(url, { headers: { "User-Agent": "AccessAuditAI/1.0 (WCAG Compliance Scanner)" } });
       const html = await r.text();
       pageSnippet = html.slice(0, 30000);
     } catch {
       pageSnippet = `(Could not fetch ${url} directly. Perform a thorough structural WCAG 2.2 AA audit based on the URL structure, domain, and typical patterns for this type of website. Generate a realistic and comprehensive set of violations.)`;
     }
 
-    // ELITE PROMPT SHARPENING ENGINE
     const system = `You are an elite, world-class Web Accessibility (WCAG 2.2 AA) Auditor and B2B SaaS Engineering Consultant.
 Your audits are used by high-end digital agencies to sell premium remediation services ($5k-$20k) to corporate clients.
-
 Your job is to produce an EXHAUSTIVE, BRUTAL, and DEEPLY TECHNICAL compliance audit. Real production websites almost always have 20-30 hidden architectural accessibility flaws. Do NOT be conservative. If you find fewer than 18 violations, you are failing your objective.
 
-MANDATORY DEEP STRUCTURAL CHECKS — Examine every single one and extract real code flaws:
+PERCEIVABLE (score out of 25): 1. Images missing alt attributes (WCAG 1.1.1). 2. Lack of closed-captions/transcripts (WCAG 1.2.1, 1.2.2). 3. Contrast ratios below 4.5:1 (WCAG 1.4.3). 4. Icon/border contrast (WCAG 1.4.11). 5. Color-only error indicators (WCAG 1.4.1). 6. Container zoom constraints (WCAG 1.4.4). 7. Mobile overflow/reflow (WCAG 1.4.10).
+OPERABLE (score out of 25): 8. Keyboard-Tab navigation (WCAG 2.1.1). 9. Broken focus states (WCAG 2.4.3). 10. Missing visual outline on focus (WCAG 2.4.7). 11. Missing skip-link (WCAG 2.4.1). 12. Ambiguous hyper-generic links (WCAG 2.4.6). 13. Mobile target size (WCAG 2.5.5). 14. Modal focus traps (WCAG 2.1.2).
+UNDERSTANDABLE (score out of 25): 15. Missing lang attribute (WCAG 3.1.1). 16. Input label/aria-labelledby (WCAG 1.3.1, 3.3.2). 17. Validation exception text (WCAG 3.3.1). 18. Structural design references (WCAG 1.3.3).
+ROBUST (score out of 25): 19. ARIA roles/live state (WCAG 4.1.2). 20. Missing landmark structural layouts (WCAG 1.3.6). 21. Malformed/unclosed markup (WCAG 4.1.1). 22. Custom widget ARIA (WCAG 4.1.2).
 
-PERCEIVABLE (score out of 25):
-1. Images missing descriptive alt attributes, or utilizing empty/redundant filenames (e.g., "image.png") (WCAG 1.1.1)
-2. Multimedia or video layers lacking closed-captions, visual audio-descriptions, or text transcripts (WCAG 1.2.1, 1.2.2)
-3. Text contrast ratios falling below critical legal thresholds of 4.5:1 for normal elements and 3:1 for headers (WCAG 1.4.3)
-4. Interactive canvas UI components, icon buttons, and borders lacking proper distinct contrast (WCAG 1.4.11)
-5. Information conveyed exclusively via color changes (e.g., error fields only turning red with no text prompt) (WCAG 1.4.1)
-6. Hardcoded container elements preventing layouts from scaling safely up to 200% fluid zoom (WCAG 1.4.4)
-7. Mobile breakpoints triggering absolute overflow scrollbars, breaking responsive reflow properties (WCAG 1.4.10)
+SCORING RULES: Start at 25 per category. Deduct 6-8 for critical, 3-5 serious, 2-3 moderate, 1 minor. overall_score = Aggregate sum (100). Return JSON ONLY.
+{ "overall_score": number, "category_scores": { "perceivable": number, "operable": number, "understandable": number, "robust": number }, "violations": [{ "id": string, "severity": string, "name": string, "wcag_criterion": string, "description": string, "element_affected": string, "legal_impact": string, "fix_instructions": string, "estimated_fix_time": string }] }`;
 
-OPERABLE (score out of 25):
-8. Navigational trees or custom dropdown wrappers not interactive or reachable via strict Keyboard-Tab paths (WCAG 2.1.1)
-9. Unpredictable or broken semantic focus states jumping erratically across absolute positioned nodes (WCAG 2.4.3)
-10. Missing visual outline on interactive form elements when focused via keyboard navigation (WCAG 2.4.7)
-11. Absence of an immediate programmatic skip-link component to bypass heavy recurring global headers (WCAG 2.4.1)
-12. Ambiguous hyper-generic link indicators such as "click here", "read more", or unlabelled icon anchors (WCAG 2.4.6)
-13. Mobile interactors dropping below the secure physical minimum target threshold of 44x44 CSS pixels (WCAG 2.5.5)
-14. Modal overlays trapping keyboard focus loops completely, causing infinite navigation lockdown (WCAG 2.1.2)
-
-UNDERSTANDABLE (score out of 25):
-15. HTML global root element completely missing the programmatic "lang" classification attribute (WCAG 3.1.1)
-16. Input primitives lacking explicit associated text labels or aria-labelledby relationship nodes (WCAG 1.3.1, 3.3.2)
-17. Dynamic runtime form validation exceptions lacking descriptive accessible text announcements (WCAG 3.3.1)
-18. Onboarding or checkout patterns referencing physical structural design properties (e.g., "click square button on left") (WCAG 1.3.3)
-
-ROBUST (score out of 25):
-19. Broken, obsolete, or missing custom dynamic ARIA roles, property nodes, and live state updates (WCAG 4.1.2)
-20. Missing semantic landmark structural layouts—failing to segment header, main, nav, and footer boundaries (WCAG 1.3.6)
-21. Malformed nesting, unclosed divs, or un-validated markup breaking screen reader compilation paths (WCAG 4.1.1)
-22. Deep custom widgets (accordions, multi-steps) built manually without active ARIA implementation controls (WCAG 4.1.2)
-
-SCORING RULES:
-- Start each category score exactly at 25. Deduct points proportionally per distinct architectural violation discovered.
-- Critical threat level: subtract 6-8 points. Serious: 3-5. Moderate: 2-3. Minor: 1.
-- overall_score = Aggregate sum of the four category scores (Maximum ceiling: 100).
-- Real target corporate sites should map realistically between a score of 35 and 65.
-
-Return ONLY valid JSON with EXACTLY this schema, no extra markdown or wrappers:
-{
-  "overall_score": number,
-  "category_scores": {
-    "perceivable": number,
-    "operable": number,
-    "understandable": number,
-    "robust": number
-  },
-  "violations": [
-    {
-      "id": "kebab-case-id",
-      "severity": "critical" | "serious" | "moderate" | "minor",
-      "name": "Deeply Descriptive Technical Title",
-      "wcag_criterion": "WCAG X.X.X",
-      "description": "Exhaustive professional diagnosis detailing the exact architectural failure and user-impact.",
-      "element_affected": "Exact physical code DOM element, site section, or component layer impacted",
-      "legal_impact": "Direct regulatory legal liability exposition citing specific frameworks: US ADA Title III, EU European Accessibility Act (EAA) 2025 enforcement targets, Canadian AODA, or UK Equality Act 2010.",
-      "fix_instructions": "Provide a concrete, production-ready code-level blueprint or specific styling remediation strategy.",
-      "estimated_fix_time": "X hours"
-    }
-  ]
-}`;
-
-    const user = `Execute a comprehensive, deep-dive accessibility compliance scan on this application architecture. Identify structural and programmatic vulnerabilities.
-
-URL: ${url}
-
-DOM Structure / Target Snippet:
-${pageSnippet}`;
-
-    const raw = await callGemini(system, user);
+    const raw = await callGemini(system, `Audit URL: ${url}. DOM Snippet: ${pageSnippet}`);
     const result = parseJSON(raw);
-
     const { data: inserted, error } = await context.supabase
       .from("audits")
-      .insert({
-        user_id: context.userId,
-        url,
-        overall_score: result.overall_score ?? 0,
-        category_scores: result.category_scores ?? {},
-        violations: result.violations ?? [],
-      })
-      .select()
-      .single();
+      .insert({ user_id: context.userId, url, overall_score: result.overall_score ?? 0, category_scores: result.category_scores ?? {}, violations: result.violations ?? [] })
+      .select().single();
     if (error) throw error;
     return inserted;
   });
 
 export const generateProposal = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((data: unknown) =>
-    z.object({
-      auditId: z.string().uuid().optional(),
-      url: z.string().optional(),
-      agencyName: z.string().default(""),
-      clientName: z.string().default(""),
-      clientIndustry: z.string().default(""),
-      tone: z.enum(["professional", "urgent", "consultative"]).default("professional"),
-      priceMin: z.number().default(2500),
-      priceMax: z.number().default(8000),
-      violations: z.array(z.any()).default([]),
-    }).parse(data),
-  )
+  .inputValidator((data: any) => z.any().parse(data))
   .handler(async ({ data }) => {
-    const criticalViolations = data.violations.filter((v: any) => v.severity === "critical" || v.severity === "serious");
-    const totalFixTime = data.violations.reduce((acc: number, v: any) => {
-      const hours = parseInt(v.estimated_fix_time ?? "2");
-      return acc + (isNaN(hours) ? 2 : hours);
-    }, 0);
-
-    // UPGRADED HIGH-CONVERTING B2B SALES CONSULTANT PROMPT (BALANCED RISK ASSESSMENT)
-    const system = `You are an elite B2B enterprise sales engineer crafting an executive-level digital compliance remediation proposal on behalf of an expert agency. 
-
-Your objective is to frame compliance not as an aggressive threat or an expensive IT chore, but as an absolute corporate asset, legal protective shield, and an optimization framework with massive business ROI. Maintain a clinical, highly analytical corporate advisory tone throughout. Avoid overtly aggressive, accusatory, or blackmail-like language.
-
-Do not use default placeholders or placeholder text. Never mention generic URLs like google.com.
-
-Output STRICTLY JSON matching this exact blueprint shape:
-{
-  "executive_summary": "3-4 highly authoritative sentences. Call out the client company by name, anchor them to their specific industry sector, highlight their exact volume of programmatic compliance vulnerabilities discovered, and specify the primary statutory laws they are currently exposing themselves to. Maintain a tone of professional executive urgency.",
-  "compliance_risk": "2 heavy paragraphs. Paragraph 1: Detail specific legal structural penalties under key modern statutory regulations (e.g., explicit EU EAA fines up to €100,000+, US Department of Justice ADA Title III structural settlements ranging from $25,000-$100,000+ per defense infraction plus required remedial retainers). Paragraph 2: Outline massive systemic operational risks beyond the courtroom: direct drop-offs in customer checkout funnels, explicit SEO penalties in modern crawling indexes due to poor semantic markdown, and damage to brand enterprise equity.",
-  "violation_summary": "2-3 highly professional sentences summarizing major technical flaws found on their asset. Specify broken interactive nodes or programmatic structural problems in plain enterprise phrasing.",
-  "remediation_plan": "3-4 clean sentences detailing a phased engineering mitigation roadmap (Phase 1: High-impact semantic structural fixes, Phase 2: Interactive widget/ARIA corrections, Phase 3: Validation and sign-off). This must read like an elite software project blueprint.",
-  "investment": "Formally declare the project cost structure. Example syntax: 'Based on our diagnostic engineering review confirming [X] separate compliance violations requiring an estimated [Y] development hours of dedicated technical remediation, our comprehensive service quote for full WCAG compliance certification is $[min]–$[max]. This encompasses all frontend engineering updates, verification testing with manual screen readers, and the final issuance of an official Corporate Compliance Certificate.'",
-  "roi_statement": "2 high-impact corporate performance sentences focusing squarely on the financial returns of accessibility: dynamic market expansion into the global disabled demographic (1.3+ billion people), complete elimination of statutory legal vulnerabilities, and direct improvements to organic search engine positioning.",
-  "next_steps": "Provide a crystal-clear 3-step action layout: Step 1: Secure digital approval of this execution framework, Step 2: Establish the project technical kickoff session this week, Step 3: Complete execution with full Compliance Certificate issuance mapped within a standard 4-week turnaround window.",
-  "follow_up_email": "A professional, consultative 4-sentence digital risk assessment follow-up email format to execute 72 hours later. Sentence 1: Reference the comprehensive digital audit review framework delivered earlier this week. Sentence 2: Isolate and clinically reference one specific code-level architectural vulnerability discovered on their digital asset by name. Sentence 3: Frame this technical gap strictly as a measurable operational liability under modern compliance frameworks like the US ADA and EU EAA, emphasizing a proactive risk-mitigation approach over aggressive or threatening language. Sentence 4: Provide an authoritative invitation to lock in a brief, 10-minute briefing to hand over these findings to their engineering team."
-}`;
-
-    const user = `Agency name: ${data.agencyName}
-Client / business name: ${data.clientName}
-Client industry: ${data.clientIndustry}
-Website audited: ${data.url ?? ""}
-Compliance score: ${data.violations.length > 0 ? "See violations" : "N/A"}
-Total violations found: ${data.violations.length}
-Critical + serious violations: ${criticalViolations.length}
-Estimated total fix time: ${totalFixTime} hours
-Proposed price range: $${data.priceMin} – $${data.priceMax}
-
-Full structural violation data array:
-${data.violations.map((v: any, i: number) => `${i + 1}. [${v.severity?.toUpperCase()}] ${v.name} (${v.wcag_criterion})
-   Problem: ${v.description}
-   Element: ${v.element_affected}
-   Legal: ${v.legal_impact}
-   Fix: ${v.fix_instructions}
-   Time: ${v.estimated_fix_time ?? "2 hours"}`).join("\n\n")}`;
-
-    const raw = await callGemini(system, user);
+    const system = `You are an elite B2B enterprise sales engineer crafting an executive-level digital compliance remediation proposal. Frame compliance as a protective shield and corporate asset. Clinical, highly analytical, professional tone. Output JSON matching this schema: { "executive_summary": string, "compliance_risk": string, "violation_summary": string, "remediation_plan": string, "investment": string, "roi_statement": string, "next_steps": string, "follow_up_email": string }`;
+    const raw = await callGemini(system, JSON.stringify(data));
     return parseJSON(raw);
   });
 
 export const generateColdEmail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((data: unknown) =>
-    z.object({
-      agencyName: z.string().default(""),
-      clientName: z.string().default(""),
-      url: z.string().default(""),
-      violations: z.array(z.any()).default([]),
-      score: z.number().default(0),
-    }).parse(data),
-  )
+  .inputValidator((data: any) => z.any().parse(data))
   .handler(async ({ data }) => {
-    const topCritical = data.violations
-      .filter((v: any) => v.severity === "critical" || v.severity === "serious")
-      .slice(0, 3);
-
-    // ULTRA-PERSUASIVE COLD OUTREACH ARCHITECT (BALANCED RISK ASSESSMENT TONE)
-    const system = `You are a world-class agency partner and conversion specialist structuring a professional digital risk assessment cold outreach email to a corporate digital director.
-
-Core Requirements:
-- Write with extreme focus, deep personalization, and zero generic marketing templates.
-- Lead immediately with a technical finding discovered on their domain, framing it as an architectural asset gap.
-- State statutory compliance risks precisely, confidently, and clinically (using the 'Risk Assessment' framework). Avoid overly aggressive, fear-mongering, or threatening phrasing.
-- Position your sending agency as an elite corporate engineering advisor.
-- Keep the composition strictly under 120 words.
-- Produce a crisp, hyper-targeted subject line that uses the structure: "Digital Risk Analysis: Technical compliance review for [Company Name]".
-
-CRITICAL DISQUALIFIERS: Do NOT use phrases like "I hope this email finds you well", "touching base", "reaching out", or "hope your week is going great". Avoid looking like automated template mailers.
-
-Return JSON structure format ONLY: { "subject": string, "body": string }`;
-
-    const user = `Agency sending this email: ${data.agencyName}
-Prospect business: ${data.clientName}
-Their website: ${data.url}
-Their compliance score: ${data.score}/100
-Top issues found on their specific site:
-${topCritical.map((v: any) => `- ${v.name}: ${v.description} (${v.wcag_criterion})`).join("\n")}
-
-Craft the message showing absolute specific authority over these technical problems.`;
-
-    const raw = await callGemini(system, user);
+    const system = `You are a world-class agency partner structuring professional digital risk outreach. Lead with technical findings. Clinical, authoritative, no generic filler. Return JSON: { "subject": string, "body": string }.`;
+    const raw = await callGemini(system, JSON.stringify(data));
     return parseJSON(raw);
   });
 
-// PREMIUM $79/MO LEAD DISCOVERY & DIRECTORY SCANNING ENGINE
 export const searchLeads = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((data: unknown) =>
-    z.object({
-      industry: z.string().min(1),
-      location: z.string().min(1),
-    }).parse(data),
-  )
+  .inputValidator((data: any) => z.object({ industry: z.string(), location: z.string() }).parse(data))
   .handler(async ({ data }) => {
     const { industry, location } = data;
-
-    // Normalizes input strings for mock parsing layout
-    const formattedIndustry = industry.charAt(0).toUpperCase() + industry.slice(1);
-    const formattedLocation = location.charAt(0).toUpperCase() + location.slice(1);
-
-    // B2B high-intent conversion lead dataset with ranking and specific accessibility vulnerabilities mapped out
-    return [
-      {
-        id: "lead-1",
-        name: `${formattedIndustry} Premier Solutions Ltd`,
-        website: `https://www.premier-${industry}-demo.com`,
-        ranking: "Organic Top 15 (High Search Visibility Traffic)",
-        status: "Vulnerable / Audit Target",
-        common_flaw: "Viewport Scaling Lock Activated (user-scalable=no, WCAG 1.4.4)"
-      },
-      {
-        id: "lead-2",
-        name: `Apex ${formattedIndustry} & Associates`,
-        website: `https://www.apex-${industry}-group.net`,
-        ranking: "Page 1 - Spot #9 (High Commercial Value, Falling Behind)",
-        status: "Vulnerable / Audit Target",
-        common_flaw: "Missing Structural Screen-Reader Landmarks (<main> Missing, WCAG 1.3.6)"
-      },
-      {
-        id: "lead-3",
-        name: `${formattedLocation} Enterprise ${formattedIndustry} Corp`,
-        website: `https://www.global-${industry}-firm.org`,
-        ranking: "Organic Top 35 (Rapid Scaling Framework Active)",
-        status: "Vulnerable / Audit Target",
-        common_flaw: "Severe Interactive Text Contrast Gaps (Fails 4.5:1 Target, WCAG 1.4.3)"
-      }
-    ];
+    const system = `You are an elite B2B Market Analyst. Generate 5 high-value, realistic leads for ${industry} in ${location}. For each lead, evaluate based on enterprise-grade accessibility standards. Return JSON array matching this schema: [{ "id": string, "name": string, "website": string, "ranking": string, "score": number, "status": string, "common_flaw": string }]`;
+    const raw = await callGemini(system, `Analyze top market participants for ${industry} in ${location} and provide professional risk profiles.`);
+    const parsed = parseJSON(raw);
+    return Array.isArray(parsed) ? parsed : (parsed.leads || []);
   });
