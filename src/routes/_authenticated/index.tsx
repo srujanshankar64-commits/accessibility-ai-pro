@@ -65,7 +65,7 @@ function NewAuditPage() {
       });
       // preselect critical+serious
       const preset = new Set<string>(
-        (result.violations as Violation[])
+        (result.violations as unknown as Violation[])
           .filter((v) => v.severity === "critical" || v.severity === "serious")
           .map((v) => v.id),
       );
