@@ -22,31 +22,23 @@ function AuthPage() {
   const navigate = useNavigate();
 
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [infoMsg, setInfoMsg] = useState<string | null>(null);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setErrorMsg(null);
-    setInfoMsg(null);
+      setErrorMsg(null);
     try {
       if (mode === "signup") {
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
-            emailRedirectTo: `${window.location.origin}/`,
             data: { full_name: name, agency_name: agency },
           },
         });
         if (error) throw error;
-        if (data.session) {
-          toast.success("Account created. Welcome aboard.");
-          navigate({ to: "/" });
-        } else {
-          setInfoMsg("Check your email to confirm your account.");
-          toast.success("Check your email to confirm your account.");
-        }
+        toast.success("Account created. Welcome aboard.");
+        navigate({ to: "/" });
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
@@ -131,19 +123,9 @@ function AuthPage() {
                 {errorMsg}
               </div>
             )}
-            {infoMsg && (
-              <div className="rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-sm text-foreground">
-                {infoMsg}
-              </div>
-            )}
             <Button type="submit" disabled={loading} className="w-full h-11 bg-primary hover:bg-primary-hover text-primary-foreground">
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : mode === "login" ? "Sign in" : "Create free account"}
             </Button>
-            {mode === "login" && (
-              <p className="text-xs text-muted-foreground text-center">
-                Please confirm your email before signing in.
-              </p>
-            )}
           </form>
 
           <p className="mt-6 text-sm text-muted-foreground text-center">
