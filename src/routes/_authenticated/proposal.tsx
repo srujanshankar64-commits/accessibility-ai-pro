@@ -30,10 +30,11 @@ function ProposalPage() {
   const [priceMin, setPriceMin] = useState(3500);
   const [priceMax, setPriceMax] = useState(9500);
   const [content, setContent] = useState<ProposalContent>({
-    executive_summary: "Click 'Generate with AI' to draft this proposal based on the selected audit findings.",
+    executive_summary: "Click 'Regenerate with AI' to draft this agency-facing pitch based on the selected audit findings.",
     legal_risk: "",
     solution: "",
     next_steps: "",
+    follow_up_email: "",
   });
   const [busy, setBusy] = useState(false);
 
