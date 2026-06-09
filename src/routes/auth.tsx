@@ -26,7 +26,7 @@ function AuthPage() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-      setErrorMsg(null);
+    setErrorMsg(null);
     try {
       if (mode === "signup") {
         const { data, error } = await supabase.auth.signUp({
