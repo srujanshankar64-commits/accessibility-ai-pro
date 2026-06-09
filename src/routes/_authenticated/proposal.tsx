@@ -91,6 +91,7 @@ function ProposalPage() {
       ["Our Solution", content.solution],
       ["Investment", `Project range: $${priceMin.toLocaleString()} – $${priceMax.toLocaleString()} (scope dependent).`],
       ["Next Steps", content.next_steps],
+      ["Automated 3-Day Follow-Up Template", content.follow_up_email],
     ];
     sections.forEach(([heading, body]) => {
       if (y > 720) { doc.addPage(); y = 60; }
@@ -104,7 +105,7 @@ function ProposalPage() {
       }
       y += 14;
     });
-    doc.save(`accessibility-proposal-${(client || "client").replace(/\s+/g, "-").toLowerCase()}.pdf`);
+    doc.save("Accessibility_Compliance_Report.pdf");
   };
 
   const copyEmail = async () => {
