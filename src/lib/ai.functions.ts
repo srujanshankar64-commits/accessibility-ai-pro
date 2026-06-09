@@ -102,3 +102,20 @@ export const searchLeads = createServerFn({ method: "POST" })
     const parsed = parseJSON(raw);
     return Array.isArray(parsed) ? parsed : (parsed.leads || []);
   });
+export const searchLeads = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: unknown) =>
+    z.object({
+      industry: z.string(),
+      location: z.string(),
+    }).parse(data),
+  )
+  .handler(async ({ data }) => {
+    const system = `You are a lead generation assistant. Generate a list of 8 realistic local businesses in the given industry and location that likely have poor web accessibility. Return ONLY a JSON array with this exact shape:
+[{ "id": "string", "name": "string", "website": "string", "ranking": "string", "common_flaw": "string" }]
+Make websites realistic (e.g. plumbingaustin.com). Ranking should be like "Top 10 local". Common flaw should be a short WCAG issue.`;
+    const user = `Industry: ${data.industry}\nLocation: ${data.location}`;
+    const raw = await callGemini(system, user);
+    const parsed = parseJSON(raw);
+    return Array.isArray(parsed) ? parsed : parsed.leads ?? [];
+  });
