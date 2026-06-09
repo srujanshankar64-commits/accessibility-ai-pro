@@ -92,7 +92,7 @@ function NewAuditPage() {
     sessionStorage.setItem("proposal_seed", JSON.stringify({
       auditId: audit.id, url: audit.url, score: audit.overall_score, violations,
     }));
-    navigate({ to: "/app/proposal" });
+    navigate({ to: "/proposal" });
   };
 
   return (

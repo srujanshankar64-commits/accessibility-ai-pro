@@ -59,7 +59,7 @@ function HistoryPage() {
           <h1 className="font-display text-3xl">Audit history</h1>
           <p className="mt-2 text-muted-foreground">All audits run by your agency.</p>
         </div>
-        <Link to="/app">
+        <Link to="/">
           <Button className="bg-primary hover:bg-primary-hover text-primary-foreground"><Plus className="h-4 w-4 mr-2" />New audit</Button>
         </Link>
       </header>
@@ -88,7 +88,7 @@ function HistoryPage() {
           </div>
           <h2 className="mt-5 font-display text-xl">No audits yet</h2>
           <p className="mt-2 text-muted-foreground">Paste your first client URL to get started.</p>
-          <Link to="/app"><Button className="mt-6 bg-primary hover:bg-primary-hover text-primary-foreground">Run your first audit</Button></Link>
+          <Link to="/"><Button className="mt-6 bg-primary hover:bg-primary-hover text-primary-foreground">Run your first audit</Button></Link>
         </div>
       ) : (
         <div className="card-elevated overflow-hidden">
@@ -127,7 +127,7 @@ function HistoryPage() {
                           sessionStorage.setItem("proposal_seed", JSON.stringify({
                             auditId: r.id, url: r.url, score: r.overall_score, violations: r.violations,
                           }));
-                          navigate({ to: "/app/proposal" });
+                          navigate({ to: "/proposal" });
                         }}
                       >
                         Open <ArrowUpRight className="h-3 w-3" />

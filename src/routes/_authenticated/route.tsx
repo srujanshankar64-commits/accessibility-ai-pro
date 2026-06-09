@@ -16,9 +16,9 @@ export const Route = createFileRoute("/_authenticated")({
 });
 
 const nav = [
-  { to: "/app", label: "New Audit", icon: FileSearch, exact: true },
+  { to: "/", label: "New Audit", icon: FileSearch, exact: true },
   { to: "/app/history", label: "Audit History", icon: History },
-  { to: "/app/proposal", label: "Proposal Generator", icon: FileText },
+  { to: "/proposal", label: "Proposal Generator", icon: FileText },
   { to: "/app/settings", label: "Settings", icon: SettingsIcon },
 ] as const;
 
@@ -41,7 +41,7 @@ function AppLayout() {
     <div className="min-h-screen flex bg-background">
       {/* Mobile top bar */}
       <header className="md:hidden fixed top-0 inset-x-0 z-30 h-14 border-b border-border bg-surface/80 backdrop-blur flex items-center justify-between px-4">
-        <Link to="/app" className="flex items-center gap-2">
+        <Link to="/" className="flex items-center gap-2">
           <div className="h-7 w-7 rounded-md bg-primary grid place-items-center">
             <ShieldCheck className="h-4 w-4 text-primary-foreground" />
           </div>

@@ -40,7 +40,7 @@ function AuthPage() {
         if (error) throw error;
         toast.success("Welcome back.");
       }
-      navigate({ to: "/app" });
+      navigate({ to: "/" });
     } catch (err: any) {
       toast.error(err.message ?? "Authentication failed");
     } finally {
