@@ -126,9 +126,24 @@ function AuthPage() {
               <Label className="label-eyebrow">Password</Label>
               <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} placeholder="••••••••" />
             </div>
+            {errorMsg && (
+              <div role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {errorMsg}
+              </div>
+            )}
+            {infoMsg && (
+              <div className="rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-sm text-foreground">
+                {infoMsg}
+              </div>
+            )}
             <Button type="submit" disabled={loading} className="w-full h-11 bg-primary hover:bg-primary-hover text-primary-foreground">
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : mode === "login" ? "Sign in" : "Create free account"}
             </Button>
+            {mode === "login" && (
+              <p className="text-xs text-muted-foreground text-center">
+                Please confirm your email before signing in.
+              </p>
+            )}
           </form>
 
           <p className="mt-6 text-sm text-muted-foreground text-center">
