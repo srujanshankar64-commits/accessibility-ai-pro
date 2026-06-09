@@ -17,9 +17,9 @@ export const Route = createFileRoute("/_authenticated")({
 
 const nav = [
   { to: "/", label: "New Audit", icon: FileSearch, exact: true },
-  { to: "/app/history", label: "Audit History", icon: History },
+  { to: "/history", label: "Audit History", icon: History },
   { to: "/proposal", label: "Proposal Generator", icon: FileText },
-  { to: "/app/settings", label: "Settings", icon: SettingsIcon },
+  { to: "/settings", label: "Settings", icon: SettingsIcon },
 ] as const;
 
 function AppLayout() {
