@@ -55,6 +55,22 @@ export const runAudit = createServerFn({ method: "POST" })
 
     const system = `You are a WCAG 2.1 AA accessibility expert performing a website audit. Analyze the provided HTML and produce a structured audit JSON.
 
+You MUST check for all of the following issues and include them when present:
+- Missing alt text on images
+- Missing lang attribute on the <html> element
+- Poor or invisible focus indicators on interactive elements
+- Missing skip navigation links
+- Form inputs without associated labels
+- Missing ARIA landmarks (main, nav, complementary, etc.)
+- Color used as the only visual means of conveying information
+- Mobile touch target sizes under 44px
+- Insufficient color contrast on text or UI elements
+- Missing or incorrect heading hierarchy
+- Missing form error messages or associations
+- Keyboard traps or elements not reachable by keyboard
+- Auto-playing media without pause controls
+- Missing page title or duplicate titles
+
 Return JSON with EXACTLY this schema:
 {
   "overall_score": number 0-100,
@@ -73,7 +89,7 @@ Return JSON with EXACTLY this schema:
   ]
 }
 
-Be specific and realistic. Aim for 6-12 violations across severities. The overall_score should equal the sum of category_scores * 4.`;
+Be specific and realistic. Aim for 10-20 violations across severities. The overall_score should equal the sum of category_scores * 4.`;
 
     const user = `URL: ${url}\n\nHTML snippet:\n${pageSnippet}`;
     const raw = await callGemini(system, user);
