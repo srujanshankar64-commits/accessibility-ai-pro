@@ -8,7 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { ScoreGauge } from "@/components/ScoreGauge";
 import type { Violation } from "@/lib/audit-types";
 import { toast } from "sonner";
-import { ArrowRight, Loader2, ShieldCheck, ScanLine } from "lucide-react";
+import { ArrowRight, Loader2, ShieldCheck, ScanLine, Copy, Check, ChevronDown, ChevronUp, Code2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authenticated/audit")({
@@ -34,6 +34,10 @@ function NewAuditPage() {
   const [audit, setAudit] = useState<any | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [rows, setRows] = useState<RecentRow[]>([]);
+  
+  // Interactive UI state for expanded code fixes and copy feedback trackers
+  const [expandedViolationId, setExpandedViolationId] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const loadRecent = async () => {
     const { data } = await supabase
@@ -50,6 +54,7 @@ function NewAuditPage() {
     e.preventDefault();
     if (!url) return;
     setLoading(true);
+    setExpandedViolationId(null);
     try {
       const result = await auditFn({ data: { url } });
       setAudit(result);
@@ -66,8 +71,25 @@ function NewAuditPage() {
     } finally { setLoading(false); }
   };
 
-  const toggleSel = (id: string) => {
+  const toggleSel = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // Avoid expanding code panel when just toggling inclusion switch
     setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  };
+
+  const toggleExpand = (id: string) => {
+    setExpandedViolationId(expandedViolationId === id ? null : id);
+  };
+
+  const copyToClipboard = async (code: string, id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopiedId(id);
+      toast.success("Code snippet copied to clipboard");
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch (err) {
+      toast.error("Failed to copy code snippet");
+    }
   };
 
   const goProposal = (row?: RecentRow) => {
@@ -115,25 +137,123 @@ function NewAuditPage() {
         Audits check 25+ WCAG criteria across all compliance categories.
       </p>
 
-      {/* Results */}
+      {/* Results Section */}
       {audit && (
         <section className="space-y-6 animate-fade-in">
           <ScoreGauge score={audit.overall_score} />
 
           <div className="card-elevated">
             <div className="px-5 py-4 border-b border-border">
-              <p className="label-eyebrow">Identified violations</p>
+              <p className="label-eyebrow">Identified violations & AI Code Suggestions</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Click on any issue row below to view specific remedial code fixes instantly.</p>
             </div>
+            
             <div className="p-3 space-y-1">
-              {((audit.violations as unknown) as Violation[]).map((v: any) => (
-                <div key={v.id} className="flex items-center justify-between p-3 rounded-md hover:bg-accent/40 transition-colors">
-                  <div>
-                    <p className="text-sm">{v.name}</p>
-                    <p className="text-xs text-muted-foreground font-mono mt-0.5">{v.wcag_criterion}</p>
+              {((audit.violations as unknown) as Violation[]).map((v: any) => {
+                const isExpanded = expandedViolationId === v.id;
+                
+                // Fallbacks to gracefully safely handle dynamic payloads from AI schemas
+                const fixDescription = v.fix_description || v.description || "Remedial implementation needed to meet compliance rules.";
+                const targetSelector = v.element_html || v.target || "N/A";
+                const codeFixCode = v.code_fix || v.suggested_fix || `<!-- Compliance Fix Needed for ${v.wcag_criterion} -->`;
+
+                return (
+                  <div 
+                    key={v.id} 
+                    className={cn(
+                      "rounded-md border border-transparent transition-all overflow-hidden",
+                      isExpanded ? "bg-accent/30 border-border/60 shadow-inner" : "hover:bg-accent/40"
+                    )}
+                  >
+                    {/* Row Header */}
+                    <div 
+                      onClick={() => toggleExpand(v.id)}
+                      className="flex items-center justify-between p-3.5 cursor-pointer select-none"
+                    >
+                      <div className="flex items-start gap-3 flex-1 min-w-0 pr-4">
+                        <div className="mt-1 text-muted-foreground">
+                          {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-foreground truncate">{v.name}</p>
+                          <div className="flex items-center gap-2 mt-1 flex-wrap">
+                            <span className="text-[10px] font-mono bg-background px-1.5 py-0.5 rounded text-muted-foreground border border-border">
+                              {v.wcag_criterion}
+                            </span>
+                            <span className={cn(
+                              "text-[9px] uppercase px-1.5 py-0.2 rounded font-extrabold tracking-wider",
+                              v.severity === "critical" ? "bg-danger/10 text-danger" :
+                              v.severity === "serious" ? "bg-warning/10 text-warning" : "bg-info/10 text-info"
+                            )}>
+                              {v.severity || "moderate"}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Explicitly mapping passing Event reference to control event bubbles */}
+                      <div className="flex items-center">
+                        <Switch 
+                          checked={selected.has(v.id)} 
+                          onCheckedChange={(checked) => {
+                            setSelected((s) => {
+                              const n = new Set(s);
+                              checked ? n.add(v.id) : n.delete(v.id);
+                              return n;
+                            });
+                          }} 
+                          onClick={(e) => e.stopPropagation()} 
+                        />
+                      </div>
+                    </div>
+
+                    {/* Collapsible Actionable Parser View Drawer */}
+                    {isExpanded && (
+                      <div className="px-10 pb-4 pt-1 border-t border-border/40 animate-fade-in space-y-3 bg-slate-950/20">
+                        <div className="space-y-1">
+                          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Issue Analysis:</span>
+                          <p className="text-xs text-muted-foreground leading-relaxed">{fixDescription}</p>
+                        </div>
+
+                        {targetSelector && targetSelector !== "N/A" && (
+                          <div className="space-y-1">
+                            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Target Element HTML Context:</span>
+                            <code className="block text-[11px] font-mono p-2 rounded bg-background/80 border border-border text-amber-300/90 break-all whitespace-pre-wrap max-h-24 overflow-y-auto">
+                              {targetSelector}
+                            </code>
+                          </div>
+                        )}
+
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-bold text-primary uppercase tracking-wider flex items-center gap-1.5">
+                              <Code2 size={12} /> Suggested Secure AI Code Fix:
+                            </span>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={(e) => copyToClipboard(codeFixCode, v.id, e)}
+                              className="h-7 px-2.5 text-xs text-slate-400 hover:text-white hover:bg-slate-800 border border-border/40"
+                            >
+                              {copiedId === v.id ? (
+                                <><Check size={12} className="mr-1 text-emerald-400" /> Copied</>
+                              ) : (
+                                <><Copy size={12} className="mr-1" /> Copy Fix</>
+                              )}
+                            </Button>
+                          </div>
+                          
+                          <div className="relative rounded-md overflow-hidden border border-border bg-slate-950">
+                            <pre className="p-3.5 overflow-x-auto text-xs font-mono text-emerald-400 leading-normal selection:bg-primary/30">
+                              <code>{codeFixCode}</code>
+                            </pre>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  <Switch checked={selected.has(v.id)} onCheckedChange={() => toggleSel(v.id)} />
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -147,7 +267,7 @@ function NewAuditPage() {
         </section>
       )}
 
-      {/* Recent audits */}
+      {/* Recent audits section */}
       <section className="space-y-4">
         <p className="label-eyebrow">Recent audits</p>
 
