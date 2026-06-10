@@ -244,11 +244,11 @@ Output STRICTLY JSON:
   "executive_summary": "3-4 sentences. Name the client, reference their industry, state violations found, name laws violated.",
   "compliance_risk": "2 paragraphs. Legal exposure with real penalty ranges. Business risk beyond legal.",
   "violation_summary": "2-3 sentences summarising the most critical findings in plain English.",
-  "remediation_plan": "3-4 sentences describing what work the agency will do and the outcome.",
+  "remediation_plan": "3-4 sentences describing the SPECIFIC technical work to be done based on the violations found. Name actual fixes like 'add alt attributes to all images', 'implement skip navigation link', 'add ARIA landmark regions'. State the outcome: full WCAG 2.1 AA compliance within 4 weeks.",
   "investment": "Professional price range statement referencing the estimated work hours.",
   "roi_statement": "2 sentences on ROI — avoiding lawsuit costs, reaching 1.3 billion people with disabilities, improved SEO.",
   "next_steps": "3-step CTA: approve proposal, kickoff call, compliance certificate in 4 weeks.",
-  "follow_up_email": "Professional 4-sentence follow-up email for 3 days later."
+  "follow_up_email": "4-sentence follow-up email sent 3 days later. Sentence 1: reference the specific audit report sent for their website by name. Sentence 2: name ONE specific critical violation found on their actual site. Sentence 3: state the exact legal risk and fine amount. Sentence 4: invite them to a 15-minute call. NEVER use 'I hope this email finds you well', 'touching base', 'reaching out', or any filler phrases. Sound like a real human who actually audited their site."
 }`;
 
     const user = `Agency: ${data.agencyName}
