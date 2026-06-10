@@ -1,25 +1,26 @@
-import React, { useState, useEffect } from 'react';
-import { searchLeads } from '@/lib/ai.functions';
+import React, { useState, useEffect } from "react";
+import { searchLeads } from "@/lib/ai.functions";
 
 interface LeadFinderProps {
   onSelectUrl: (url: string) => void;
 }
 
 export function LeadFinder({ onSelectUrl }: LeadFinderProps) {
-  const [industry, setIndustry] = useState('');
-  const [location, setLocation] = useState('');
+  const [industry, setIndustry] = useState("");
+  const [location, setLocation] = useState("");
   const [leads, setLeads] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const [loadingStage, setLoadingStage] = useState('');
+  const [loadingStage, setLoadingStage] = useState("");
   const [auditingRowId, setAuditingRowId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!loading) return;
     const stages = [
-      'Connecting to local business registries...',
-      'Extracting top search-ranking assets...',
-      'Analyzing DOM structures for WCAG liabilities...',
-      'Compiling compliance risk directory...'
+      "Connecting to local business registries...",
+      "Extracting top search-ranking assets...",
+      "Analyzing DOM structures for WCAG liabilities...",
+      "Compiling compliance risk directory..."
     ];
     let i = 0;
     setLoadingStage(stages[0]);
@@ -32,6 +33,7 @@ export function LeadFinder({ onSelectUrl }: LeadFinderProps) {
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!industry.trim() || !location.trim()) return;
     setLoading(true);
     setError(null);
     setLeads([]);
@@ -39,7 +41,7 @@ export function LeadFinder({ onSelectUrl }: LeadFinderProps) {
       const data = await searchLeads({ data: { industry, location } });
       setLeads(data);
     } catch (err: any) {
-      setError(err.message || 'Failed to query lead directories.');
+      setError(err.message || "Failed to query lead directories.");
     } finally {
       setLoading(false);
     }
@@ -91,7 +93,7 @@ export function LeadFinder({ onSelectUrl }: LeadFinderProps) {
             disabled={loading}
             className="bg-purple-600 hover:bg-purple-500 disabled:bg-purple-900/40 text-white px-8 py-2.5 rounded-lg font-semibold text-sm h-[42px] min-w-[160px] flex items-center justify-center gap-2"
           >
-            {loading ? 'Scanning...' : 'Find Leads'}
+            {loading ? "Scanning..." : "Find Leads"}
           </button>
         </div>
       </form>
@@ -105,6 +107,7 @@ export function LeadFinder({ onSelectUrl }: LeadFinderProps) {
           <p className="text-sm text-slate-300 animate-pulse">{loadingStage}</p>
         </div>
       )}
+      {!loading && leads.length > 0 && (
         <div className="overflow-x-auto border border-slate-800 rounded-xl bg-slate-950/40">
           <table className="w-full text-left text-sm">
             <thead>
@@ -121,8 +124,8 @@ export function LeadFinder({ onSelectUrl }: LeadFinderProps) {
                 <tr key={lead.id} className="border-b border-slate-900 hover:bg-slate-800/20">
                   <td className="p-4 font-semibold text-slate-200">{lead.name}</td>
                   <td className="p-4">
-                    
-                      href={'https://www.google.com/search?q=' + encodeURIComponent(lead.name + ' ' + location + ' official website')}
+                    <a
+                      href={"https://www.google.com/search?q=" + encodeURIComponent(lead.name + " " + location + " official website")}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-purple-400 underline hover:text-purple-300 text-xs"
@@ -143,7 +146,7 @@ export function LeadFinder({ onSelectUrl }: LeadFinderProps) {
                       onClick={() => handleAuditTrigger(lead.website, lead.id)}
                       className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 text-white text-xs px-3 py-2 rounded-md font-semibold min-w-[100px]"
                     >
-                      {auditingRowId === lead.id ? 'Auditing...' : 'Run Audit'}
+                      {auditingRowId === lead.id ? "Auditing..." : "Run Audit"}
                     </button>
                   </td>
                 </tr>
@@ -152,6 +155,7 @@ export function LeadFinder({ onSelectUrl }: LeadFinderProps) {
           </table>
         </div>
       )}
+      {!loading && leads.length === 0 && (
         <div className="text-center py-12 border border-dashed border-slate-800 rounded-xl">
           <p className="text-slate-500 text-sm">Enter an industry and location to find leads.</p>
         </div>
