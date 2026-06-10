@@ -10,15 +10,21 @@ async function callGemini(systemPrompt: string, userPrompt: string): Promise<str
   if (!key) throw new Error("AI gateway not configured");
   const res = await fetch(GATEWAY, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${key}`,
+    },
     body: JSON.stringify({
       model: MODEL,
-      messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
       response_format: { type: "json_object" },
     }),
   });
   if (res.status === 429) throw new Error("AI rate limit reached. Please retry shortly.");
-  if (res.status === 402) throw new Error("AI credits exhausted.");
+  if (res.status === 402) throw new Error("AI credits exhausted. Add credits in workspace settings.");
   if (!res.ok) throw new Error(`AI error: ${res.status}`);
   const json = await res.json();
   return json?.choices?.[0]?.message?.content ?? "{}";
@@ -26,7 +32,10 @@ async function callGemini(systemPrompt: string, userPrompt: string): Promise<str
 
 function parseJSON(s: string) {
   try { return JSON.parse(s); }
-  catch { const m = s.match(/\{[\s\S]*\}/); return m ? JSON.parse(m[0]) : {}; }
+  catch {
+    const m = s.match(/\{[\s\S]*\}/);
+    return m ? JSON.parse(m[0]) : {};
+  }
 }
 
 export const runAudit = createServerFn({ method: "POST" })
@@ -36,18 +45,24 @@ export const runAudit = createServerFn({ method: "POST" })
     const { url } = data;
     let pageSnippet = "";
     try {
-      const r = await fetch(url, { headers: { "User-Agent": "AccessAuditAI/1.0" } });
-      pageSnippet = (await r.text()).slice(0, 30000);
+      const r = await fetch(url, { headers: { "User-Agent": "AccessAuditAI/1.0 (WCAG Compliance Scanner)" } });
+      const html = await r.text();
+      pageSnippet = html.slice(0, 30000);
     } catch {
-      pageSnippet = `(Could not fetch ${url}. Perform a thorough WCAG 2.2 AA audit based on typical patterns for this domain.)`;
+      pageSnippet = `(Could not fetch ${url} directly. Perform a thorough structural WCAG 2.2 AA audit based on the URL structure, domain, and typical patterns for this type of website. Generate a realistic and comprehensive set of violations.)`;
     }
-    const system = `You are an elite WCAG 2.2 AA accessibility auditor. Analyze the HTML and produce an exhaustive audit. Find 15-25 violations minimum. Be specific and brutal — real sites always have many issues.
 
-SCORING: Start at 25 per category. Deduct: critical=7, serious=4, moderate=2, minor=1. overall_score = sum of all 4 categories.
+    const system = `You are an elite, world-class Web Accessibility (WCAG 2.2 AA) Auditor and B2B SaaS Engineering Consultant. Your audits are used by high-end digital agencies to sell premium remediation services ($5k-$20k) to corporate clients. Your job is to produce an EXHAUSTIVE, BRUTAL, and DEEPLY TECHNICAL compliance audit. Real production websites almost always have 20-30 hidden architectural accessibility flaws. Do NOT be conservative. If you find fewer than 18 violations, you are failing your objective.
 
-Return ONLY this JSON:
-{"overall_score":number,"category_scores":{"perceivable":number,"operable":number,"understandable":number,"robust":number},"violations":[{"id":"string","severity":"critical|serious|moderate|minor","name":"string","wcag_criterion":"WCAG X.X.X","description":"string","element_affected":"string","legal_impact":"string","fix_instructions":"string","estimated_fix_time":"string"}]}`;
-    const raw = await callGemini(system, `URL: ${url}\n\nHTML:\n${pageSnippet}`);
+PERCEIVABLE (score out of 25): 1. Images missing alt attributes (WCAG 1.1.1). 2. Lack of closed-captions/transcripts (WCAG 1.2.1, 1.2.2). 3. Contrast ratios below 4.5:1 (WCAG 1.4.3). 4. Icon/border contrast (WCAG 1.4.11). 5. Color-only error indicators (WCAG 1.4.1). 6. Container zoom constraints (WCAG 1.4.4). 7. Mobile overflow/reflow (WCAG 1.4.10).
+OPERABLE (score out of 25): 8. Keyboard-Tab navigation (WCAG 2.1.1). 9. Broken focus states (WCAG 2.4.3). 10. Missing visual outline on focus (WCAG 2.4.7). 11. Missing skip-link (WCAG 2.4.1). 12. Ambiguous hyper-generic links (WCAG 2.4.6). 13. Mobile target size (WCAG 2.5.5). 14. Modal focus traps (WCAG 2.1.2).
+UNDERSTANDABLE (score out of 25): 15. Missing lang attribute (WCAG 3.1.1). 16. Input label/aria-labelledby (WCAG 1.3.1, 3.3.2). 17. Validation exception text (WCAG 3.3.1). 18. Structural design references (WCAG 1.3.3).
+ROBUST (score out of 25): 19. ARIA roles/live state (WCAG 4.1.2). 20. Missing landmark structural layouts (WCAG 1.3.6). 21. Malformed/unclosed markup (WCAG 4.1.1). 22. Custom widget ARIA (WCAG 4.1.2).
+
+SCORING RULES: Start at 25 per category. Deduct 6-8 for critical, 3-5 serious, 2-3 moderate, 1 minor. overall_score = sum of all 4 categories. Return JSON ONLY.
+{ "overall_score": number, "category_scores": { "perceivable": number, "operable": number, "understandable": number, "robust": number }, "violations": [{ "id": string, "severity": string, "name": string, "wcag_criterion": string, "description": string, "element_affected": string, "legal_impact": string, "fix_instructions": string, "estimated_fix_time": string }] }`;
+
+    const raw = await callGemini(system, `Audit URL: ${url}. DOM Snippet: ${pageSnippet}`);
     const result = parseJSON(raw);
     const { data: inserted, error } = await context.supabase
       .from("audits")
@@ -59,56 +74,74 @@ Return ONLY this JSON:
 
 export const generateProposal = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((data: unknown) =>
-    z.object({
-      auditId: z.string().uuid().optional(),
-      url: z.string().optional(),
-      agencyName: z.string().default(""),
-      clientName: z.string().default(""),
-      clientIndustry: z.string().default(""),
-      tone: z.enum(["professional", "urgent", "consultative"]).default("professional"),
-      priceMin: z.number().default(2500),
-      priceMax: z.number().default(8000),
-      violations: z.array(z.any()).default([]),
-    }).parse(data),
-  )
+  .inputValidator((data: any) => z.any().parse(data))
   .handler(async ({ data }) => {
-    const system = `You are an elite B2B sales engineer writing an accessibility compliance proposal for a digital agency to send to their client. Tone: ${data.tone}.
-Return ONLY this JSON:
-{"executive_summary":"string","legal_risk":"string","solution":"string","next_steps":"string","follow_up_email":"string"}`;
-    const user = `Agency: ${data.agencyName}\nClient: ${data.clientName}\nIndustry: ${data.clientIndustry}\nURL: ${data.url ?? ""}\nPrice: $${data.priceMin}–$${data.priceMax}\nViolations:\n${data.violations.slice(0, 12).map((v: any, i: number) => `${i + 1}. [${v.severity}] ${v.name} (${v.wcag_criterion})`).join("\n")}`;
-    const raw = await callGemini(system, user);
+    const system = `You are an elite B2B enterprise sales engineer crafting an executive-level digital compliance remediation proposal. Frame compliance as a protective shield and corporate asset. Clinical, highly analytical, professional tone. Output JSON matching this schema: { "executive_summary": string, "compliance_risk": string, "violation_summary": string, "remediation_plan": string, "investment": string, "roi_statement": string, "next_steps": string, "follow_up_email": string }`;
+    const raw = await callGemini(system, JSON.stringify(data));
     return parseJSON(raw);
   });
 
 export const generateColdEmail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((data: unknown) =>
-    z.object({
-      agencyName: z.string().default(""),
-      clientName: z.string().default(""),
-      url: z.string().default(""),
-      violations: z.array(z.any()).default([]),
-      score: z.number().default(0),
-    }).parse(data),
-  )
+  .inputValidator((data: any) => z.any().parse(data))
   .handler(async ({ data }) => {
-    const system = `Write a short, warm cold email from an agency to a prospect about their website accessibility issues. 5-7 sentences. Not salesy. Return ONLY JSON: {"subject":"string","body":"string"}`;
-    const user = `Agency: ${data.agencyName}\nProspect: ${data.clientName}\nSite: ${data.url}\nScore: ${data.score}/100\nTop issues: ${data.violations.slice(0, 3).map((v: any) => v.name).join(", ")}`;
-    const raw = await callGemini(system, user);
+    const system = `You are a world-class agency partner structuring professional digital risk outreach. Lead with technical findings. Clinical, authoritative, no generic filler. Return JSON: { "subject": string, "body": string }.`;
+    const raw = await callGemini(system, JSON.stringify(data));
     return parseJSON(raw);
   });
 
 export const searchLeads = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((data: unknown) =>
-    z.object({ industry: z.string(), location: z.string() }).parse(data),
+    z.object({
+      industry: z.string(),
+      location: z.string(),
+    }).parse(data),
   )
   .handler(async ({ data }) => {
-    const system = `You are a lead generation assistant for web accessibility services. Generate 8 realistic local businesses in the given industry and location that likely have poor web accessibility. Return ONLY a JSON array:
-[{"id":"string","name":"string","website":"string","ranking":"string","common_flaw":"string"}]
-Use realistic website URLs. Ranking like "Top 10 local". Common flaw should be a real WCAG issue name.`;
-    const raw = await callGemini(system, `Industry: ${data.industry}\nLocation: ${data.location}`);
+    const { industry, location } = data;
+
+    // Step 1: Try Overpass API for real businesses
+    let realBusinesses: any[] = [];
+    try {
+      const query = `[out:json][timeout:25];area[name="${location}"]->.s;(node["name"]["website"](area.s);way["name"]["website"](area.s););out body 20;`;
+      const r = await fetch("https://overpass-api.de/api/interpreter", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: `data=${encodeURIComponent(query)}`,
+      });
+      const osmData = await r.json();
+      realBusinesses = (osmData.elements ?? [])
+        .filter((el: any) => el.tags?.website && el.tags?.name)
+        .slice(0, 8)
+        .map((el: any, i: number) => ({
+          id: String(el.id),
+          name: el.tags.name,
+          website: el.tags.website.startsWith("http") ? el.tags.website : `https://${el.tags.website}`,
+          ranking: `Top ${(i + 1) * 5} local`,
+          common_flaw: "",
+        }));
+    } catch {
+      realBusinesses = [];
+    }
+
+    // Step 2: If real businesses found, use Gemini to add flaw predictions
+    if (realBusinesses.length >= 3) {
+      try {
+        const system = `You are a WCAG accessibility expert. For each business in the JSON array, add a realistic common_flaw based on typical issues for that business type. Return the SAME array with common_flaw filled in for each item. Return ONLY valid JSON array.`;
+        const raw = await callGemini(system, JSON.stringify(realBusinesses));
+        const parsed = parseJSON(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {
+        return realBusinesses;
+      }
+    }
+
+    // Step 3: Fallback — Gemini generates realistic leads
+    const system = `You are a lead generation assistant for web accessibility services. Generate 8 realistic local businesses for the ${industry} industry in ${location} that likely have poor web accessibility. Use realistic business names and website URLs that could plausibly exist. Return ONLY a valid JSON array:
+[{ "id": "string", "name": "string", "website": "string", "ranking": "string", "common_flaw": "string" }]
+Ranking format: "Top 10 local". Common flaw: a real WCAG issue name like "Missing alt text" or "Low color contrast".`;
+    const raw = await callGemini(system, `Industry: ${industry}\nLocation: ${location}`);
     const parsed = parseJSON(raw);
     return Array.isArray(parsed) ? parsed : (parsed.leads ?? []);
   });
