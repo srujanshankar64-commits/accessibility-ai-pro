@@ -54,7 +54,7 @@ function NewAuditPage() {
       const result = await auditFn({ data: { url } });
       setAudit(result);
       const preset = new Set<string>(
-        (result.violations as Violation[])
+        ((result.violations as unknown) as Violation[])
           .filter((v: any) => v.severity === "critical" || v.severity === "serious")
           .map((v: any) => v.id)
       );
@@ -75,7 +75,7 @@ function NewAuditPage() {
     if (!a) return;
     const violations = row
       ? row.violations
-      : (audit.violations as Violation[]).filter((v: any) => selected.has(v.id));
+      : ((audit.violations as unknown) as Violation[]).filter((v: any) => selected.has(v.id));
     sessionStorage.setItem("proposal_seed", JSON.stringify({
       auditId: a.id, url: a.url, score: a.overall_score ?? a.overall_score, violations,
     }));
@@ -125,7 +125,7 @@ function NewAuditPage() {
               <p className="label-eyebrow">Identified violations</p>
             </div>
             <div className="p-3 space-y-1">
-              {(audit.violations as Violation[]).map((v: any) => (
+              {((audit.violations as unknown) as Violation[]).map((v: any) => (
                 <div key={v.id} className="flex items-center justify-between p-3 rounded-md hover:bg-accent/40 transition-colors">
                   <div>
                     <p className="text-sm">{v.name}</p>
