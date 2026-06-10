@@ -6,29 +6,64 @@ import { getPlan, TIER, canRunAudit, PLAN_PRICES } from "@/lib/tier.utils";
 const GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
 const MODEL = "google/gemini-2.5-flash";
 
-async function callGemini(systemPrompt: string, userPrompt: string): Promise<string> {
+async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?: string): Promise<string> {
+  // Default to shared gateway first
   const key = process.env.LOVABLE_API_KEY;
-  if (!key) throw new Error("AI gateway not configured");
-  const res = await fetch(GATEWAY, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${key}`,
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      response_format: { type: "json_object" },
-    }),
-  });
-  if (res.status === 429) throw new Error("AI rate limit reached. Please retry shortly.");
-  if (res.status === 402) throw new Error("AI credits exhausted. Add credits in workspace settings.");
-  if (!res.ok) throw new Error(`AI error: ${res.status}`);
-  const json = await res.json();
-  return json?.choices?.[0]?.message?.content ?? "{}";
+  if (key) {
+    try {
+      const res = await fetch(GATEWAY, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${key}`,
+        },
+        body: JSON.stringify({
+          model: MODEL,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          response_format: { type: "json_object" },
+        }),
+      });
+      if (res.status === 429) throw new Error("AI rate limit reached. Please retry shortly.");
+      if (res.status === 402) throw new Error("AI credits exhausted. Add credits in workspace settings.");
+      if (res.ok) {
+        const json = await res.json();
+        return json?.choices?.[0]?.message?.content ?? "{}";
+      }
+    } catch (error) {
+      console.error("Shared gateway failed, trying user API key:", error);
+    }
+  }
+
+  // Fallback to user's own Gemini API key if provided
+  if (userApiKey) {
+    try {
+      const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + userApiKey, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          contents: [
+            { role: "user", parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }
+          ],
+          generationConfig: {
+            response_mime_type: "application/json",
+          },
+        }),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        return json?.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
+      }
+    } catch (error) {
+      console.error("User API key also failed:", error);
+    }
+  }
+
+  throw new Error("AI gateway not configured. Please configure LOVABLE_API_KEY environment variable or add your Gemini API key in settings.");
 }
 
 function parseJSON(s: string) {
@@ -160,7 +195,7 @@ Return ONLY valid JSON with EXACTLY this schema:
 
     const user = `Audit this website for WCAG 2.1 AA compliance. Be exhaustive. Find every violation.\n\nURL: ${url}\n\nHTML content:\n${pageSnippet}`;
 
-    const raw = await callGemini(system, user);
+    const raw = await callGemini(system, user, settings?.gemini_api_key);
     const result = parseJSON(raw);
 
     const violationLimit = TIER[plan].violations;
@@ -169,12 +204,12 @@ Return ONLY valid JSON with EXACTLY this schema:
       ? allViolations.slice(0, violationLimit)
       : allViolations;
 
-    await context.supabase
+    await (context.supabase as any)
       .from("settings")
       .update({ audits_used: usedThisMonth + 1 })
       .eq("user_id", context.userId);
 
-    const { data: inserted, error } = await context.supabase
+    const { data: inserted, error } = await (context.supabase as any)
       .from("audits")
       .insert({
         user_id: context.userId,
@@ -188,7 +223,7 @@ Return ONLY valid JSON with EXACTLY this schema:
     if (error) throw error;
 
     return {
-      ...inserted,
+      ...(inserted as any),
       plan,
       totalViolationsFound: allViolations.length,
       violationsShown: limitedViolations.length,
@@ -262,7 +297,7 @@ Price range: $${data.priceMin} - $${data.priceMax}
 Violations:
 ${data.violations.map((v: any, i: number) => `${i + 1}. [${v.severity?.toUpperCase()}] ${v.name} (${v.wcag_criterion}) - ${v.description} | Fix: ${v.fix_instructions} | Time: ${v.estimated_fix_time ?? "2 hours"}`).join("\n")}`;
 
-    const raw = await callGemini(system, user);
+    const raw = await callGemini(system, user, settings?.gemini_api_key);
     return parseJSON(raw);
   });
 
@@ -308,7 +343,7 @@ Compliance score: ${data.score}/100
 Top issues:
 ${topCritical.map((v: any) => `- ${v.name}: ${v.description} (${v.wcag_criterion})`).join("\n")}`;
 
-    const raw = await callGemini(system, user);
+    const raw = await callGemini(system, user, settings?.gemini_api_key);
     return parseJSON(raw);
   });
 
@@ -392,13 +427,13 @@ export const searchLeads = createServerFn({ method: "POST" })
     if (realBusinesses.length >= 3) {
       try {
         const system = `For each business in the JSON array, add a realistic common_flaw based on typical WCAG issues for that business type. Return the SAME array with common_flaw filled in. Return ONLY valid JSON array.`;
-        const raw = await callGemini(system, JSON.stringify(realBusinesses));
+        const raw = await callGemini(system, JSON.stringify(realBusinesses), undefined);
         const parsed = parseJSON(raw);
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       } catch { return realBusinesses; }
     }
     const system = `Generate 8 realistic local businesses for ${industry} in ${location} with poor web accessibility. Return ONLY a JSON array: [{"id":"string","name":"string","website":"string","ranking":"string","common_flaw":"string"}]`;
-    const raw = await callGemini(system, `Industry: ${industry}\nLocation: ${location}`);
+    const raw = await callGemini(system, `Industry: ${industry}\nLocation: ${location}`, undefined);
     const parsed = parseJSON(raw);
     return Array.isArray(parsed) ? parsed : (parsed.leads ?? []);
   });

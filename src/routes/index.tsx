@@ -1,9 +1,10 @@
 import { Fragment } from "react";
-import { createFileRoute, Link, redirect } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect, useNavigate } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
+import { createCheckoutSession } from "./-api.checkout";
 import {
   ShieldCheck, Link2, ScanLine, FileText, Check, ArrowRight,
-  Code2, FileBadge, UploadCloud, RefreshCw, Award, LayoutGrid,
+  Code2, FileBadge, UploadCloud, RefreshCw, Award, LayoutGrid, Loader2,
 } from "lucide-react";
 
 export const Route = createFileRoute("/")({
@@ -16,6 +17,27 @@ export const Route = createFileRoute("/")({
 });
 
 function Landing() {
+  const navigate = useNavigate();
+
+  const handleCheckout = async (tier: string, productId: string) => {
+    try {
+      const result = await createCheckoutSession({ data: { productId, tier } });
+      
+      if (result.success && result.checkout_url) {
+        // Redirect to Dodo Payments checkout URL
+        window.location.href = result.checkout_url;
+      } else if (result.success === false && result.error) {
+        // Show error message to user
+        alert(`Checkout Error: ${result.error}\n\nNote: If your Dodo Payments account is under review, please wait 24-48 hours for approval.`);
+      } else {
+        throw new Error("Invalid response from checkout session");
+      }
+    } catch (error) {
+      console.error("Checkout error:", error);
+      alert(`Checkout failed: ${error instanceof Error ? error.message : "Unknown error"}\n\nNote: Dodo Payments account may be under review. Please try again later.`);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div className="gradient-line" />
@@ -50,7 +72,19 @@ function Landing() {
           className="absolute left-1/2 top-20 -translate-x-1/2 h-[640px] w-[1100px] pointer-events-none"
           style={{ background: "radial-gradient(closest-side, rgba(110,86,207,0.10), transparent 70%)" }}
         />
-        <div className="relative max-w-[1100px] mx-auto px-6 pt-24 pb-20 text-center">
+        
+        {/* Free Trial Banner */}
+        <div className="relative max-w-[1100px] mx-auto px-6 pt-8">
+          <div className="flex items-center justify-center">
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 text-primary text-sm font-semibold">
+              <span className="text-lg">🎉</span>
+              <span>14-Day Free Trial on All Plans</span>
+              <span className="text-muted-foreground font-normal">• Cancel Anytime • No Credit Card Required</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="relative max-w-[1100px] mx-auto px-6 pt-16 pb-20 text-center">
           <h1 className="font-display text-[44px] sm:text-[56px] leading-[1.05] max-w-3xl mx-auto" style={{ letterSpacing: "-0.04em" }}>
             Your clients' websites are breaking the law.
           </h1>
@@ -169,6 +203,7 @@ function Landing() {
               features={["3 audits per month", "Compliance score", "5 violations preview", "Watermarked PDF"]}
               cta="Start for free"
               variant="ghost"
+              onCheckout={handleCheckout}
             />
             <PriceCard
               tier="STARTER"
@@ -177,6 +212,8 @@ function Landing() {
               features={["20 audits per month", "Full violation list (25+)", "Clean PDF export", "Proposal generator", "Cold email drafts", "30-day audit history"]}
               cta="Get started"
               variant="ghost"
+              priceId={process.env.NEXT_PUBLIC_DODO_STARTER_ID || "pdt_0Ngl3vET02otEHOXHqvAx"}
+              onCheckout={handleCheckout}
             />
             <PriceCard
               tier="AGENCY"
@@ -186,6 +223,8 @@ function Landing() {
               cta="Start free trial"
               variant="primary"
               popular
+              priceId={process.env.NEXT_PUBLIC_DODO_AGENCY_ID || "pdt_0Ngl4mgraS8OdTZY3yGQN"}
+              onCheckout={handleCheckout}
             />
             <PriceCard
               tier="BUSINESS"
@@ -194,6 +233,8 @@ function Landing() {
               features={["Everything in Agency", "Auto monthly re-audits", "Score drop email alerts", "Bulk proposal generation", "10 team seats", "Performance dashboard", "Priority support"]}
               cta="Start free trial"
               variant="ghost"
+              priceId={process.env.NEXT_PUBLIC_DODO_BUSINESS_ID || "pdt_0Ngl5RCV0T6Vc40K5mtdr"}
+              onCheckout={handleCheckout}
             />
           </div>
           <p className="mt-8 text-center text-xs text-muted-foreground">All plans include a 14-day free trial. Cancel anytime. No contracts.</p>
@@ -263,10 +304,11 @@ function Landing() {
 }
 
 function PriceCard({
-  tier, price, tagline, features, cta, variant, popular,
+  tier, price, tagline, features, cta, variant, popular, priceId, onCheckout,
 }: {
   tier: string; price: string; tagline: string; features: string[];
   cta: string; variant: "ghost" | "primary"; popular?: boolean;
+  priceId?: string; onCheckout?: (tier: string, priceId: string) => Promise<void>;
 }) {
   return (
     <div
@@ -296,17 +338,31 @@ function PriceCard({
           </li>
         ))}
       </ul>
-      <Link
-        to="/auth"
-        className={
-          "mt-6 h-10 inline-flex items-center justify-center w-full rounded-md text-sm font-medium transition-colors " +
-          (variant === "primary"
-            ? "bg-primary hover:bg-primary-hover text-primary-foreground"
-            : "border border-border hover:bg-accent")
-        }
-      >
-        {cta}
-      </Link>
+      {priceId && onCheckout ? (
+        <button
+          onClick={() => onCheckout(tier, priceId)}
+          className={
+            "mt-6 h-10 inline-flex items-center justify-center w-full rounded-md text-sm font-medium transition-colors " +
+            (variant === "primary"
+              ? "bg-primary hover:bg-primary-hover text-primary-foreground"
+              : "border border-border hover:bg-accent")
+          }
+        >
+          {cta}
+        </button>
+      ) : (
+        <Link
+          to="/auth"
+          className={
+            "mt-6 h-10 inline-flex items-center justify-center w-full rounded-md text-sm font-medium transition-colors " +
+            (variant === "primary"
+              ? "bg-primary hover:bg-primary-hover text-primary-foreground"
+              : "border border-border hover:bg-accent")
+          }
+        >
+          {cta}
+        </Link>
+      )}
     </div>
   );
 }

@@ -39,6 +39,7 @@ function NewAuditPage() {
   const auditFn = useServerFn(runAudit);
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadingStep, setLoadingStep] = useState(0);
   const [audit, setAudit] = useState<any | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [rows, setRows] = useState<RecentRow[]>([]);
@@ -79,9 +80,30 @@ function NewAuditPage() {
     e.preventDefault();
     if (!url) return;
     setLoading(true);
+    setLoadingStep(0);
     setExpandedViolationId(null);
+    
+    const loadingSteps = [
+      "Connecting to website...",
+      "Analyzing page structure...",
+      "Scanning for accessibility violations...",
+      "Checking WCAG 2.1 compliance...",
+      "Generating detailed report...",
+      "Finalizing results..."
+    ];
+    
+    const stepInterval = setInterval(() => {
+      setLoadingStep((prev) => {
+        if (prev < loadingSteps.length - 1) {
+          return prev + 1;
+        }
+        return prev;
+      });
+    }, 2000);
+    
     try {
       const result = await auditFn({ data: { url } });
+      clearInterval(stepInterval);
       setAudit(result);
       setUsed((u) => u + 1);
       const preset = new Set<string>(
@@ -93,8 +115,12 @@ function NewAuditPage() {
       toast.success(`Audit complete — ${result.violationsShown} violations found`);
       loadRecent();
     } catch (err: any) {
+      clearInterval(stepInterval);
       toast.error(err.message ?? "Audit failed");
-    } finally { setLoading(false); }
+    } finally { 
+      setLoading(false);
+      setLoadingStep(0);
+    }
   };
 
   const toggleExpand = (id: string) => {
@@ -209,6 +235,37 @@ function NewAuditPage() {
           {!loading && <ArrowRight className="h-4 w-4 ml-2" />}
         </button>
       </form>
+
+      {/* Loading progress indicator */}
+      {loading && (
+        <div className="card-elevated p-6 space-y-4 animate-fade-in">
+          <div className="flex items-center gap-3">
+            <Loader2 className="h-5 w-5 animate-spin text-primary" />
+            <div className="flex-1">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium text-foreground">
+                  {["Connecting to website...", "Analyzing page structure...", "Scanning for accessibility violations...", "Checking WCAG 2.1 compliance...", "Generating detailed report...", "Finalizing results..."][loadingStep]}
+                </span>
+                <span className="text-xs text-muted-foreground">{Math.round((loadingStep + 1) / 6 * 100)}%</span>
+              </div>
+              <div className="h-2 w-full bg-accent rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-primary transition-all duration-500 ease-out"
+                  style={{ width: `${((loadingStep + 1) / 6) * 100}%` }}
+                />
+              </div>
+            </div>
+          </div>
+          <div className="text-xs text-muted-foreground leading-relaxed">
+            {loadingStep === 0 && "We're establishing a secure connection to analyze the website's accessibility features. This usually takes a few seconds..."}
+            {loadingStep === 1 && "Our AI is now examining the page structure, HTML elements, and content hierarchy to identify potential accessibility issues."}
+            {loadingStep === 2 && "Scanning through 25+ WCAG 2.1 criteria including keyboard navigation, color contrast, and screen reader compatibility."}
+            {loadingStep === 3 && "Cross-referencing findings against international accessibility standards to ensure comprehensive compliance assessment."}
+            {loadingStep === 4 && "Generating a detailed report with actionable recommendations and code fixes for each violation found."}
+            {loadingStep === 5 && "Almost there! Finalizing your accessibility report with compliance scores and remediation priorities."}
+          </div>
+        </div>
+      )}
 
       {/* Bulk CSV upload — Agency+ */}
       <div className="flex items-center gap-3">

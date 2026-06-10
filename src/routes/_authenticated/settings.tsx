@@ -6,6 +6,7 @@ import { UploadCloud, Loader2, Eye, EyeOff, Lock, Zap, ShieldCheck } from "lucid
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { getPlan, TIER, PLAN_PRICES } from "@/lib/tier.utils";
+import { createCheckoutSession } from "../-api.checkout";
 
 export const Route = createFileRoute("/_authenticated/settings")({
   component: SettingsPage,
@@ -28,10 +29,12 @@ function SettingsPage() {
   const [used, setUsed] = useState(0);
   const [saving, setSaving] = useState(false);
   const [settingPlan, setSettingPlan] = useState(false);
+  const [settings, setSettings] = useState<any>(null);
 
   useEffect(() => {
-    supabase.from("settings").select("*").maybeSingle().then(({ data }) => {
+    (supabase as any).from("settings").select("*").maybeSingle().then(({ data }: { data: any }) => {
       if (!data) return;
+      setSettings(data);
       setAgencyName(data.agency_name ?? "");
       setBrandColor(data.brand_color ?? "#6E56CF");
       setApiKey(data.gemini_api_key ?? "");
@@ -42,12 +45,14 @@ function SettingsPage() {
 
   const save = async () => {
     setSaving(true);
-    const { error } = await supabase.from("settings").upsert({
-      user_id: user.id,
-      agency_name: agencyName,
-      brand_color: brandColor,
-      gemini_api_key: apiKey,
-    });
+    const { error } = await (supabase as any)
+      .from("settings")
+      .upsert({
+        user_id: user.id,
+        agency_name: agencyName,
+        brand_color: brandColor,
+        gemini_api_key: apiKey,
+      });
     setSaving(false);
     if (error) {
       toast.error(error.message);
@@ -58,11 +63,13 @@ function SettingsPage() {
 
   const setDevPlan = async (targetPlan: string) => {
     setSettingPlan(true);
-    const { error } = await supabase.from("settings").upsert({
-      user_id: user.id,
-      plan: targetPlan,
-      audits_used: 0,
-    });
+    const { error } = await (supabase as any)
+      .from("settings")
+      .upsert({
+        user_id: user.id,
+        plan: targetPlan,
+        audits_used: 0,
+      });
     setSettingPlan(false);
     if (error) {
       toast.error(error.message);
@@ -72,8 +79,33 @@ function SettingsPage() {
     }
   };
 
-  const handleUpgradeCheckout = (tierName: string) => {
-    toast.info(`Stripe integration coming soon for ${tierName} plan.`);
+  const handleUpgradeCheckout = async (tierName: string) => {
+    try {
+      const productIds: Record<string, string> = {
+        starter: process.env.NEXT_PUBLIC_DODO_STARTER_ID || "pdt_0Ngl3vET02otEHOXHqvAx",
+        agency: process.env.NEXT_PUBLIC_DODO_AGENCY_ID || "pdt_0Ngl4mgraS8OdTZY3yGQN",
+        business: process.env.NEXT_PUBLIC_DODO_BUSINESS_ID || "pdt_0Ngl5RCV0T6Vc40K5mtdr",
+      };
+
+      const productId = productIds[tierName];
+      if (!productId) {
+        toast.error(`No product ID found for ${tierName} plan`);
+        return;
+      }
+
+      const result = await createCheckoutSession({ data: { productId, tier: tierName } });
+      
+      if (result.success && result.checkout_url) {
+        window.location.href = result.checkout_url;
+      } else if (result.success === false && result.error) {
+        toast.error(`Checkout Error: ${result.error}. Dodo Payments account may be under review (24-48 hours).`);
+      } else {
+        throw new Error("Invalid response from checkout session");
+      }
+    } catch (error) {
+      console.error("Checkout error:", error);
+      toast.error(`${error instanceof Error ? error.message : "Failed to initiate checkout"}. Account may be under review.`);
+    }
   };
 
   const currentPlan = getPlan(plan);
@@ -81,6 +113,9 @@ function SettingsPage() {
   const auditLimit = config.audits;
   const isUnlimited = auditLimit >= 999999;
   const upgradeDate = settings?.updated_at ? new Date(settings.updated_at) : new Date();
+  const expiryDate = new Date();
+  expiryDate.setMonth(expiryDate.getMonth() + 1);
+  const progressValue = isUnlimited ? 100 : (used / auditLimit) * 100;
   const hasBrandingAccess = currentPlan === "agency" || currentPlan === "business";
 
   const inputCls = "w-full h-10 px-3 rounded bg-background border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50";
