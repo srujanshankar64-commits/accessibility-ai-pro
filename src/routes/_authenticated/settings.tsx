@@ -81,10 +81,6 @@ function SettingsPage() {
   const auditLimit = config.audits;
   const isUnlimited = auditLimit >= 999999;
   const upgradeDate = settings?.updated_at ? new Date(settings.updated_at) : new Date();
-  const expiryDate = new Date(upgradeDate.getTime() + 30 * 24 * 60 * 60 * 1000);
-  const upgradeDate = settings?.updated_at ? new Date(settings.updated_at) : new Date();
-  const expiryDate = new Date(upgradeDate.getTime() + 30 * 24 * 60 * 60 * 1000);
-  const progressValue = isUnlimited ? 0 : (used / auditLimit) * 100;
   const hasBrandingAccess = currentPlan === "agency" || currentPlan === "business";
 
   const inputCls = "w-full h-10 px-3 rounded bg-background border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50";
