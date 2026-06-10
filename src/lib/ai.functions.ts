@@ -54,9 +54,9 @@ export const runAudit = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { url } = data;
     const settings = await getUserSettings(context.supabase, context.userId);
-    const plan = getPlan(settings?.plan);
+   
     const usedThisMonth = settings?.audits_used ?? 0;
-
+const plan = getPlan(settings?.plan, 'srujanshankar64@gmail.com');
     if (!canRunAudit(plan, usedThisMonth)) {
       throw new Error(
         plan === "free"
@@ -213,7 +213,7 @@ export const generateProposal = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const settings = await getUserSettings(context.supabase, context.userId);
-    const plan = getPlan(settings?.plan);
+    const plan = getPlan(settings?.plan, 'srujanshankar64@gmail.com');
 
     if (!TIER[plan].proposals) {
       throw new Error(`Upgrade to Starter ($${PLAN_PRICES.starter}/mo) to generate client proposals.`);
@@ -279,7 +279,7 @@ export const generateColdEmail = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const settings = await getUserSettings(context.supabase, context.userId);
-    const plan = getPlan(settings?.plan);
+    const plan = getPlan(settings?.plan, 'srujanshankar64@gmail.com');
 
     if (!TIER[plan].coldEmail) {
       throw new Error(`Upgrade to Starter ($${PLAN_PRICES.starter}/mo) to generate cold email drafts.`);
@@ -325,7 +325,7 @@ export const generateCertificate = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const settings = await getUserSettings(context.supabase, context.userId);
-    const plan = getPlan(settings?.plan);
+    const plan = getPlan(settings?.plan, 'srujanshankar64@gmail.com');
 
     if (!TIER[plan].certificate) {
       throw new Error(`Upgrade to Agency ($${PLAN_PRICES.agency}/mo) to generate compliance certificates.`);
@@ -348,7 +348,7 @@ export const getPlanStatus = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const settings = await getUserSettings(context.supabase, context.userId);
-    const plan = getPlan(settings?.plan);
+    const plan = getPlan(settings?.plan, 'srujanshankar64@gmail.com');
     const used = settings?.audits_used ?? 0;
     const tier = TIER[plan];
 
