@@ -31,7 +31,7 @@ function parseJSON(s: string) {
 
 export const runAudit = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .validator((data: unknown) => z.object({ url: z.string().url() }).parse(data))
+  .inputValidator((data: unknown) => z.object({ url: z.string().url() }).parse(data))
   .handler(async ({ data, context }) => {
     const { url } = data;
     let pageSnippet = "";
@@ -59,7 +59,7 @@ Return ONLY this JSON:
 
 export const generateProposal = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .validator((data: unknown) =>
+  .inputValidator((data: unknown) =>
     z.object({
       auditId: z.string().uuid().optional(),
       url: z.string().optional(),
@@ -83,7 +83,7 @@ Return ONLY this JSON:
 
 export const generateColdEmail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .validator((data: unknown) =>
+  .inputValidator((data: unknown) =>
     z.object({
       agencyName: z.string().default(""),
       clientName: z.string().default(""),
@@ -101,7 +101,7 @@ export const generateColdEmail = createServerFn({ method: "POST" })
 
 export const searchLeads = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .validator((data: unknown) =>
+  .inputValidator((data: unknown) =>
     z.object({ industry: z.string(), location: z.string() }).parse(data),
   )
   .handler(async ({ data }) => {
