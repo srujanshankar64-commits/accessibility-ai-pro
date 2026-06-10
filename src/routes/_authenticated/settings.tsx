@@ -24,7 +24,7 @@ function SettingsPage() {
   const [brandColor, setBrandColor] = useState("#6E56CF");
   const [apiKey, setApiKey] = useState("");
   const [showKey, setShowKey] = useState(false);
-  const [plan, setPlan] = useState<"free" | "starter" | "agency" | "business">("free");
+  const [plan, setPlan] = useState<"free" | "starter" | "agency" | "business">("business");
   const [used, setUsed] = useState(0);
   const [saving, setSaving] = useState(false);
   const [settingPlan, setSettingPlan] = useState(false);
@@ -80,6 +80,10 @@ function SettingsPage() {
   const config = TIER[currentPlan];
   const auditLimit = config.audits;
   const isUnlimited = auditLimit >= 999999;
+  const upgradeDate = settings?.updated_at ? new Date(settings.updated_at) : new Date();
+  const expiryDate = new Date(upgradeDate.getTime() + 30 * 24 * 60 * 60 * 1000);
+  const upgradeDate = settings?.updated_at ? new Date(settings.updated_at) : new Date();
+  const expiryDate = new Date(upgradeDate.getTime() + 30 * 24 * 60 * 60 * 1000);
   const progressValue = isUnlimited ? 0 : (used / auditLimit) * 100;
   const hasBrandingAccess = currentPlan === "agency" || currentPlan === "business";
 
@@ -216,7 +220,7 @@ function SettingsPage() {
                       · ${PLAN_PRICES[currentPlan] ?? 0}/mo
                     </span>
                   </div>
-                  <p className="text-xs text-muted-foreground mt-1">Usage resets on the 1st of each month.</p>
+                  <p className="text-xs text-muted-foreground mt-1">Renews on {expiryDate.toLocaleDateString()}</p>
                 </div>
               </div>
 
