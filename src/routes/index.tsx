@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -104,8 +105,8 @@ function Landing() {
               { n: "02", icon: ScanLine, title: "AI runs the audit", body: "Gemini scans 25+ WCAG checkpoints across all four compliance categories." },
               { n: "03", icon: FileText, title: "Send the proposal", body: "Download a branded PDF proposal ready to send to your client in 60 seconds." },
             ].map((step, i, arr) => (
-              <>
-                <div key={step.n} className="card-elevated p-6 relative">
+              <Fragment key={step.n}>
+                <div className="card-elevated p-6 relative">
                   <span className="absolute top-4 left-4 h-6 px-2 rounded-full bg-primary/15 text-primary text-[10px] font-medium tracking-wider border border-primary/30 inline-flex items-center">
                     {step.n}
                   </span>
@@ -116,11 +117,11 @@ function Landing() {
                   <p className="mt-2 text-sm text-muted-foreground leading-relaxed">{step.body}</p>
                 </div>
                 {i < arr.length - 1 && (
-                  <div key={`a-${i}`} className="hidden md:grid place-items-center text-muted-foreground">
+                  <div className="hidden md:grid place-items-center text-muted-foreground">
                     <ArrowRight className="h-4 w-4" />
                   </div>
                 )}
-              </>
+              </Fragment>
             ))}
           </div>
         </div>
