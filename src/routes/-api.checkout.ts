@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
 export const createCheckoutSession = createServerFn({ method: "POST" })
-  .inputValidator(z.object({
+  .validator(z.object({
     priceId: z.string().min(1),
     tier: z.string().optional(),
   }))

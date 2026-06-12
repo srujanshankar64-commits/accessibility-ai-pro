@@ -85,7 +85,7 @@ async function getUserSettings(supabase: any, userId: string) {
 
 export const runAudit = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((data: unknown) => z.object({ url: z.string().url() }).parse(data))
+  .validator((data: unknown) => z.object({ url: z.string().url() }).parse(data))
   .handler(async ({ data, context }) => {
     const { url } = data;
     const settings = await getUserSettings(context.supabase, context.userId);
@@ -232,7 +232,7 @@ Return ONLY valid JSON with EXACTLY this schema:
 
 export const generateProposal = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((data: unknown) =>
+  .validator((data: unknown) =>
     z.object({
       auditId: z.string().uuid().optional(),
       url: z.string().optional(),
@@ -304,7 +304,7 @@ ${data.violations.map((v: any, i: number) => `${i + 1}. [${v.severity?.toUpperCa
 
 export const generateColdEmail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((data: unknown) =>
+  .validator((data: unknown) =>
     z.object({
       agencyName: z.string().default(""),
       clientName: z.string().default(""),
@@ -352,7 +352,7 @@ ${topCritical.map((v: any) => `- ${v.name}: ${v.description} (${v.wcag_criterion
 
 export const generateCertificate = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((data: unknown) =>
+  .validator((data: unknown) =>
     z.object({
       auditId: z.string().uuid(),
       url: z.string(),
@@ -402,7 +402,7 @@ export const getPlanStatus = createServerFn({ method: "GET" })
   });
 export const searchLeads = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((data: unknown) =>
+  .validator((data: unknown) =>
     z.object({ industry: z.string(), location: z.string() }).parse(data),
   )
   .handler(async ({ data }) => {
