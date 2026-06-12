@@ -98,13 +98,13 @@ function SettingsPage() {
       if (result.success && result.checkout_url) {
         window.location.href = result.checkout_url;
       } else if (result.success === false && result.error) {
-        toast.error(`Checkout Error: ${result.error}. Dodo Payments account may be under review (24-48 hours).`);
+        toast.error(`Checkout Error: ${result.error}`);
       } else {
         throw new Error("Invalid response from checkout session");
       }
     } catch (error) {
       console.error("Checkout error:", error);
-      toast.error(`${error instanceof Error ? error.message : "Failed to initiate checkout"}. Account may be under review.`);
+      toast.error(`${error instanceof Error ? error.message : "Failed to initiate checkout"}`);
     }
   };
 

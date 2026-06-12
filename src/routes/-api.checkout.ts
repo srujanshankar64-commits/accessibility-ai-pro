@@ -30,9 +30,9 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
             product_id: priceId,
             quantity: 1,
           }],
-          success_url: `${process.env.VITE_SUPABASE_URL || 'http://localhost:8080'}/audit?checkout=success`,
-          cancel_url: `${process.env.VITE_SUPABASE_URL || 'http://localhost:8080'}/?checkout=cancelled`,
-          webhook_url: `${process.env.VITE_SUPABASE_URL || 'http://localhost:8080'}/api/webhooks/dodo`,
+          success_url: `${process.env.VITE_SUPABASE_URL || 'http://localhost:8081'}/audit?checkout=success`,
+          cancel_url: `${process.env.VITE_SUPABASE_URL || 'http://localhost:8081'}/?checkout=cancelled`,
+          webhook_url: `${process.env.VITE_SUPABASE_URL || 'http://localhost:8081'}/api/webhooks/dodo`,
           metadata: {
             tier: tier || 'starter',
           },

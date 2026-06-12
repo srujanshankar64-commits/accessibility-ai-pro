@@ -28,13 +28,13 @@ function Landing() {
         window.location.href = result.checkout_url;
       } else if (result.success === false && result.error) {
         // Show error message to user
-        alert(`Checkout Error: ${result.error}\n\nNote: If your Dodo Payments account is under review, please wait 24-48 hours for approval.`);
+        alert(`Checkout Error: ${result.error}`);
       } else {
         throw new Error("Invalid response from checkout session");
       }
     } catch (error) {
       console.error("Checkout error:", error);
-      alert(`Checkout failed: ${error instanceof Error ? error.message : "Unknown error"}\n\nNote: Dodo Payments account may be under review. Please try again later.`);
+      alert(`Checkout failed: ${error instanceof Error ? error.message : "Unknown error"}`);
     }
   };
 
