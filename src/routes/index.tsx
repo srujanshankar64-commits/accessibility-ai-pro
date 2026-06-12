@@ -212,7 +212,7 @@ function Landing() {
               features={["20 audits per month", "Full violation list (25+)", "Clean PDF export", "Proposal generator", "Cold email drafts", "30-day audit history"]}
               cta="Get started"
               variant="ghost"
-              priceId={process.env.NEXT_PUBLIC_DODO_STARTER_ID || "pdt_0Ngl3vET02otEHOXHqvAx"}
+              priceId={process.env.VITE_DODO_STARTER_PRODUCT_ID || "pdt_0Ngl3vET02otEHOXHqvAx"}
               onCheckout={handleCheckout}
             />
             <PriceCard
@@ -223,7 +223,7 @@ function Landing() {
               cta="Start free trial"
               variant="primary"
               popular
-              priceId={process.env.NEXT_PUBLIC_DODO_AGENCY_ID || "pdt_0Ngl4mgraS8OdTZY3yGQN"}
+              priceId={process.env.VITE_DODO_AGENCY_PRODUCT_ID || "pdt_0Ngl4mgraS8OdTZY3yGQN"}
               onCheckout={handleCheckout}
             />
             <PriceCard
@@ -233,7 +233,7 @@ function Landing() {
               features={["Everything in Agency", "Auto monthly re-audits", "Score drop email alerts", "Bulk proposal generation", "10 team seats", "Performance dashboard", "Priority support"]}
               cta="Start free trial"
               variant="ghost"
-              priceId={process.env.NEXT_PUBLIC_DODO_BUSINESS_ID || "pdt_0Ngl5RCV0T6Vc40K5mtdr"}
+              priceId={process.env.VITE_DODO_BUSINESS_PRODUCT_ID || "pdt_0Ngl5RCV0T6Vc40K5mtdr"}
               onCheckout={handleCheckout}
             />
           </div>

@@ -82,18 +82,18 @@ function SettingsPage() {
   const handleUpgradeCheckout = async (tierName: string) => {
     try {
       const productIds: Record<string, string> = {
-        starter: process.env.NEXT_PUBLIC_DODO_STARTER_ID || "pdt_0Ngl3vET02otEHOXHqvAx",
-        agency: process.env.NEXT_PUBLIC_DODO_AGENCY_ID || "pdt_0Ngl4mgraS8OdTZY3yGQN",
-        business: process.env.NEXT_PUBLIC_DODO_BUSINESS_ID || "pdt_0Ngl5RCV0T6Vc40K5mtdr",
+        starter: process.env.VITE_DODO_STARTER_PRODUCT_ID || "pdt_0Ngl3vET02otEHOXHqvAx",
+        agency: process.env.VITE_DODO_AGENCY_PRODUCT_ID || "pdt_0Ngl4mgraS8OdTZY3yGQN",
+        business: process.env.VITE_DODO_BUSINESS_PRODUCT_ID || "pdt_0Ngl5RCV0T6Vc40K5mtdr",
       };
 
-      const productId = productIds[tierName];
-      if (!productId) {
+      const priceId = productIds[tierName];
+      if (!priceId) {
         toast.error(`No product ID found for ${tierName} plan`);
         return;
       }
 
-      const result = await createCheckoutSession({ data: { productId, tier: tierName } });
+      const result = await createCheckoutSession({ data: { priceId, tier: tierName } });
       
       if (result.success && result.checkout_url) {
         window.location.href = result.checkout_url;
