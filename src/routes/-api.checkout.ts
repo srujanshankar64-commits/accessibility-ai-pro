@@ -19,7 +19,7 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
       }
 
       // Use REST API directly instead of SDK
-      const response = await fetch("https://api.dodopayments.com/v1/checkout_sessions", {
+      const response = await fetch("https://live.dodopayments.com/v1/checkout_sessions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
