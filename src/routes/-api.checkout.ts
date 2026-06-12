@@ -3,13 +3,15 @@ import { z } from "zod";
 
 // Server function to create a Dodo Payments checkout session
 export const createCheckoutSession = createServerFn({ method: "POST" })
-  .inputValidator(z.object({ 
+  .validator(z.object({ 
     priceId: z.string().min(1),
     tier: z.string().optional(),
   }))
   .handler(async ({ data }) => {
     try {
       const { priceId, tier } = data;
+
+      console.log("Creating checkout session with:", { priceId, tier });
 
       // Check if Dodo Payments API key is configured
       if (!process.env.DODO_PAYMENTS_API_KEY) {
@@ -24,7 +26,10 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
           "Authorization": `Bearer ${process.env.DODO_PAYMENTS_API_KEY}`,
         },
         body: JSON.stringify({
-          price_id: priceId,
+          product_cart: [{
+            product_id: priceId,
+            quantity: 1,
+          }],
           success_url: `${process.env.VITE_SUPABASE_URL || 'http://localhost:8080'}/audit?checkout=success`,
           cancel_url: `${process.env.VITE_SUPABASE_URL || 'http://localhost:8080'}/?checkout=cancelled`,
           webhook_url: `${process.env.VITE_SUPABASE_URL || 'http://localhost:8080'}/api/webhooks/dodo`,
@@ -34,12 +39,16 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
         }),
       });
 
+      console.log("Dodo Payments API response status:", response.status);
+
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
+        console.error("Dodo Payments API error:", errorData);
         throw new Error(`Dodo Payments API error: ${response.status} - ${errorData.message || response.statusText}`);
       }
 
       const checkoutSession = await response.json();
+      console.log("Checkout session created:", checkoutSession);
 
       // Return the checkout URL to redirect the user
       return {

@@ -19,9 +19,9 @@ export const Route = createFileRoute("/")({
 function Landing() {
   const navigate = useNavigate();
 
-  const handleCheckout = async (tier: string, productId: string) => {
+  const handleCheckout = async (tier: string, priceId: string) => {
     try {
-      const result = await createCheckoutSession({ data: { productId, tier } });
+      const result = await createCheckoutSession({ data: { priceId, tier } });
       
       if (result.success && result.checkout_url) {
         // Redirect to Dodo Payments checkout URL
