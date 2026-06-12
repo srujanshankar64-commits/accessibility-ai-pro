@@ -3,7 +3,7 @@ import { z } from "zod";
 
 // Server function to create a Dodo Payments checkout session
 export const createCheckoutSession = createServerFn({ method: "POST" })
-  .inputValidator(z.object({ 
+  .validator(z.object({ 
     priceId: z.string().min(1),
     tier: z.string().optional(),
   }))
