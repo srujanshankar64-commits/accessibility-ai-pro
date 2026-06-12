@@ -53,9 +53,10 @@ function ProposalPage() {
   const [plan, setPlan] = useState("free");
   const [content, setContent] = useState<ProposalContent>({
     executive_summary: "",
+    seo_analysis: "",
     compliance_risk: "",
     violation_summary: "",
-    reremediation_plan: "",
+    remediation_plan: "",
     investment: "",
     roi_statement: "",
     next_steps: "",
@@ -161,7 +162,7 @@ function ProposalPage() {
     doc.setFillColor(r, g, b);
     doc.rect(0, 0, W, 8, "F");
 
-    if (!isWhiteLabel && currentPlan !== "starter") {
+    if (currentPlan === "free") {
       doc.setTextColor(240, 240, 245);
       doc.setFontSize(54);
       doc.setFont("helvetica", "bold");
@@ -187,11 +188,12 @@ function ProposalPage() {
 
     const sections: [string, string][] = [
       ["Executive Summary", content.executive_summary],
+      ["SEO & Accessibility Analysis", content.seo_analysis],
       ["Compliance Risk", content.compliance_risk],
       ["Violations Found", (seed.violations ?? []).map((v, i) =>
         `${i + 1}. [${v.severity?.toUpperCase()}] ${v.name} (${v.wcag_criterion})\n   ${v.description}`
       ).join("\n\n")],
-      ["Remediation Plan", content.reremediation_plan],
+      ["Remediation Plan", content.remediation_plan],
       ["Investment", content.investment || `Project scope fees range: $${priceMin.toLocaleString()} – $${priceMax.toLocaleString()}`],
       ["Return on Investment", content.roi_statement],
       ["Next Steps", content.next_steps],
@@ -353,6 +355,7 @@ function ProposalPage() {
             <div className="space-y-6 mt-6 animate-fade-in">
               {[
                 ["Executive Summary", content.executive_summary, "executive_summary"],
+                ["SEO & Accessibility Analysis", content.seo_analysis, "seo_analysis"],
                 ["Compliance Risk Assessment", content.compliance_risk, "compliance_risk"],
               ].map(([h, body, key]) => (
                 <section key={h} className="space-y-1.5">
@@ -392,7 +395,7 @@ function ProposalPage() {
               </section>
 
               {[
-                ["Technical Remediation Matrix", content.reremediation_plan, "reremediation_plan"],
+                ["Technical Remediation Matrix", content.remediation_plan, "remediation_plan"],
               ].map(([h, body, key]) => (
                 <section key={h} className="space-y-1.5">
                   <h3 className="text-xs font-bold uppercase tracking-wider" style={{ color: currentAccentColor }}>{h}</h3>

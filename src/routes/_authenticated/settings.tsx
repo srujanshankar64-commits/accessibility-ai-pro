@@ -127,28 +127,30 @@ function SettingsPage() {
         <p className="mt-2 text-sm text-muted-foreground">Manage your agency branding, active integrations, and subscription billing profiles.</p>
       </header>
 
-      {/* DEV TOOL - Remove before public launch */}
-      <section className="p-4 border border-dashed border-purple-500/40 rounded-xl bg-purple-950/10 space-y-3">
-        <p className="text-xs font-bold text-purple-400 uppercase tracking-widest">Dev Tools — Set Plan for Testing</p>
-        <div className="flex flex-wrap gap-2">
-          {["free", "starter", "agency", "business"].map((p) => (
-            <button
-              key={p}
-              onClick={() => setDevPlan(p)}
-              disabled={settingPlan || currentPlan === p}
-              className={cn(
-                "text-xs px-3 py-1.5 rounded-md font-semibold border transition-all",
-                currentPlan === p
-                  ? "border-purple-500 bg-purple-500/20 text-purple-300"
-                  : "border-slate-700 bg-slate-900 text-slate-400 hover:border-purple-500 hover:text-purple-300"
-              )}
-            >
-              {currentPlan === p ? `✓ ${p}` : `Set ${p}`}
-            </button>
-          ))}
-          {settingPlan && <Loader2 className="h-4 w-4 animate-spin text-purple-400 self-center" />}
-        </div>
-      </section>
+      {/* DEV TOOL - Admin only */}
+      {user.email === 'srujanshankar64@gmail.com' && (
+        <section className="p-4 border border-dashed border-purple-500/40 rounded-xl bg-purple-950/10 space-y-3">
+          <p className="text-xs font-bold text-purple-400 uppercase tracking-widest">Dev Tools — Set Plan for Testing</p>
+          <div className="flex flex-wrap gap-2">
+            {["free", "starter", "agency", "business"].map((p) => (
+              <button
+                key={p}
+                onClick={() => setDevPlan(p)}
+                disabled={settingPlan || currentPlan === p}
+                className={cn(
+                  "text-xs px-3 py-1.5 rounded-md font-semibold border transition-all",
+                  currentPlan === p
+                    ? "border-purple-500 bg-purple-500/20 text-purple-300"
+                    : "border-slate-700 bg-slate-900 text-slate-400 hover:border-purple-500 hover:text-purple-300"
+                )}
+              >
+                {currentPlan === p ? `✓ ${p}` : `Set ${p}`}
+              </button>
+            ))}
+            {settingPlan && <Loader2 className="h-4 w-4 animate-spin text-purple-400 self-center" />}
+          </div>
+        </section>
+      )}
 
       <div className="grid lg:grid-cols-[1.2fr_1fr] gap-8 items-start">
         <div className="space-y-8">

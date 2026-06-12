@@ -1,9 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
-// Server function to create a Dodo Payments checkout session
 export const createCheckoutSession = createServerFn({ method: "POST" })
-  .validator(z.object({ 
+  .validator(z.object({
     priceId: z.string().min(1),
     tier: z.string().optional(),
   }))
@@ -13,13 +12,13 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
 
       console.log("Creating checkout session with:", { priceId, tier });
 
-      // Check if Dodo Payments API key is configured
       if (!process.env.DODO_PAYMENTS_API_KEY) {
         throw new Error("Dodo Payments API key not configured");
       }
 
-      // Use REST API directly instead of SDK
-      const response = await fetch("https://live.dodopayments.com/v1/checkout_sessions", {
+      const appUrl = "https://accessibility-ai-pro.lovable.app";
+
+      const response = await fetch("https://test.dodopayments.com/v1/checkout_sessions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -30,9 +29,9 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
             product_id: priceId,
             quantity: 1,
           }],
-          success_url: `${process.env.VITE_SUPABASE_URL || 'http://localhost:8081'}/audit?checkout=success`,
-          cancel_url: `${process.env.VITE_SUPABASE_URL || 'http://localhost:8081'}/?checkout=cancelled`,
-          webhook_url: `${process.env.VITE_SUPABASE_URL || 'http://localhost:8081'}/api/webhooks/dodo`,
+          success_url: `${appUrl}/audit?checkout=success`,
+          cancel_url: `${appUrl}/?checkout=cancelled`,
+          webhook_url: `https://zkpwpumjacihcjisshod.supabase.co/functions/v1/dodo-webhook`,
           metadata: {
             tier: tier || 'starter',
           },
@@ -50,17 +49,13 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
       const checkoutSession = await response.json();
       console.log("Checkout session created:", checkoutSession);
 
-      // Return the checkout URL to redirect the user
       return {
         success: true,
         checkout_url: checkoutSession.checkout_url,
       };
     } catch (error) {
       console.error("Error creating checkout session:", error);
-      
-      // Return detailed error information
       const errorMessage = error instanceof Error ? error.message : "Failed to create checkout session";
-      
       return {
         success: false,
         error: errorMessage,

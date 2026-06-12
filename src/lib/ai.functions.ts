@@ -117,7 +117,7 @@ const plan = getPlan(settings?.plan, 'srujanshankar64@gmail.com');
 
     const system = `You are a senior WCAG 2.1 AA accessibility auditor with 10 years of experience. Your audits are used by digital agencies to sell remediation services to corporate entities.
 
-Your job is to produce an EXHAUSTIVE and REALISTIC audit. You MUST find and report every violation present. Do NOT be conservative. Real websites almost always have 15-25 violations. If you find fewer than 12, you are not looking hard enough.
+Your job is to produce an EXHAUSTIVE and REALISTIC audit. You MUST find and report every violation present. Do NOT be conservative.
 
 MANDATORY CHECKS:
 
@@ -162,7 +162,6 @@ ROBUST (score out of 25):
 SCORING RULES:
 - Start each category at 25. Subtract per violation: Critical = 6-8pts, Serious = 3-5pts, Moderate = 2-3pts, Minor = 1pt.
 - overall_score = sum of all four category scores (max 100).
-- Typical real website scores 35-65. Only excellent sites score above 80.
 
 ` + (includeCodeFixes
   ? `For each violation, include a "code_fix" field with the exact HTML/CSS/JavaScript code snippet that fixes the issue. Make it copy-paste ready for a developer.`
@@ -265,25 +264,27 @@ export const generateProposal = createServerFn({ method: "POST" })
     const system = `You are a senior B2B sales consultant writing a corporate compliance proposal on behalf of a digital agency.
 
 The proposal must:
-1. Open with an authoritative statement of the exact compliance liability the client inherits right now.
-2. Cross-reference specific legal mandates: EU Accessibility Act, US ADA Title II, UK Equality Act.
-3. Present violations as a prioritized risk mitigation structure.
-4. Frame remediation as high-value infrastructure stability with protective ROI.
-5. Present pricing as a professional engineering project quote.
-6. Close with a clear corporate action plan.
+1. Start with SEO and accessibility analysis - explain how their current accessibility issues are directly hurting their search rankings, organic traffic, and user experience. Mention specific SEO factors affected: crawlability, mobile usability, Core Web Vitals, and user engagement metrics.
+2. Connect accessibility improvements to tangible SEO benefits: higher rankings, increased organic traffic, better conversion rates, and improved brand perception.
+3. Then transition to compliance liability - cross-reference specific legal mandates: EU Accessibility Act, US ADA Title II, UK Equality Act.
+4. Present ALL violations found in detail - do not summarize or group them. List each specific violation with its impact and priority level.
+5. Frame remediation as a dual investment: legal compliance protection AND significant SEO/traffic growth.
+6. Present pricing as a professional engineering project quote with clear deliverables.
+7. Close with a clear corporate action plan and timeline.
 
-Tone: ${data.tone}. Write for a business executive, not a junior developer. Keep layout sleek, ultra-clean, and urgent.
+Tone: ${data.tone}. Write for a business executive, not a junior developer. Be thorough, specific, and data-driven. Avoid generic fluff - use concrete details from the actual audit findings.
 
 Output STRICTLY JSON:
 {
-  "executive_summary": "3-4 sentences. Name the client, reference their industry, state violations found, name laws violated.",
-  "compliance_risk": "2 paragraphs. Legal exposure with real penalty ranges. Business risk beyond legal.",
-  "violation_summary": "2-3 sentences summarising the most critical findings in plain English.",
-  "remediation_plan": "3-4 sentences describing the SPECIFIC technical work to be done based on the violations found. Name actual fixes like 'add alt attributes to all images', 'implement skip navigation link', 'add ARIA landmark regions'. State the outcome: full WCAG 2.1 AA compliance within 4 weeks.",
-  "investment": "Professional price range statement referencing the estimated work hours.",
-  "roi_statement": "2 sentences on ROI — avoiding lawsuit costs, reaching 1.3 billion people with disabilities, improved SEO.",
-  "next_steps": "3-step CTA: approve proposal, kickoff call, compliance certificate in 4 weeks.",
-  "follow_up_email": "4-sentence follow-up email sent 3 days later. Sentence 1: reference the specific audit report sent for their website by name. Sentence 2: name ONE specific critical violation found on their actual site. Sentence 3: state the exact legal risk and fine amount. Sentence 4: invite them to a 15-minute call. NEVER use 'I hope this email finds you well', 'touching base', 'reaching out', or any filler phrases. Sound like a real human who actually audited their site."
+  "executive_summary": "4-5 sentences. Start with SEO impact, then transition to accessibility compliance. Name the client, reference their industry, state total violations found, explain the dual benefit: legal protection + SEO improvement.",
+  "seo_analysis": "3-4 paragraphs explaining how current accessibility issues are hurting their SEO rankings. Cover: (1) Mobile usability and Core Web Vitals impact, (2) Crawlability and indexability issues from poor HTML structure, (3) User engagement metrics (bounce rate, time on site) affected by accessibility barriers, (4) Competitive disadvantage vs accessible competitors. Include specific examples from their actual violations.",
+  "compliance_risk": "2-3 paragraphs. Legal exposure with real penalty ranges. Business risk beyond legal: reputation damage, customer alienation, lost revenue. Reference specific laws: EU Accessibility Act (fines up to €100,000), ADA Title II (DOJ enforcement, private lawsuits), UK Equality Act.",
+  "violation_summary": "Detailed breakdown of ALL violations found. Group by severity but list each one specifically. For critical/serious violations, explain the direct business impact. Do not summarize - be comprehensive.",
+  "remediation_plan": "4-5 sentences describing the SPECIFIC technical work to be done. Name actual fixes based on the violations found: 'add alt attributes to all 47 missing images', 'implement skip navigation link', 'add ARIA landmark regions to all pages', 'fix color contrast on 23 elements', 'ensure all form inputs have proper labels'. State the outcome: full WCAG 2.1 AA compliance within 4 weeks, with projected SEO improvements.",
+  "investment": "Professional price range statement referencing the estimated work hours (${totalFixTime} hours). Break down by phase if relevant. Emphasize this is an investment with measurable ROI.",
+  "roi_statement": "3-4 sentences on ROI. Quantify where possible: potential SEO traffic increase (15-30% typical), conversion rate improvement, legal cost avoidance, market expansion to 1.3 billion people with disabilities. Frame as competitive advantage.",
+  "next_steps": "4-step CTA: (1) approve proposal, (2) kickoff call within 48 hours, (3) technical audit kickoff, (4) compliance certificate delivery in 4 weeks.",
+  "follow_up_email": "5-sentence follow-up email sent 3 days later. Sentence 1: reference the specific audit report sent for their website by name. Sentence 2: mention the SEO impact finding from their actual site. Sentence 3: name ONE specific critical violation found on their actual site. Sentence 4: state the exact legal risk and potential fine amount. Sentence 5: invite them to a 15-minute call with a specific time suggestion. NEVER use 'I hope this email finds you well', 'touching base', 'reaching out', or any filler phrases. Sound like a real human who actually audited their site and cares about their business success."
 }`;
 
     const user = `Agency: ${data.agencyName}
@@ -326,15 +327,17 @@ export const generateColdEmail = createServerFn({ method: "POST" })
 
     const system = `You are an elite enterprise account manager generating highly researched cold outreach text for a corporate target.
 
-The layout must:
+The email must:
 - Instantly demonstrate tailored research, not automated template phrasing
-- Anchor on a definitive infrastructure fault identified from their real web framework
-- Reference statutory liabilities directly and objectively
-- Total length under 120 words
-- Subject header custom-mapped to their domain profile
+- Start with a specific observation about their website's SEO or accessibility issues that you actually found
+- Connect accessibility problems to tangible business impact: search rankings, organic traffic, conversion rates, legal risk
+- Reference specific violations from their actual audit with concrete details
+- Sound like a real human who genuinely audited their site and wants to help them succeed
+- Total length under 150 words
+- Subject header must be specific to their domain and the actual issue found
 
 Return JSON: { "subject": string, "body": string }
-Do NOT include conversational filler like "I hope this email finds you well", "touching base", or "reaching out".`;
+Do NOT include conversational filler like "I hope this email finds you well", "touching base", "reaching out", "checking in", or any generic sales phrases. Be direct, specific, and helpful.`;
 
     const user = `Agency: ${data.agencyName}
 Prospect: ${data.clientName}
@@ -404,14 +407,22 @@ export const searchLeads = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const { industry, location } = data;
+    // Validate and sanitize location to prevent injection
+    const sanitizedLocation = location.replace(/[^\w\s\-.,]/g, '').trim().slice(0, 100);
+    if (!sanitizedLocation) {
+      throw new Error("Invalid location parameter");
+    }
     let realBusinesses: any[] = [];
     try {
-      const query = `[out:json][timeout:25];area[name="${location}"]->.s;(node["name"]["website"](area.s);way["name"]["website"](area.s););out body 20;`;
+      const query = `[out:json][timeout:25];area[name="${sanitizedLocation}"]->.s;(node["name"]["website"](area.s);way["name"]["website"](area.s););out body 20;`;
       const r = await fetch("https://overpass-api.de/api/interpreter", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: `data=${encodeURIComponent(query)}`,
       });
+      if (!r.ok) {
+        throw new Error("Failed to fetch business data from Overpass API");
+      }
       const osmData = await r.json();
       realBusinesses = (osmData.elements ?? [])
         .filter((el: any) => el.tags?.website && el.tags?.name)
@@ -423,17 +434,25 @@ export const searchLeads = createServerFn({ method: "POST" })
           ranking: `Top ${(i + 1) * 5} local`,
           common_flaw: "",
         }));
-    } catch { realBusinesses = []; }
+    } catch (error) {
+      throw new Error(`Failed to fetch business data: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
     if (realBusinesses.length >= 3) {
       try {
         const system = `For each business in the JSON array, add a realistic common_flaw based on typical WCAG issues for that business type. Return the SAME array with common_flaw filled in. Return ONLY valid JSON array.`;
         const raw = await callGemini(system, JSON.stringify(realBusinesses), undefined);
         const parsed = parseJSON(raw);
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      } catch { return realBusinesses; }
+      } catch (error) {
+        throw new Error(`Failed to enrich business data with AI: ${error instanceof Error ? error.message : "Unknown error"}`);
+      }
     }
-    const system = `Generate 8 realistic local businesses for ${industry} in ${location} with poor web accessibility. Return ONLY a JSON array: [{"id":"string","name":"string","website":"string","ranking":"string","common_flaw":"string"}]`;
-    const raw = await callGemini(system, `Industry: ${industry}\nLocation: ${location}`, undefined);
-    const parsed = parseJSON(raw);
-    return Array.isArray(parsed) ? parsed : (parsed.leads ?? []);
+    try {
+      const system = `Generate 8 realistic local businesses for ${industry} in ${location} with poor web accessibility. Return ONLY a JSON array: [{"id":"string","name":"string","website":"string","ranking":"string","common_flaw":"string"}]`;
+      const raw = await callGemini(system, `Industry: ${industry}\nLocation: ${location}`, undefined);
+      const parsed = parseJSON(raw);
+      return Array.isArray(parsed) ? parsed : (parsed.leads ?? []);
+    } catch (error) {
+      throw new Error(`Failed to generate business leads: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
   });

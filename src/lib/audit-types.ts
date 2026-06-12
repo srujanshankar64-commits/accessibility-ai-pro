@@ -26,8 +26,12 @@ export interface AuditResult {
 
 export interface ProposalContent {
   executive_summary: string;
-  legal_risk: string;
-  solution: string;
+  seo_analysis: string;
+  compliance_risk: string;
+  violation_summary: string;
+  remediation_plan: string;
+  investment: string;
+  roi_statement: string;
   next_steps: string;
   follow_up_email: string;
 }
