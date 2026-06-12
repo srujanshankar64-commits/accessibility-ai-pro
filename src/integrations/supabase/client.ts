@@ -15,6 +15,12 @@ function createSupabaseClient() {
     ];
     const message = `Missing Supabase environment variable(s): ${missing.join(', ')}. Connect Supabase in Lovable Cloud.`;
     console.error(`[Supabase] ${message}`);
+    console.error(`[Supabase] Current env vars:`, {
+      hasUrl: !!SUPABASE_URL,
+      hasKey: !!SUPABASE_PUBLISHABLE_KEY,
+      urlPrefix: SUPABASE_URL ? SUPABASE_URL.substring(0, 10) + '...' : 'none',
+      keyPrefix: SUPABASE_PUBLISHABLE_KEY ? SUPABASE_PUBLISHABLE_KEY.substring(0, 10) + '...' : 'none',
+    });
     throw new Error(message);
   }
 
