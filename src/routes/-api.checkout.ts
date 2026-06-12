@@ -4,34 +4,42 @@ import { z } from "zod";
 // Server function to create a Dodo Payments checkout session
 export const createCheckoutSession = createServerFn({ method: "POST" })
   .inputValidator(z.object({ 
-    productId: z.string().min(1),
+    priceId: z.string().min(1),
     tier: z.string().optional(),
   }))
   .handler(async ({ data }) => {
     try {
-      const { productId, tier } = data;
+      const { priceId, tier } = data;
 
       // Check if Dodo Payments API key is configured
       if (!process.env.DODO_PAYMENTS_API_KEY) {
         throw new Error("Dodo Payments API key not configured");
       }
 
-      // Import Dodo Payments SDK
-      const DodoPayments = (await import("dodopayments")).default;
-      
-      // Initialize Dodo Payments client with API key from environment
-      const client = new DodoPayments(process.env.DODO_PAYMENTS_API_KEY);
-
-      // Create a checkout session
-      const checkoutSession = await client.checkoutSessions.create({
-        product_id: productId,
-        success_url: `${process.env.VITE_SUPABASE_URL || 'http://localhost:8080'}/audit?checkout=success`,
-        cancel_url: `${process.env.VITE_SUPABASE_URL || 'http://localhost:8080'}/?checkout=cancelled`,
-        webhook_url: `${process.env.VITE_SUPABASE_URL || 'http://localhost:8080'}/api/webhooks/dodo`,
-        metadata: {
-          tier: tier || 'starter',
+      // Use REST API directly instead of SDK
+      const response = await fetch("https://api.dodopayments.com/v1/checkout_sessions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${process.env.DODO_PAYMENTS_API_KEY}`,
         },
+        body: JSON.stringify({
+          price_id: priceId,
+          success_url: `${process.env.VITE_SUPABASE_URL || 'http://localhost:8080'}/audit?checkout=success`,
+          cancel_url: `${process.env.VITE_SUPABASE_URL || 'http://localhost:8080'}/?checkout=cancelled`,
+          webhook_url: `${process.env.VITE_SUPABASE_URL || 'http://localhost:8080'}/api/webhooks/dodo`,
+          metadata: {
+            tier: tier || 'starter',
+          },
+        }),
       });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(`Dodo Payments API error: ${response.status} - ${errorData.message || response.statusText}`);
+      }
+
+      const checkoutSession = await response.json();
 
       // Return the checkout URL to redirect the user
       return {
