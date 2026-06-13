@@ -65,8 +65,8 @@ function NewAuditPage() {
   useEffect(() => {
     loadRecent();
     supabase.from("settings").select("plan, audits_used").maybeSingle().then(({ data }) => {
-      if (data?.plan) setPlan(data.plan);
-      if (data?.audits_used) setUsed(data.audits_used);
+      if (data && 'plan' in data) setPlan((data as any).plan);
+      if (data && 'audits_used' in data) setUsed((data as any).audits_used);
     });
   }, []);
 

@@ -75,12 +75,12 @@ function ProposalPage() {
     }
 
     supabase.from("settings").select("agency_name, agency_logo_url, brand_color, plan").maybeSingle().then(({ data }) => {
-      if (data?.agency_name) setAgency(data.agency_name);
-      if (data?.agency_logo_url) setAgencyLogo(data.agency_logo_url);
-      if (data?.brand_color) setBrandColor(data.brand_color);
-      if (data?.plan) setPlan(data.plan ?? "free");
+      if (data && 'agency_name' in data) setAgency((data as any).agency_name);
+      if (data && 'agency_logo_url' in data) setAgencyLogo((data as any).agency_logo_url);
+      if (data && 'brand_color' in data) setBrandColor((data as any).brand_color);
+      if (data && 'plan' in data) setPlan((data as any).plan ?? "free");
 
-      const currentPlan = getPlan(data?.plan, 'srujanshankar64@gmail.com');
+      const currentPlan = getPlan((data as any)?.plan, 'srujanshankar64@gmail.com');
       if (
         !hasAutoRun.current &&
         parsedSeed.violations?.length &&
@@ -88,7 +88,7 @@ function ProposalPage() {
         TIER[currentPlan].proposals
       ) {
         hasAutoRun.current = true;
-        autoGenerate(parsedSeed, data?.agency_name ?? "Your Agency");
+        autoGenerate(parsedSeed, (data as any)?.agency_name ?? "Your Agency");
       }
     });
   }, []);
@@ -107,8 +107,8 @@ function ProposalPage() {
       }});
       setContent(out as ProposalContent);
       if (s.auditId) {
-        await supabase.from("audits").update({ has_proposal: true }).eq("id", s.auditId);
-        await supabase.from("proposals").insert({
+        await (supabase.from("audits") as any).update({ has_proposal: true }).eq("id", s.auditId);
+        await (supabase.from("proposals") as any).insert({
           audit_id: s.auditId, client_name: "", client_industry: "General Business",
           tone: "professional", price_min: 2500, price_max: 8000,
           content: out as any, selected_violations: (s.violations ?? []) as any,
@@ -136,8 +136,8 @@ function ProposalPage() {
       }});
       setContent(out as ProposalContent);
       if (seed.auditId) {
-        await supabase.from("audits").update({ has_proposal: true }).eq("id", seed.auditId);
-        await supabase.from("proposals").insert({
+        await (supabase.from("audits") as any).update({ has_proposal: true }).eq("id", seed.auditId);
+        await (supabase.from("proposals") as any).insert({
           audit_id: seed.auditId, client_name: client, client_industry: industry,
           tone, price_min: priceMin, price_max: priceMax,
           content: out as any, selected_violations: (seed.violations ?? []) as any,

@@ -11,18 +11,23 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
     try {
       const { priceId, tier } = data;
 
+      if (!process.env.DODO_PAYMENTS_API_KEY) {
+        throw new Error("DODO_PAYMENTS_API_KEY environment variable is not configured");
+      }
+
       // Import Dodo Payments SDK
       const DodoPayments = (await import("dodopayments")).default;
       
       // Initialize Dodo Payments client with API key from environment
-      const client = new DodoPayments(process.env.DODO_PAYMENTS_API_KEY);
+      const client = new DodoPayments({
+        bearerToken: process.env.DODO_PAYMENTS_API_KEY,
+      });
 
       // Create a checkout session
       const checkoutSession = await client.checkoutSessions.create({
-        product_id: priceId, // Use the provided priceId (e.g., 'prod_123')
+        product_cart: [{ product_id: priceId, quantity: 1 }],
         success_url: `${process.env.VITE_SUPABASE_URL || 'http://localhost:5173'}/audit?checkout=success`,
         cancel_url: `${process.env.VITE_SUPABASE_URL || 'http://localhost:5173'}/?checkout=cancelled`,
-        webhook_url: `${process.env.VITE_SUPABASE_URL || 'http://localhost:5173'}/api/webhooks/dodo`,
         metadata: {
           tier: tier || 'starter',
         },

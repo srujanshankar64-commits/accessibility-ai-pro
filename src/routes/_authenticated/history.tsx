@@ -45,7 +45,7 @@ function HistoryPage() {
       setLoading(false);
     })();
     supabase.from("settings").select("plan").maybeSingle().then(({ data }) => {
-      if (data?.plan) setPlan(data.plan);
+      if (data && 'plan' in data) setPlan((data as any).plan);
     });
   }, []);
 
@@ -92,7 +92,7 @@ function HistoryPage() {
       .from("settings")
       .select("agency_name")
       .maybeSingle();
-    const agencyName = settings?.agency_name ?? "Your Agency";
+    const agencyName = (settings as any)?.agency_name ?? "Your Agency";
 
     for (let i = 0; i < targets.length; i++) {
       const r = targets[i];
@@ -147,7 +147,7 @@ function HistoryPage() {
 
         zip.file(`proposal_${domain}.txt`, txt);
 
-        await supabase.from("audits").update({ has_proposal: true }).eq("id", r.id);
+        await (supabase.from("audits") as any).update({ has_proposal: true }).eq("id", r.id);
       } catch {
         // skip failed ones silently
       }

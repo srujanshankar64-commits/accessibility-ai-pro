@@ -29,7 +29,7 @@ function AppLayout() {
 
   useEffect(() => {
     supabase.from("settings").select("plan").maybeSingle().then(({ data }) => {
-      if (data?.plan) setPlan(data.plan);
+      if (data && 'plan' in data) setPlan((data as any).plan);
     });
   }, []);
 
