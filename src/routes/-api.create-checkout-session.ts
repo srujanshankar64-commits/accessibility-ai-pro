@@ -3,7 +3,7 @@ import { z } from "zod";
 
 // Server function to create a Dodo Payments checkout session
 export const createCheckoutSession = createServerFn({ method: "POST" })
-  .validator(z.object({ 
+  .inputValidator(z.object({ 
     priceId: z.string().min(1),
     tier: z.string().optional(),
   }))
@@ -26,12 +26,11 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
       // Create a checkout session
       const checkoutSession = await client.checkoutSessions.create({
         product_cart: [{ product_id: priceId, quantity: 1 }],
-        success_url: `${process.env.VITE_SUPABASE_URL || 'http://localhost:5173'}/audit?checkout=success`,
-        cancel_url: `${process.env.VITE_SUPABASE_URL || 'http://localhost:5173'}/?checkout=cancelled`,
+        return_url: `${process.env.VITE_SUPABASE_URL || 'http://localhost:5173'}/audit?checkout=success`,
         metadata: {
           tier: tier || 'starter',
         },
-      });
+      } as any);
 
       // Return the checkout URL to redirect the user
       return {
