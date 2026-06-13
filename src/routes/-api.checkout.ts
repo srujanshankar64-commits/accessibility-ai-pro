@@ -13,6 +13,7 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
 
       const client = new DodoPayments({
         bearerToken: process.env.DODO_PAYMENTS_API_KEY || "",
+        environment: (process.env.DODO_PAYMENTS_ENVIRONMENT as any) || (process.env.NODE_ENV === 'production' ? 'live_mode' : 'test_mode'),
       });
 
       const checkout = await client.checkoutSessions.create({
