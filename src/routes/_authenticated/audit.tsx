@@ -85,11 +85,14 @@ function NewAuditPage() {
     
     const loadingSteps = [
       "Connecting to website...",
-      "Analyzing page structure...",
-      "Scanning for accessibility violations...",
-      "Checking WCAG 2.1 compliance...",
-      "Generating detailed report...",
-      "Finalizing results..."
+      "Loading page in headless browser...",
+      "Mapping DOM structure and landmarks...",
+      "Scanning images, icons & media for alt text...",
+      "Testing color contrast across all text...",
+      "Checking keyboard navigation & focus order...",
+      "Auditing ARIA roles and semantic HTML...",
+      "Cross-referencing 25+ WCAG 2.1 AA criteria...",
+      "Compiling violations and writing your report...",
     ];
     
     const stepInterval = setInterval(() => {
@@ -99,11 +102,13 @@ function NewAuditPage() {
         }
         return prev;
       });
-    }, 2000);
+    }, 1800);
     
     try {
       const result = await auditFn({ data: { url } });
       clearInterval(stepInterval);
+      setLoadingStep(loadingSteps.length - 1);
+      await new Promise((r) => setTimeout(r, 2000));
       setAudit(result);
       setUsed((u) => u + 1);
       const preset = new Set<string>(
@@ -116,6 +121,8 @@ function NewAuditPage() {
       loadRecent();
     } catch (err: any) {
       clearInterval(stepInterval);
+      setLoadingStep(loadingSteps.length - 1);
+      await new Promise((r) => setTimeout(r, 2000));
       toast.error(err.message ?? "Audit failed");
     } finally { 
       setLoading(false);
@@ -244,7 +251,7 @@ function NewAuditPage() {
             <div className="flex-1">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm font-medium text-foreground">
-                  {["Connecting to website...", "Analyzing page structure...", "Scanning for accessibility violations...", "Checking WCAG 2.1 compliance...", "Generating detailed report...", "Finalizing results..."][loadingStep]}
+                  {["Connecting to website...", "Loading page in headless browser...", "Mapping DOM structure and landmarks...", "Scanning images, icons & media for alt text...", "Testing color contrast across all text...", "Checking keyboard navigation & focus order...", "Auditing ARIA roles and semantic HTML...", "Cross-referencing 25+ WCAG 2.1 AA criteria...", "Compiling violations and writing your report..."][loadingStep]}
                 </span>
                 <span className="text-xs text-muted-foreground">{Math.round((loadingStep + 1) / 6 * 100)}%</span>
               </div>
@@ -257,12 +264,15 @@ function NewAuditPage() {
             </div>
           </div>
           <div className="text-xs text-muted-foreground leading-relaxed">
-            {loadingStep === 0 && "We're establishing a secure connection to analyze the website's accessibility features. This usually takes a few seconds..."}
-            {loadingStep === 1 && "Our AI is now examining the page structure, HTML elements, and content hierarchy to identify potential accessibility issues."}
-            {loadingStep === 2 && "Scanning through 25+ WCAG 2.1 criteria including keyboard navigation, color contrast, and screen reader compatibility."}
-            {loadingStep === 3 && "Cross-referencing findings against international accessibility standards to ensure comprehensive compliance assessment."}
-            {loadingStep === 4 && "Generating a detailed report with actionable recommendations and code fixes for each violation found."}
-            {loadingStep === 5 && "Almost there! Finalizing your accessibility report with compliance scores and remediation priorities."}
+            {loadingStep === 0 && "Establishing a secure connection to the target website to begin the scan..."}
+            {loadingStep === 1 && "Rendering the page exactly as a real visitor would see it, including dynamic content..."}
+            {loadingStep === 2 && "Building a map of headings, landmarks, and the document outline to check semantic structure..."}
+            {loadingStep === 3 && "Checking every image, icon, and media element for missing or meaningless alt text (WCAG 1.1.1)..."}
+            {loadingStep === 4 && "Measuring color contrast ratios across all text and UI components against the 4.5:1 AA threshold..."}
+            {loadingStep === 5 && "Simulating keyboard-only navigation to test focus order, skip links, and visible focus indicators..."}
+            {loadingStep === 6 && "Inspecting ARIA roles, labels, and landmark regions used by screen readers and assistive tech..."}
+            {loadingStep === 7 && "Cross-referencing every finding against 25+ WCAG 2.1 AA success criteria across all four principles..."}
+            {loadingStep === 8 && "Scoring each category, prioritizing violations by severity, and assembling your compliance report..."}
           </div>
         </div>
       )}
