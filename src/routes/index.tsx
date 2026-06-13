@@ -1,4 +1,4 @@
-import { Fragment } from "react";
+import { Fragment, useState } from "react";
 import { createFileRoute, Link, redirect, useNavigate } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 import { createCheckoutSession } from "./-api.checkout";
@@ -272,6 +272,33 @@ function Landing() {
           <Link to="/auth" className="mt-8 h-12 inline-flex items-center px-6 rounded-md bg-primary hover:bg-primary-hover text-primary-foreground text-sm font-medium transition-colors">
             Audit a website now <ArrowRight className="h-4 w-4 ml-2" />
           </Link>
+        </div>
+      </section>
+
+      {/* SCORE BADGE EMBED */}
+      <section className="py-16 border-t border-border">
+        <div className="max-w-[900px] mx-auto px-6 text-center">
+          <p className="label-eyebrow text-center">Compliance badge</p>
+          <h2 className="font-display text-2xl sm:text-3xl text-center mt-3 mb-4">Show clients you take accessibility seriously.</h2>
+          <p className="text-muted-foreground text-sm mb-8">After every audit, get an embeddable compliance score badge to add to your agency website or client reports.</p>
+          <div className="card-elevated p-6 max-w-lg mx-auto text-left space-y-4">
+            <div className="flex items-center gap-3 p-3 bg-background rounded-md border border-border">
+              <div className="h-12 w-12 rounded-md bg-primary/10 border border-primary/20 grid place-items-center shrink-0">
+                <ShieldCheck className="h-6 w-6 text-primary" />
+              </div>
+              <div>
+                <div className="text-sm font-semibold text-foreground">WCAG 2.1 AA Compliant</div>
+                <div className="text-xs text-muted-foreground">Score: 94/100 · Audited by AccessAudit AI</div>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <p className="text-xs text-muted-foreground">Embed code:</p>
+              <div className="bg-background border border-border rounded-md p-3 font-mono text-xs text-muted-foreground overflow-x-auto">
+                {'<img src="https://accessibility-ai-pro.lovable.app/badge/YOUR-AUDIT-ID" alt="WCAG Compliant" />'}
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground text-center">Badge auto-updates when you re-audit · Available on all paid plans</p>
+          </div>
         </div>
       </section>
 
