@@ -359,7 +359,7 @@ export const generateProposal = createServerFn({ method: "POST" })
 
 CRITICAL RULES:
 1. INDUSTRY: Read the website URL and context to determine industry. If uncertain, ALWAYS use 'prominent digital platform' or 'online brand presence'. NEVER guess 'e-commerce' or 'retail' unless explicitly confirmed.
-2. SCORE PERCENTILE: After mentioning the compliance score, add exactly: 'This score places [domain] in the bottom ${100 - overall_score}% of audited platforms in our database.'
+2. SCORE PERCENTILE: After mentioning the compliance score, calculate (100 minus the actual score number) and add exactly: 'This score places [domain] in the bottom [calculated number]% of audited platforms in our database.' Example: if score is 58, write 'bottom 42% of audited platforms'.
 3. COMPETITOR HOOK: Include in executive_summary: 'Sites achieving WCAG AA compliance typically rank 2-3 positions higher for the same keywords than non-compliant competitors in your industry.'
 4. JURISDICTION DEADLINE: Detect from URL TLD and add to compliance_risk:
    - .com.au = 'Australian DDA compliance expected'
