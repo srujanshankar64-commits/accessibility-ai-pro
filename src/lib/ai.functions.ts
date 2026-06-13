@@ -448,6 +448,8 @@ The email must:
 - Sound like a real human who genuinely audited their site and wants to help them succeed
 - Total length under 150 words
 - Subject header must be specific to their domain and the actual issue found
+- Must cite a specific jurisdiction-specific legal deadline relevant to the violations (ADA Title II April 2026 for US, UK Equality Act for UK, AU DDA for Australia)
+- Must end with a clear call to action and sign off with exactly this agency name: ${data.agencyName}. NEVER invent a different agency name.
 
 Return JSON: { "subject": string, "body": string }
 Do NOT include conversational filler like "I hope this email finds you well", "touching base", "reaching out", "checking in", or any generic sales phrases. Be direct, specific, and helpful.`;
