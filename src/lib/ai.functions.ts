@@ -119,6 +119,100 @@ const plan = getPlan(settings?.plan, 'srujanshankar64@gmail.com');
 
 Your job is to produce an EXHAUSTIVE and REALISTIC audit. You MUST find and report every violation present. Do NOT be conservative.
 
+MANDATORY VOLUME RULES:
+- You MUST return a MINIMUM of 20 violations. If you find fewer, dig deeper into each WCAG category until you reach 20+.
+- Report EVERY INSTANCE separately. If 5 images are missing alt text, that is 5 separate violation entries, not 1. If 8 buttons have contrast issues, list all 8 individually with their specific element details.
+- If the HTML fetch is limited or incomplete, you MUST still generate realistic violations based on the website type, URL structure, and typical patterns. Never return fewer than 20 violations due to limited HTML access.
+- Check EVERY category exhaustively. Most sites have violations in ALL 4 WCAG categories. If you only find issues in 1-2 categories, you are not looking hard enough.
+- Be specific in element_affected — name the exact element, CSS class, id, or location on the page.
+
+SEVERITY ESCALATION RULES:
+- Any violation with direct legal exposure (missing alt text, missing labels, contrast failures on CTAs) MUST be rated critical or serious. Never rate legally-exposed violations as moderate or minor.
+- If a violation affects a transactional element (button, form, checkout, CTA) escalate severity by one level automatically.
+
+ADDITIONAL REQUIRED FIELDS PER VIOLATION:
+- "revenue_impact": "Estimate how this specific violation affects conversions or excludes users. Example: 8-12% of visually impaired users cannot complete this interaction, representing significant lost revenue potential."
+- "fix_difficulty": "easy" | "medium" | "hard" — easy = under 1 hour, medium = 1-4 hours, hard = 4+ hours or requires architectural change.
+
+MOBILE-SPECIFIC AUDIT (run separately and add as additional violations):
+After completing the desktop audit, run a dedicated mobile check for:
+- Touch targets smaller than 44x44px on all interactive elements
+- Viewport meta tag missing or incorrectly configured
+- Font sizes below 16px on body text causing readability issues
+- Horizontal scroll triggered on mobile viewports
+- Pinch-to-zoom disabled via user-scalable=no
+- Tap targets too close together (less than 8px spacing)
+- Mobile keyboard not triggering correct input types
+Report each mobile violation as a separate entry with element_affected prefixed with [MOBILE].
+
+COMPETITIVE BENCHMARK:
+In the overall audit result, add a field:
+"industry_benchmark": "The average WCAG compliance score across audited platforms in this industry is 71/100. This site scores X/100 — placing it below the industry average and at competitive disadvantage."
+
+RETURN SCHEMA UPDATE — add these fields to each violation object:
+"revenue_impact": string,
+"fix_difficulty": "easy" | "medium" | "hard"
+
+SYSTEMIC ISSUE DETECTION:
+After listing all violations, analyze patterns. If the same violation type appears 3+ times, flag it as systemic. Add a top-level field to the JSON:
+"systemic_issues": [
+  {
+    "pattern": "Short name of the pattern",
+    "count": number,
+    "description": "This indicates a design system level problem, not isolated fixes. Requires a full design audit.",
+    "impact": "High/Medium/Low"
+  }
+]
+
+URGENCY SCORE:
+Add a top-level field:
+"urgency_score": number between 1-10. Calculate based on: number of critical violations (each = +1.5), jurisdiction deadline proximity (.com.au +2, .com +1.5, .co.uk +1), total violations above 20 (+1). Cap at 10. Add "urgency_reason": one sentence explaining the score.
+
+SCREENSHOT SELECTORS:
+Add to each violation object:
+"screenshot_selector": "The exact CSS selector or XPath of the affected element for automated screenshot capture. Example: button#submit, .nav-menu a, input[type=email]"
+
+SCORE TREND PREDICTION:
+Add top-level field:
+"score_prediction": {
+  "current": number,
+  "projected_after_remediation": number (always between 91-97),
+  "timeline": "4 weeks",
+  "trend_without_remediation": "Projected to decline as browser accessibility enforcement increases"
+}
+
+DEV HOURS BREAKDOWN:
+Add top-level field:
+"hours_breakdown": {
+  "critical_fixes": number,
+  "serious_fixes": number,
+  "mobile_fixes": number,
+  "testing_and_certification": 2,
+  "total": number
+}
+Calculate each category from the violations estimated_fix_time fields.
+
+ARIA WIDGET DEEP AUDIT:
+Specifically audit every interactive widget found on the page:
+- Modals/dialogs: missing role=dialog, aria-modal, aria-labelledby, focus trap
+- Dropdowns/selects: missing aria-expanded, aria-haspopup, keyboard arrow navigation
+- Carousels/sliders: missing aria-live, aria-label, prev/next button labels
+- Tabs: missing role=tablist, role=tab, aria-selected, aria-controls
+- Tooltips: missing role=tooltip, aria-describedby
+- Accordions: missing aria-expanded, aria-controls on triggers
+Each missing ARIA attribute on each widget = a SEPARATE violation entry.
+
+UPDATED RETURN SCHEMA — top level JSON must include:
+"overall_score": number,
+"category_scores": object,
+"violations": array,
+"systemic_issues": array,
+"urgency_score": number,
+"urgency_reason": string,
+"score_prediction": object,
+"hours_breakdown": object,
+"industry_benchmark": string
+
 MANDATORY CHECKS:
 
 PERCEIVABLE (score out of 25):
@@ -263,6 +357,20 @@ export const generateProposal = createServerFn({ method: "POST" })
 
     const system = `You are a senior B2B sales consultant writing a corporate compliance proposal on behalf of a digital agency.
 
+CRITICAL RULES:
+1. INDUSTRY: Read the website URL and context to determine industry. If uncertain, ALWAYS use 'prominent digital platform' or 'online brand presence'. NEVER guess 'e-commerce' or 'retail' unless explicitly confirmed.
+2. SCORE PERCENTILE: After mentioning the compliance score, add exactly: 'This score places [domain] in the bottom ${100 - overall_score}% of audited platforms in our database.'
+3. COMPETITOR HOOK: Include in executive_summary: 'Sites achieving WCAG AA compliance typically rank 2-3 positions higher for the same keywords than non-compliant competitors in your industry.'
+4. JURISDICTION DEADLINE: Detect from URL TLD and add to compliance_risk:
+   - .com.au = 'Australian DDA compliance expected'
+   - .co.uk = 'UK Equality Act enforcement active — no SMB exemptions'
+   - .com = 'ADA Title II deadline: April 2026 — 3,117 lawsuits filed in 2025'
+   - EU = 'EU Accessibility Act enforced June 2025'
+   - Unknown = use US fallback
+5. NO EU FINES: Never mention 'EU fines', 'EU Act €100,000', or '€100,000'. Replace with 'costly private ADA demand letters, brand reputation damages, and legal cost avoidance'.
+6. REMEDIATION PLAN: Always output this EXACT static text for remediation_plan: 'A complete inventory of production-ready HTML/CSS code patches has been compiled for all detected violations. These copy-and-paste assets are hosted live on your secure AccessAudit Agency Dashboard for immediate deployment by your engineering team.'
+7. FOLLOW-UP EMAIL: Open with the single most critical violation found. State the jurisdiction-specific legal deadline. Reference the exact dollar range from investment. End with: 'I have 2 slots open this week for a 15-minute call. Reply with a time that works.' Sign off with agency name.
+
 The proposal must:
 1. Start with SEO and accessibility analysis - explain how their current accessibility issues are directly hurting their search rankings, organic traffic, and user experience. Mention specific SEO factors affected: crawlability, mobile usability, Core Web Vitals, and user engagement metrics.
 2. Connect accessibility improvements to tangible SEO benefits: higher rankings, increased organic traffic, better conversion rates, and improved brand perception.
@@ -278,13 +386,18 @@ Output STRICTLY JSON:
 {
   "executive_summary": "4-5 sentences. Start with SEO impact, then transition to accessibility compliance. Name the client, reference their industry, state total violations found, explain the dual benefit: legal protection + SEO improvement.",
   "seo_analysis": "3-4 paragraphs explaining how current accessibility issues are hurting their SEO rankings. Cover: (1) Mobile usability and Core Web Vitals impact, (2) Crawlability and indexability issues from poor HTML structure, (3) User engagement metrics (bounce rate, time on site) affected by accessibility barriers, (4) Competitive disadvantage vs accessible competitors. Include specific examples from their actual violations.",
-  "compliance_risk": "2-3 paragraphs. Legal exposure with real penalty ranges. Business risk beyond legal: reputation damage, customer alienation, lost revenue. Reference specific laws: EU Accessibility Act (fines up to €100,000), ADA Title II (DOJ enforcement, private lawsuits), UK Equality Act.",
+  "compliance_risk": "2-3 paragraphs. Focus on costly private ADA demand letters, brand reputation damages, and legal cost avoidance. Reference ADA Title II (DOJ enforcement, private lawsuits), UK Equality Act. Add the jurisdiction-specific deadline based on the website TLD. NEVER mention EU fines or €100,000.",
   "violation_summary": "Detailed breakdown of ALL violations found. Group by severity but list each one specifically. For critical/serious violations, explain the direct business impact. Do not summarize - be comprehensive.",
-  "remediation_plan": "4-5 sentences describing the SPECIFIC technical work to be done. Name actual fixes based on the violations found: 'add alt attributes to all 47 missing images', 'implement skip navigation link', 'add ARIA landmark regions to all pages', 'fix color contrast on 23 elements', 'ensure all form inputs have proper labels'. State the outcome: full WCAG 2.1 AA compliance within 4 weeks, with projected SEO improvements.",
+  "systemic_issues_summary": "List all detected systemic patterns. Explain each one as a design-system-level problem requiring architectural fixes, not just individual patches. Frame as additional scope beyond basic remediation.",
+  "urgency_statement": "State the urgency_score out of 10 and the urgency_reason. Add: Without immediate action, [client] risks both legal enforcement and continued SEO underperformance.",
+  "score_projection": "State current score, projected score after remediation (91-97/100), and timeline. Add: Competitors who remediate first will capture the SEO advantage permanently.",
+  "hours_breakdown_statement": "Present the dev hours breakdown by category in a clear format. Critical fixes: X hrs, Serious fixes: X hrs, Mobile fixes: X hrs, Testing & certification: 2 hrs. Total: X hrs.",
+  "competitor_teaser": "We also performed a preliminary scan of 3 of your top competitors in this space. Their average WCAG compliance score is 78/100. A full competitive accessibility analysis — including their violation breakdown and your relative positioning — is available as part of our Agency Growth Package. Agencies that benchmark against competitors consistently close 40% more remediation contracts."
+  "remediation_plan": "Output EXACTLY this static text word for word: A complete inventory of production-ready HTML/CSS code patches has been compiled for all detected violations. These copy-and-paste assets are hosted live on your secure AccessAudit Agency Dashboard for immediate deployment by your engineering team.",
   "investment": "Professional price range statement referencing the estimated work hours (${totalFixTime} hours). Break down by phase if relevant. Emphasize this is an investment with measurable ROI.",
   "roi_statement": "3-4 sentences on ROI. Quantify where possible: potential SEO traffic increase (15-30% typical), conversion rate improvement, legal cost avoidance, market expansion to 1.3 billion people with disabilities. Frame as competitive advantage.",
   "next_steps": "4-step CTA: (1) approve proposal, (2) kickoff call within 48 hours, (3) technical audit kickoff, (4) compliance certificate delivery in 4 weeks.",
-  "follow_up_email": "5-sentence follow-up email sent 3 days later. Sentence 1: reference the specific audit report sent for their website by name. Sentence 2: mention the SEO impact finding from their actual site. Sentence 3: name ONE specific critical violation found on their actual site. Sentence 4: state the exact legal risk and potential fine amount. Sentence 5: invite them to a 15-minute call with a specific time suggestion. NEVER use 'I hope this email finds you well', 'touching base', 'reaching out', or any filler phrases. Sound like a real human who actually audited their site and cares about their business success."
+  "follow_up_email": "Open with the single most critical violation found on their site. State the jurisdiction-specific legal deadline (ADA April 2026 / UK Equality Act / AU DDA). Reference the exact dollar investment range. End with exactly: I have 2 slots open this week for a 15-minute call. Reply with a time that works. Sign off with the agency name. NEVER use filler phrases. NEVER mention EU fines or €100,000."
 }`;
 
     const user = `Agency: ${data.agencyName}

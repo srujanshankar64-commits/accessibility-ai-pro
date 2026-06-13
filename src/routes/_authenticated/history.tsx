@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { generateProposal } from "@/lib/ai.functions";
 import { supabase } from "@/integrations/supabase/client";
-import { FileSearch, Search, ArrowUpRight, Lock, Loader2, FileDown } from "lucide-react";
+import { FileSearch, Search, ArrowUpRight, Lock, Loader2, FileDown, Share2, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { getPlan, TIER } from "@/lib/tier.utils";
@@ -34,6 +34,26 @@ function HistoryPage() {
   const [plan, setPlan] = useState("free");
   const navigate = useNavigate();
   const proposalFn = useServerFn(generateProposal);
+
+  const shareAudit = async (auditId: string) => {
+    const shareUrl = `${window.location.origin}/share/${auditId}`;
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      toast.success("Client portal link copied to clipboard!");
+    } catch {
+      toast.error("Failed to copy link");
+    }
+  };
+
+  const getScoreDiff = (row: Row, allRows: Row[]) => {
+    const sameUrl = allRows.filter(r => {
+      try {
+        return new URL(r.url).hostname === new URL(row.url).hostname && r.id !== row.id;
+      } catch { return false; }
+    }).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    if (sameUrl.length === 0) return null;
+    return row.overall_score - sameUrl[0].overall_score;
+  };
 
   useEffect(() => {
     (async () => {
@@ -280,6 +300,7 @@ function HistoryPage() {
                   <th className="text-left px-5 py-3 label-eyebrow font-medium">Violations</th>
                   <th className="text-left px-5 py-3 label-eyebrow font-medium">Date</th>
                   <th className="text-left px-5 py-3 label-eyebrow font-medium">Proposal</th>
+                  <th className="text-left px-5 py-3 label-eyebrow font-medium">vs Last</th>
                   <th className="px-5 py-3"></th>
                 </tr>
               </thead>
@@ -307,18 +328,36 @@ function HistoryPage() {
                         {r.has_proposal ? "Yes" : "No"}
                       </span>
                     </td>
+                    <td className="px-5 py-3">
+                      {(() => {
+                        const diff = getScoreDiff(r, rows);
+                        if (diff === null) return <span className="text-[10px] text-muted-foreground">First scan</span>;
+                        if (diff > 0) return <span className="text-[10px] text-success flex items-center gap-1"><TrendingUp className="h-3 w-3" />+{diff}</span>;
+                        if (diff < 0) return <span className="text-[10px] text-danger flex items-center gap-1"><TrendingDown className="h-3 w-3" />{diff}</span>;
+                        return <span className="text-[10px] text-muted-foreground flex items-center gap-1"><Minus className="h-3 w-3" />No change</span>;
+                      })()}
+                    </td>
                     <td className="px-5 py-3 text-right">
-                      <button
-                        className="inline-flex items-center gap-1 text-xs text-primary hover:text-primary-hover"
-                        onClick={() => {
-                          sessionStorage.setItem("proposal_seed", JSON.stringify({
-                            auditId: r.id, url: r.url, score: r.overall_score, violations: r.violations,
-                          }));
-                          navigate({ to: "/proposal" });
-                        }}
-                      >
-                        Open <ArrowUpRight className="h-3 w-3" />
-                      </button>
+                      <div className="inline-flex items-center gap-2">
+                        <button
+                          onClick={() => shareAudit(r.id)}
+                          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                          title="Copy client portal link"
+                        >
+                          <Share2 className="h-3 w-3" />
+                        </button>
+                        <button
+                          className="inline-flex items-center gap-1 text-xs text-primary hover:text-primary-hover"
+                          onClick={() => {
+                            sessionStorage.setItem("proposal_seed", JSON.stringify({
+                              auditId: r.id, url: r.url, score: r.overall_score, violations: r.violations,
+                            }));
+                            navigate({ to: "/proposal" });
+                          }}
+                        >
+                          Open <ArrowUpRight className="h-3 w-3" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { UploadCloud, Loader2, Eye, EyeOff, Lock, Zap, ShieldCheck } from "lucide-react";
+import { UploadCloud, Loader2, Eye, EyeOff, Lock, Zap, ShieldCheck, Copy, Check, Gift } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { getPlan, TIER, PLAN_PRICES } from "@/lib/tier.utils";
@@ -30,6 +30,16 @@ function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [settingPlan, setSettingPlan] = useState(false);
   const [settings, setSettings] = useState<any>(null);
+  const [referralCopied, setReferralCopied] = useState(false);
+
+  const referralCode = user.email ? btoa(user.email).slice(0, 8).toUpperCase() : "XXXXXXXX";
+  const referralLink = `https://accessibility-ai-pro.lovable.app?ref=${referralCode}`;
+
+  const copyReferral = async () => {
+    await navigator.clipboard.writeText(referralLink);
+    setReferralCopied(true);
+    setTimeout(() => setReferralCopied(false), 2000);
+  };
 
   useEffect(() => {
     (supabase as any).from("settings").select("*").maybeSingle().then(({ data }: { data: any }) => {
@@ -274,6 +284,26 @@ function SettingsPage() {
                 </p>
               </div>
             </div>
+          </section>
+
+          {/* Referral system */}
+          <section className="card-elevated p-5 bg-slate-900/20 border border-slate-800 rounded-xl space-y-3">
+            <p className="text-xs font-bold uppercase text-emerald-400/80 tracking-widest flex items-center gap-1.5">
+              <Gift className="h-3 w-3" /> Refer & Earn
+            </p>
+            <p className="text-xs text-muted-foreground">Refer an agency and get <strong className="text-white">1 month free</strong> when they upgrade to any paid plan.</p>
+            <div className="flex items-center gap-2">
+              <div className="flex-1 bg-slate-950 border border-slate-800 rounded-md px-3 py-2 font-mono text-xs text-muted-foreground truncate">
+                {referralLink}
+              </div>
+              <button
+                onClick={copyReferral}
+                className="h-9 px-3 rounded-md border border-slate-700 hover:bg-slate-800 text-xs text-slate-300 flex items-center gap-1.5 transition-colors"
+              >
+                {referralCopied ? <><Check className="h-3 w-3 text-emerald-400" />Copied!</> : <><Copy className="h-3 w-3" />Copy</>}
+              </button>
+            </div>
+            <p className="text-[10px] text-muted-foreground">Your referral code: <span className="font-mono text-primary font-bold">{referralCode}</span></p>
           </section>
 
           {/* Upgrade options */}
