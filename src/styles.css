@@ -166,3 +166,13 @@
   to { opacity: 1; }
 }
 .animate-fade-in { animation: fade-in 0.15s ease-out; }
+
+/* Remove Lovable badge */
+[data-lovable-badge],
+#lovable-badge,
+iframe[src*="lovable"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
