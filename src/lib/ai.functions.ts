@@ -397,7 +397,7 @@ Output STRICTLY JSON:
   "investment": "Professional price range statement referencing the estimated work hours (${totalFixTime} hours). Break down by phase if relevant. Emphasize this is an investment with measurable ROI.",
   "roi_statement": "3-4 sentences on ROI. Quantify where possible: potential SEO traffic increase (15-30% typical), conversion rate improvement, legal cost avoidance, market expansion to 1.3 billion people with disabilities. Frame as competitive advantage.",
   "next_steps": "4-step CTA: (1) approve proposal, (2) kickoff call within 48 hours, (3) technical audit kickoff, (4) compliance certificate delivery in 4 weeks.",
-  "follow_up_email": "Open with the single most critical violation found on their site. State the jurisdiction-specific legal deadline (ADA April 2026 / UK Equality Act / AU DDA). Reference the exact dollar investment range. End with exactly: I have 2 slots open this week for a 15-minute call. Reply with a time that works. Sign off with the agency name. NEVER use filler phrases. NEVER mention EU fines or €100,000."
+  "follow_up_email": "Open with the single most critical violation found on their site. State the jurisdiction-specific legal deadline (ADA April 2026 / UK Equality Act / AU DDA). Reference the exact dollar investment range. End with exactly: I have 2 slots open this week for a 15-minute call. Reply with a time that works. Sign off with exactly this agency name: ${data.agencyName}. NEVER invent, alter, or substitute a different agency or brand name. NEVER use filler phrases. NEVER mention EU fines or €100,000."
 }`;
 
     const user = `Agency: ${data.agencyName}
