@@ -17,13 +17,11 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
 
       const checkout = await client.checkoutSessions.create({
         product_cart: [{ product_id: priceId, quantity: 1 }],
-        customer: { create_new_customer: true },
-        success_url: "https://accessibility-ai-pro.lovable.app/audit?checkout=success",
-        cancel_url: "https://accessibility-ai-pro.lovable.app/?checkout=cancelled",
+        return_url: "https://accessibility-ai-pro.lovable.app/audit?checkout=success",
         metadata: { tier: tier || "starter" },
-      });
+      } as any);
 
-      return { success: true, checkout_url: checkout.url };
+      return { success: true, checkout_url: (checkout as any).checkout_url ?? (checkout as any).url };
     } catch (error) {
       console.error("Checkout error:", error);
       const errorMessage = error instanceof Error ? error.message : "Failed to create checkout session";
