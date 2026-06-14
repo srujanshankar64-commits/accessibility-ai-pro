@@ -126,8 +126,11 @@ function AppLayout() {
       </header>
 
       <main style={{ paddingTop: 48, minHeight: "100vh" }}>
-        <Outlet />
+        <div style={{ padding: "40px 48px" }}>
+          <Outlet />
+        </div>
       </main>
+
     </div>
   );
 }
