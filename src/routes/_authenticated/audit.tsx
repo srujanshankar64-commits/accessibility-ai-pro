@@ -48,6 +48,37 @@ function NewAuditPage() {
   const [plan, setPlan] = useState("free");
   const [used, setUsed] = useState(0);
 
+  // No website prospect mode
+  const [noWebsite, setNoWebsite] = useState(false);
+  const [businessName, setBusinessName] = useState("");
+  const [businessIndustry, setBusinessIndustry] = useState("");
+  const [pitchLoading, setPitchLoading] = useState(false);
+  const [pitchResult, setPitchResult] = useState<string | null>(null);
+
+  const generatePitch = async () => {
+    if (!businessName || !businessIndustry) return;
+    setPitchLoading(true);
+    setPitchResult(null);
+    try {
+      const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${import.meta.env.VITE_LOVABLE_API_KEY || ""}` },
+        body: JSON.stringify({
+          model: "google/gemini-2.5-flash",
+          messages: [
+            { role: "system", content: "You are an expert digital agency consultant writing a website creation pitch email. Be specific, data-driven, and persuasive. Under 200 words." },
+            { role: "user", content: `Write a cold email pitch for a business called '${businessName}' in the '${businessIndustry}' industry that has NO website. Include: 80%+ of local consumers research online before buying, how missing a website hands market share to competitors, and offer a free 1-page homepage mockup concept. End with a call to action for a 15-minute call.` }
+          ]
+        })
+      });
+      const json = await res.json();
+      setPitchResult(json?.choices?.[0]?.message?.content ?? "Failed to generate pitch");
+    } catch {
+      toast.error("Failed to generate pitch");
+    }
+    setPitchLoading(false);
+  };
+
   // Bulk CSV state
   const [bulkUrls, setBulkUrls] = useState<string[]>([]);
   const [bulkLoading, setBulkLoading] = useState(false);

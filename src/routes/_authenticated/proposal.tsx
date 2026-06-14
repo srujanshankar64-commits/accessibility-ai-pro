@@ -184,7 +184,42 @@ function ProposalPage() {
     doc.setTextColor(100, 100, 115);
     doc.text(`Prepared for: ${client || "Your Client"}`, 48, y); y += 16;
     doc.text(`Site audited: ${seed.url ?? "—"}`, 48, y); y += 16;
-    doc.text(`Compliance score: ${seed.score ?? 0}/100`, 48, y); y += 36;
+    doc.text(`Compliance score: ${seed.score ?? 0}/100`, 48, y); y += 28;
+
+    // Score badge
+    const scoreVal = seed.score ?? 0;
+    const badgeColor: [number, number, number] = scoreVal >= 80 ? [34, 197, 94] : scoreVal >= 50 ? [234, 179, 8] : [239, 68, 68];
+    doc.setFillColor(...badgeColor);
+    doc.roundedRect(48, y, 90, 28, 4, 4, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.text(`${scoreVal}/100`, 48 + 45, y + 19, { align: "center" });
+
+    // Severity summary chips
+    const violations = seed.violations ?? [];
+    const counts = { critical: 0, serious: 0, moderate: 0, minor: 0 };
+    violations.forEach((v) => { if (v.severity && counts[v.severity] !== undefined) counts[v.severity]++; });
+    const chipColors: Record<string, [number, number, number]> = {
+      critical: [239, 68, 68], serious: [234, 179, 8], moderate: [59, 130, 246], minor: [148, 163, 184],
+    };
+    let chipX = 48 + 90 + 16;
+    (["critical", "serious", "moderate", "minor"] as const).forEach((sev) => {
+      const c = counts[sev];
+      if (c === 0) return;
+      const label = `${c} ${sev}`;
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "bold");
+      const tw = doc.getTextWidth(label) + 16;
+      doc.setFillColor(...chipColors[sev]);
+      doc.roundedRect(chipX, y, tw, 28, 14, 14, "F");
+      doc.setTextColor(255, 255, 255);
+      doc.text(label, chipX + tw / 2, y + 19, { align: "center" });
+      chipX += tw + 8;
+    });
+
+    doc.setTextColor(50, 50, 65);
+    y += 50;
 
     const sections: [string, string][] = [
       ["Executive Summary", content.executive_summary],
