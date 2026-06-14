@@ -127,7 +127,17 @@ function ProposalPage() {
         priceMin,
         priceMax,
       }});
-      setPitchContent(out);
+      const safePitch = out as any;
+      if (safePitch.pitch_email && typeof safePitch.pitch_email === "object") {
+        safePitch.pitch_email = `Subject: ${safePitch.pitch_email.subject || ""}\n\n${safePitch.pitch_email.body || ""}`;
+      }
+      // sanitize all other fields
+      for (const key of Object.keys(safePitch)) {
+        if (typeof safePitch[key] === "object" && safePitch[key] !== null && !Array.isArray(safePitch[key])) {
+          safePitch[key] = Object.values(safePitch[key]).join("\n\n");
+        }
+      }
+      setPitchContent(safePitch);
       toast.success("Website pitch proposal generated!");
     } catch (err: any) {
       toast.error(err.message ?? "Failed to generate pitch");
@@ -569,13 +579,13 @@ ${(content.follow_up_email as any)?.body || ""}` : (content.follow_up_email || "
                       <h3 className="text-xs font-bold uppercase tracking-wider" style={{ color: brandColor }}>Cold Outreach Email</h3>
                     </div>
                     <button
-                      onClick={() => { navigator.clipboard.writeText(pitchContent.pitch_email); toast.success("Email copied!"); }}
+                      onClick={() => { const email = typeof pitchContent.pitch_email === "object" ? `Subject: ${pitchContent.pitch_email?.subject || ""}\n\n${pitchContent.pitch_email?.body || ""}` : (pitchContent.pitch_email || ""); navigator.clipboard.writeText(email); toast.success("Email copied!"); }}
                       className="h-7 px-2.5 rounded border border-zinc-200 text-xs text-zinc-500 hover:bg-zinc-100 flex items-center gap-1"
                     >
                       <Copy className="h-3 w-3" /> Copy
                     </button>
                   </div>
-                  <pre className="text-xs text-zinc-700 whitespace-pre-wrap leading-relaxed font-mono">{pitchContent.pitch_email}</pre>
+                  <pre className="text-xs text-zinc-700 whitespace-pre-wrap leading-relaxed font-mono">{typeof pitchContent.pitch_email === "object" ? `Subject: ${pitchContent.pitch_email?.subject || ""}\n\n${pitchContent.pitch_email?.body || ""}` : (pitchContent.pitch_email || "")}</pre>
                 </section>
               </div>
             )}
@@ -663,7 +673,7 @@ ${(content.follow_up_email as any)?.body || ""}` : (content.follow_up_email || "
                 Export White-Label Pitch PDF
               </button>
               <button
-                onClick={() => { if (pitchContent?.pitch_email) { navigator.clipboard.writeText(pitchContent.pitch_email); toast.success("Email copied!"); } }}
+                onClick={() => { if (pitchContent?.pitch_email) { const email = typeof pitchContent.pitch_email === "object" ? `Subject: ${pitchContent.pitch_email?.subject || ""}\n\n${pitchContent.pitch_email?.body || ""}` : (pitchContent.pitch_email || ""); navigator.clipboard.writeText(email); toast.success("Email copied!"); } }}
                 disabled={!pitchContent}
                 className="w-full h-11 border border-border hover:bg-accent text-foreground rounded-xl font-medium flex items-center justify-center gap-2 disabled:opacity-60 transition-all text-sm"
               >
