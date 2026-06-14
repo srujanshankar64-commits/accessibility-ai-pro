@@ -354,9 +354,23 @@ export const generateProposal = createServerFn({ method: "POST" })
     }
 
     let score = 50;
+    let competitorData = null;
+    
     if (data.auditId) {
-      const { data: audit } = await (context.supabase as any).from("audits").select("overall_score").eq("id", data.auditId).maybeSingle();
+      const { data: audit } = await (context.supabase as any).from("audits").select("overall_score, competitor_audit_id, competitor_url, has_competitor_benchmark").eq("id", data.auditId).maybeSingle();
       if (audit && audit.overall_score != null) score = audit.overall_score;
+      
+      // Fetch competitor data if benchmark was performed
+      if (audit && audit.has_competitor_benchmark && audit.competitor_audit_id) {
+        const { data: compAudit } = await (context.supabase as any).from("audits").select("overall_score, violations").eq("id", audit.competitor_audit_id).maybeSingle();
+        if (compAudit) {
+          competitorData = {
+            url: audit.competitor_url,
+            score: compAudit.overall_score,
+            violations: Array.isArray(compAudit.violations) ? compAudit.violations.length : 0,
+          };
+        }
+      }
     }
 
     const criticalViolations = data.violations.filter(
@@ -382,6 +396,13 @@ CRITICAL RULES:
 5. NO EU FINES: Never mention 'EU fines', 'EU Act €100,000', or '€100,000'. Replace with 'costly private ADA demand letters, brand reputation damages, and legal cost avoidance'.
 6. REMEDIATION PLAN: Always output this EXACT static text for remediation_plan: 'A complete inventory of production-ready HTML/CSS code patches has been compiled for all detected violations. These copy-and-paste assets are hosted live on your secure AccessAudit Agency Dashboard for immediate deployment by your engineering team.'
 7. FOLLOW-UP EMAIL: Open with the single most critical violation found. State the jurisdiction-specific legal deadline. Reference the exact dollar range from investment. End with: 'I have 2 slots open this week for a 15-minute call. Reply with a time that works.' Sign off with agency name.
+8. COMPETITIVE GAP ANALYSIS (Business Elite): If competitor benchmark data is provided, include a dedicated 'competitive_gap_analysis' section that:
+   - Compares the client's score directly against the competitor's score
+   - Frames the remediation as a strategic move to neutralize the competitor's advantage
+   - Explicitly mentions the competitor's name/URL for strategic relevance
+   - Quantifies the gap in points and what it means for market position
+   - If client is behind: Frame as urgent market risk requiring immediate action
+   - If client is ahead: Frame as competitive advantage to maintain and expand
 
 The proposal must:
 1. Start with SEO and accessibility analysis - explain how their current accessibility issues are directly hurting their search rankings, organic traffic, and user experience. Mention specific SEO factors affected: crawlability, mobile usability, Core Web Vitals, and user engagement metrics.
@@ -416,14 +437,14 @@ Output STRICTLY JSON:
 
     // Build competitive gap analysis if competitor data provided
     let competitiveAnalysis = "";
-    if (data.competitorUrl && data.competitorScore !== undefined) {
-      const scoreGap = score - data.competitorScore;
+    if (competitorData) {
+      const scoreGap = score - competitorData.score;
       const gapDirection = scoreGap > 0 ? "ahead of" : scoreGap < 0 ? "behind" : "tied with";
       competitiveAnalysis = `
 
 COMPETITIVE BENCHMARK:
-Competitor: ${data.competitorUrl}
-Competitor Score: ${data.competitorScore}/100
+Competitor: ${competitorData.url}
+Competitor Score: ${competitorData.score}/100
 Your Client Score: ${score}/100
 Gap: Your client is ${Math.abs(scoreGap)} points ${gapDirection} the competitor
 ${scoreGap < 0 ? "MARKET RISK: Your client lags behind competitor on accessibility, creating legal and competitive disadvantage." : "COMPETITIVE ADVANTAGE: Your client leads competitor on accessibility compliance."}`;

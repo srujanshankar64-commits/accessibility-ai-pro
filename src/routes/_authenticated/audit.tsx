@@ -135,6 +135,19 @@ function NewAuditPage() {
     setAuditState("INITIALIZING");
     setProgress(0);
     
+    // Run competitor audit if provided (Business Elite)
+    let competitorAuditId = null;
+    if (canCompetitorBenchmark && competitorUrl) {
+      try {
+        const compResult = await auditFn({ data: { url: competitorUrl } });
+        if (compResult?.data?.id) {
+          competitorAuditId = compResult.data.id;
+        }
+      } catch (err) {
+        console.error("Competitor audit failed:", err);
+      }
+    }
+    
     let currentProgress = 0;
     const stepInterval = setInterval(() => {
       currentProgress += (Math.random() * 5 + 2);
@@ -158,6 +171,23 @@ function NewAuditPage() {
       setAuditState("COMPLETED");
       setAudit(result);
       setUsed((u) => u + 1);
+      
+      // Store competitor benchmark data if competitor audit was run
+      if (competitorAuditId && result?.data?.id) {
+        try {
+          await supabase
+            .from('audits')
+            .update({
+              competitor_audit_id: competitorAuditId,
+              competitor_url: competitorUrl,
+              has_competitor_benchmark: true,
+            } as any)
+            .eq('id', result.data.id);
+        } catch (err) {
+          console.error("Failed to store competitor data (migration not run yet):", err);
+        }
+      }
+      
       const preset = new Set<string>(
         ((result.violations as unknown) as Violation[])
           .filter((v: any) => v.severity === "critical" || v.severity === "serious")
@@ -193,14 +223,41 @@ function NewAuditPage() {
     }
   };
 
-  const goProposal = (row?: RecentRow) => {
+  const goProposal = async (row?: RecentRow) => {
     const a = row ?? audit;
     if (!a) return;
     const violations = row
       ? row.violations
       : ((audit.violations as unknown) as Violation[]).filter((v: any) => selected.has(v.id));
+    
+    // Fetch competitor data if available
+    let competitorData = null;
+    if (a.id) {
+      const { data: auditData } = await supabase
+        .from('audits')
+        .select('competitor_audit_id, competitor_url, has_competitor_benchmark')
+        .eq('id', a.id)
+        .maybeSingle();
+      
+      if ((auditData as any)?.has_competitor_benchmark && (auditData as any)?.competitor_audit_id) {
+        const { data: compAudit } = await supabase
+          .from('audits')
+          .select('overall_score, violations')
+          .eq('id', (auditData as any).competitor_audit_id)
+          .maybeSingle();
+        
+        if (compAudit) {
+          competitorData = {
+            url: (auditData as any).competitor_url,
+            score: compAudit.overall_score,
+            violations: Array.isArray(compAudit.violations) ? compAudit.violations.length : 0,
+          };
+        }
+      }
+    }
+    
     sessionStorage.setItem("proposal_seed", JSON.stringify({
-      auditId: a.id, url: a.url, score: a.overall_score, violations,
+      auditId: a.id, url: a.url, score: a.overall_score, violations, competitorData,
     }));
     navigate({ to: "/proposal" });
   };

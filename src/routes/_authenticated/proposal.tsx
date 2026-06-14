@@ -26,7 +26,7 @@ export const Route = createFileRoute("/_authenticated/proposal")({
   )
 });
 
-interface Seed { auditId?: string; url?: string; score?: number; violations?: Violation[] }
+interface Seed { auditId?: string; url?: string; score?: number; violations?: Violation[]; competitorData?: { url?: string; score?: number; violations?: number } }
 
 function UpgradeBanner({ message, target }: { message: string; target: string }) {
   return (
@@ -99,6 +99,7 @@ function ProposalPage() {
     roi_statement: "",
     next_steps: "",
     follow_up_email: "",
+    competitive_gap_analysis: "",
   });
   const [busy, setBusy] = useState(false);
   const [noWebsiteMode, setNoWebsiteMode] = useState(false);
@@ -255,6 +256,9 @@ function ProposalPage() {
         clientName: "", clientIndustry: "E-commerce",
         tone: "professional", priceMin: 2500, priceMax: 8000,
         violations: s.violations ?? [],
+        competitorUrl: s.competitorData?.url,
+        competitorScore: s.competitorData?.score,
+        competitorViolations: s.competitorData?.violations,
       }});
       setContent(sanitizeContent(out) as ProposalContent);
       if (s.auditId) {
@@ -284,6 +288,9 @@ function ProposalPage() {
         auditId: seed.auditId, url: seed.url, agencyName: agency, clientName: client,
         clientIndustry: industry || "E-commerce", tone, priceMin, priceMax,
         violations: seed.violations ?? [],
+        competitorUrl: seed.competitorData?.url,
+        competitorScore: seed.competitorData?.score,
+        competitorViolations: seed.competitorData?.violations,
       }});
       setContent(sanitizeContent(out) as ProposalContent);
       if (seed.auditId) {
@@ -387,6 +394,11 @@ function ProposalPage() {
 
 ${(content.follow_up_email as any)?.body || ""}` : (content.follow_up_email || "")],
     ];
+    
+    // Add competitive gap analysis if available
+    if (content.competitive_gap_analysis) {
+      sections.splice(4, 0, ["Competitive Gap Analysis", content.competitive_gap_analysis]);
+    }
 
     sections.forEach(([heading, body]) => {
       if (y > 700) { doc.addPage(); y = 60; }

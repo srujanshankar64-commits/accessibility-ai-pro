@@ -34,5 +34,6 @@ export interface ProposalContent {
   roi_statement: string;
   next_steps: string;
   follow_up_email: string;
+  competitive_gap_analysis?: string;
 }
 
