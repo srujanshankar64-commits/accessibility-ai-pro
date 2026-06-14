@@ -42,6 +42,21 @@ function UpgradeBanner({ message, target }: { message: string; target: string })
   );
 }
 
+function sanitizeContent(out: any): any {
+  const safe: any = {};
+  for (const key of Object.keys(out)) {
+    const val = out[key];
+    if (typeof val === "object" && val !== null && !Array.isArray(val)) {
+      safe[key] = Object.values(val).join("\n\n");
+    } else if (Array.isArray(val)) {
+      safe[key] = val.join("\n");
+    } else {
+      safe[key] = val ?? "";
+    }
+  }
+  return safe;
+}
+
 function ProposalPage() {
   const navigate = useNavigate();
   const proposalFn = useServerFn(generateProposal);
@@ -212,13 +227,7 @@ function ProposalPage() {
         tone: "professional", priceMin: 2500, priceMax: 8000,
         violations: s.violations ?? [],
       }});
-      const safeOut = out as any;
-      if (safeOut.follow_up_email && typeof safeOut.follow_up_email === "object") {
-        safeOut.follow_up_email = `Subject: ${safeOut.follow_up_email.subject || ""}
-
-${safeOut.follow_up_email.body || ""}`;
-      }
-      setContent(safeOut as ProposalContent);
+      setContent(sanitizeContent(out) as ProposalContent);
       if (s.auditId) {
         await (supabase.from("audits") as any).update({ has_proposal: true }).eq("id", s.auditId);
         await (supabase.from("proposals") as any).insert({
@@ -247,13 +256,7 @@ ${safeOut.follow_up_email.body || ""}`;
         clientIndustry: industry, tone, priceMin, priceMax,
         violations: seed.violations ?? [],
       }});
-      const safeOut2 = out as any;
-      if (safeOut2.follow_up_email && typeof safeOut2.follow_up_email === "object") {
-        safeOut2.follow_up_email = `Subject: ${safeOut2.follow_up_email.subject || ""}
-
-${safeOut2.follow_up_email.body || ""}`;
-      }
-      setContent(safeOut2 as ProposalContent);
+      setContent(sanitizeContent(out) as ProposalContent);
       if (seed.auditId) {
         await (supabase.from("audits") as any).update({ has_proposal: true }).eq("id", seed.auditId);
         await (supabase.from("proposals") as any).insert({
