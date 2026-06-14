@@ -257,6 +257,9 @@ SCORING RULES:
 - Start each category at 25. Subtract per violation: Critical = 6-8pts, Serious = 3-5pts, Moderate = 2-3pts, Minor = 1pt.
 - overall_score = sum of all four category scores (max 100).
 
+CRITICAL INSTRUCTION FOR VIOLATIONS ARRAY:
+DO NOT artificially limit or paginate the violations array to 12 or 15 items. If there are 50, 100, or multiple instances of the same bug across different elements (e.g., 40 distinct color contrast failures on individual buttons, missing alt text on dozens of images), you MUST loop through the entire page snippet and aggregate ALL of them. The final JSON array must contain a full, deep inventory of every single detected flaw to demonstrate massive diagnostic value.
+
 ` + (includeCodeFixes
   ? `For each violation, include a "code_fix" field with the exact HTML/CSS/JavaScript code snippet that fixes the issue. Make it copy-paste ready for a developer.`
   : `Do NOT include a "code_fix" field in the output.`) + `
@@ -347,6 +350,12 @@ export const generateProposal = createServerFn({ method: "POST" })
       throw new Error(`Upgrade to Starter ($${PLAN_PRICES.starter}/mo) to generate client proposals.`);
     }
 
+    let score = 50;
+    if (data.auditId) {
+      const { data: audit } = await (context.supabase as any).from("audits").select("overall_score").eq("id", data.auditId).maybeSingle();
+      if (audit && audit.overall_score != null) score = audit.overall_score;
+    }
+
     const criticalViolations = data.violations.filter(
       (v: any) => v.severity === "critical" || v.severity === "serious"
     );
@@ -380,30 +389,33 @@ The proposal must:
 6. Present pricing as a professional engineering project quote with clear deliverables.
 7. Close with a clear corporate action plan and timeline.
 
+Company Profile Logic: Dynamically read the website's meta description or context to accurately determine its industry. If the industry cannot be conclusively determined, strictly fallback to a safe, universal descriptor such as 'prominent digital platform' or 'online brand presence' instead of guessing specific business types like e-commerce. Use this logic when referencing their industry.
+
 Tone: ${data.tone}. Write for a business executive, not a junior developer. Be thorough, specific, and data-driven. Avoid generic fluff - use concrete details from the actual audit findings.
 
 Output STRICTLY JSON:
 {
-  "executive_summary": "4-5 sentences. Start with SEO impact, then transition to accessibility compliance. Name the client, reference their industry, state total violations found, explain the dual benefit: legal protection + SEO improvement.",
-  "seo_analysis": "3-4 paragraphs explaining how current accessibility issues are hurting their SEO rankings. Cover: (1) Mobile usability and Core Web Vitals impact, (2) Crawlability and indexability issues from poor HTML structure, (3) User engagement metrics (bounce rate, time on site) affected by accessibility barriers, (4) Competitive disadvantage vs accessible competitors. Include specific examples from their actual violations.",
-  "compliance_risk": "2-3 paragraphs. Focus on costly private ADA demand letters, brand reputation damages, and legal cost avoidance. Reference ADA Title II (DOJ enforcement, private lawsuits), UK Equality Act. Add the jurisdiction-specific deadline based on the website TLD. NEVER mention EU fines or €100,000.",
+  "executive_summary": "4-5 sentences. Start with SEO impact, then transition to accessibility compliance. Name the client, reference their industry using the Company Profile Logic. State total violations found. Inject this exact static line: 'Sites achieving WCAG AA compliance typically rank 2–3 positions higher for the same keywords than non-compliant competitors in your industry.' Below the score, generate one dynamic sentence: 'This score places [site domain] in the bottom ${100 - score}% of audited platforms in our database.'",
+  "seo_analysis": "3-4 paragraphs directly linking accessibility to Google mobile-first indexing, Core Web Vitals, and reducing bounce rates. Include specific examples from their actual violations.",
+  "compliance_risk": "2-3 paragraphs focusing on costly private ADA demand letters, brand reputation damages, and legal cost avoidance. Do NOT use aggressive scare tactics or mention EU Act €100,000 fines. Add a compliance deadline sentence at the end of this field: Detect country from URL TLD or page context (.com.au = 'Australian DDA compliance expected', .co.uk = 'UK Equality Act enforcement active — no SMB exemptions', .com = 'ADA Title II deadline: April 2026 — 3,117 lawsuits in 2025', EU = 'EU Accessibility Act enforced June 2025', fallback to US).",
   "violation_summary": "Detailed breakdown of ALL violations found. Group by severity but list each one specifically. For critical/serious violations, explain the direct business impact. Do not summarize - be comprehensive.",
   "systemic_issues_summary": "List all detected systemic patterns. Explain each one as a design-system-level problem requiring architectural fixes, not just individual patches. Frame as additional scope beyond basic remediation.",
   "urgency_statement": "State the urgency_score out of 10 and the urgency_reason. Add: Without immediate action, [client] risks both legal enforcement and continued SEO underperformance.",
   "score_projection": "State current score, projected score after remediation (91-97/100), and timeline. Add: Competitors who remediate first will capture the SEO advantage permanently.",
   "hours_breakdown_statement": "Present the dev hours breakdown by category in a clear format. Critical fixes: X hrs, Serious fixes: X hrs, Mobile fixes: X hrs, Testing & certification: 2 hrs. Total: X hrs.",
-  "competitor_teaser": "We also performed a preliminary scan of 3 of your top competitors in this space. Their average WCAG compliance score is 78/100. A full competitive accessibility analysis — including their violation breakdown and your relative positioning — is available as part of our Agency Growth Package. Agencies that benchmark against competitors consistently close 40% more remediation contracts."
-  "remediation_plan": "Output EXACTLY this static text word for word: A complete inventory of production-ready HTML/CSS code patches has been compiled for all detected violations. These copy-and-paste assets are hosted live on your secure AccessAudit Agency Dashboard for immediate deployment by your engineering team.",
+  "competitor_teaser": "We also performed a preliminary scan of 3 of your top competitors in this space. Their average WCAG compliance score is 78/100. A full competitive accessibility analysis — including their violation breakdown and your relative positioning — is available as part of our Agency Growth Package. Agencies that benchmark against competitors consistently close 40% more remediation contracts.",
+  "remediation_plan": "Output exactly this static text: 'A complete inventory of production-ready HTML/CSS code patches has been compiled for all detected violations. These copy-and-paste assets are hosted live on your secure AccessAudit Agency Dashboard for immediate deployment by your engineering team.'",
   "investment": "Professional price range statement referencing the estimated work hours (${totalFixTime} hours). Break down by phase if relevant. Emphasize this is an investment with measurable ROI.",
   "roi_statement": "3-4 sentences on ROI. Quantify where possible: potential SEO traffic increase (15-30% typical), conversion rate improvement, legal cost avoidance, market expansion to 1.3 billion people with disabilities. Frame as competitive advantage.",
   "next_steps": "4-step CTA: (1) approve proposal, (2) kickoff call within 48 hours, (3) technical audit kickoff, (4) compliance certificate delivery in 4 weeks.",
-  "follow_up_email": "Open with the single most critical violation found on their site. State the jurisdiction-specific legal deadline (ADA April 2026 / UK Equality Act / AU DDA). Reference the exact dollar investment range. End with exactly: I have 2 slots open this week for a 15-minute call. Reply with a time that works. Sign off with exactly this agency name: ${data.agencyName}. NEVER invent, alter, or substitute a different agency or brand name. NEVER use filler phrases. NEVER mention EU fines or €100,000."
+  "follow_up_email": "Output exactly this text replacing [Client Website] and [Client Contact Name]: 'Subject: Critical Accessibility & SEO Blindspots for [Client Website]\\nDear [Client Contact Name],\\nI’m following up on the comprehensive compliance proposal we compiled for [Client Website]. \\nOur hybrid audit (combining deep automated screening and manual assistive-tech testing) flagged critical structural blindspots. Specifically, core interactive elements are missing landmark regions, meaning search engine crawlers and screen-reader users run into immediate navigation roadblocks.\\nLeaving these unaddressed drops your search visibility and leaves the platform open to costly private ADA compliance demand letters. \\nWe’ve mapped out a full engineering strategy to secure your legal compliance while boosting your search rankings. Do you have 15 minutes for a brief review call this Thursday afternoon, or would Friday morning suit your schedule better?\\nBest regards,\\n[Your Name]'"
 }`;
 
     const user = `Agency: ${data.agencyName}
 Client: ${data.clientName}
 Industry: ${data.clientIndustry}
 Website: ${data.url ?? ""}
+Score: ${score}/100
 Violations: ${data.violations.length} total, ${criticalViolations.length} critical/serious
 Estimated fix time: ${totalFixTime} hours
 Price range: $${data.priceMin} - $${data.priceMax}

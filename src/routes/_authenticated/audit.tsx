@@ -12,6 +12,14 @@ import { ArrowRight, Loader2, ShieldCheck, ScanLine, Copy, Check, ChevronDown, C
 import { cn } from "@/lib/utils";
 import { getPlan, TIER } from "@/lib/tier.utils";
 
+type AuditState = 
+  | "IDLE" 
+  | "INITIALIZING" 
+  | "SCANNING_CORE_CRITERIA" 
+  | "ANALYZING_ACCESSIBILITY_BARRIERS" 
+  | "GENERATING_PROPOSAL" 
+  | "COMPLETED";
+
 export const Route = createFileRoute("/_authenticated/audit")({
   component: NewAuditPage,
 });
@@ -39,7 +47,8 @@ function NewAuditPage() {
   const auditFn = useServerFn(runAudit);
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
-  const [loadingStep, setLoadingStep] = useState(0);
+  const [auditState, setAuditState] = useState<AuditState>("IDLE");
+  const [progress, setProgress] = useState(0);
   const [audit, setAudit] = useState<any | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [rows, setRows] = useState<RecentRow[]>([]);
@@ -113,35 +122,31 @@ function NewAuditPage() {
     e.preventDefault();
     if (!url) return;
     setLoading(true);
-    setLoadingStep(0);
     setExpandedViolationId(null);
+    setAuditState("INITIALIZING");
+    setProgress(0);
     
-    const loadingSteps = [
-      "Connecting to website...",
-      "Loading page in headless browser...",
-      "Mapping DOM structure and landmarks...",
-      "Scanning images, icons & media for alt text...",
-      "Testing color contrast across all text...",
-      "Checking keyboard navigation & focus order...",
-      "Auditing ARIA roles and semantic HTML...",
-      "Cross-referencing 25+ WCAG 2.1 AA criteria...",
-      "Compiling violations and writing your report...",
-    ];
-    
+    let currentProgress = 0;
     const stepInterval = setInterval(() => {
-      setLoadingStep((prev) => {
-        if (prev < loadingSteps.length - 1) {
-          return prev + 1;
-        }
-        return prev;
-      });
-    }, 1800);
+      currentProgress += (Math.random() * 5 + 2);
+      if (currentProgress > 99) currentProgress = 99;
+      
+      setProgress(Math.min(Math.round(currentProgress), 99));
+
+      if (currentProgress >= 10 && currentProgress < 50) {
+        setAuditState("SCANNING_CORE_CRITERIA");
+      } else if (currentProgress >= 50 && currentProgress < 90) {
+        setAuditState("ANALYZING_ACCESSIBILITY_BARRIERS");
+      } else if (currentProgress >= 90) {
+        setAuditState("GENERATING_PROPOSAL");
+      }
+    }, 800);
     
     try {
       const result = await auditFn({ data: { url } });
       clearInterval(stepInterval);
-      setLoadingStep(loadingSteps.length - 1);
-      await new Promise((r) => setTimeout(r, 2000));
+      setProgress(100);
+      setAuditState("COMPLETED");
       setAudit(result);
       setUsed((u) => u + 1);
       const preset = new Set<string>(
@@ -154,12 +159,12 @@ function NewAuditPage() {
       loadRecent();
     } catch (err: any) {
       clearInterval(stepInterval);
-      setLoadingStep(loadingSteps.length - 1);
       await new Promise((r) => setTimeout(r, 2000));
       toast.error(err.message ?? "Audit failed");
+      setAuditState("IDLE");
+      setProgress(0);
     } finally { 
       setLoading(false);
-      setLoadingStep(0);
     }
   };
 
@@ -256,56 +261,81 @@ function NewAuditPage() {
       )}
 
       {/* URL bar */}
-      <form onSubmit={submit} className="card-elevated p-1.5 flex items-stretch gap-1.5">
-        <input
-          type="url"
-          required
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          placeholder="https://yourclient.com.au"
-          className="flex-1 h-[52px] bg-transparent px-4 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
-        />
-        <button
-          type="submit"
-          disabled={loading}
-          className="h-[52px] inline-flex items-center px-5 rounded-md bg-primary hover:bg-primary-hover text-primary-foreground text-sm font-medium transition-colors disabled:opacity-60"
-        >
-          {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ScanLine className="h-4 w-4 mr-2" />}
-          Run Audit
-          {!loading && <ArrowRight className="h-4 w-4 ml-2" />}
-        </button>
-      </form>
+      <div className="space-y-2">
+        <form onSubmit={submit} className="card-elevated p-1.5 flex items-stretch gap-1.5">
+          <input
+            type="url"
+            required
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="https://yourclient.com.au"
+            className="flex-1 h-[52px] bg-transparent px-4 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+          />
+          <button
+            type="submit"
+            disabled={loading}
+            className="h-[52px] inline-flex items-center px-5 rounded-md bg-primary hover:bg-primary-hover text-primary-foreground text-sm font-medium transition-colors disabled:opacity-60"
+          >
+            {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ScanLine className="h-4 w-4 mr-2" />}
+            Run Audit
+            {!loading && <ArrowRight className="h-4 w-4 ml-2" />}
+          </button>
+        </form>
+        <div className="flex justify-start px-2">
+          <Link to="/proposal" className="text-xs text-muted-foreground hover:text-primary transition-colors flex items-center gap-1.5 font-medium">
+             Prospect has no website? Jump straight to proposal <ArrowRight className="h-3 w-3" />
+          </Link>
+        </div>
+      </div>
 
       {/* Loading progress indicator */}
-      {loading && (
-        <div className="card-elevated p-6 space-y-4 animate-fade-in">
+      {(auditState !== "IDLE" && auditState !== "COMPLETED") && (
+        <div className="card-elevated p-6 space-y-4 animate-fade-in" aria-live="polite">
           <div className="flex items-center gap-3">
             <Loader2 className="h-5 w-5 animate-spin text-primary" />
             <div className="flex-1">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm font-medium text-foreground">
-                  {["Connecting to website...", "Loading page in headless browser...", "Mapping DOM structure and landmarks...", "Scanning images, icons & media for alt text...", "Testing color contrast across all text...", "Checking keyboard navigation & focus order...", "Auditing ARIA roles and semantic HTML...", "Cross-referencing 25+ WCAG 2.1 AA criteria...", "Compiling violations and writing your report..."][loadingStep]}
+                  {auditState === "INITIALIZING" && "Initializing audit engine..."}
+                  {auditState === "SCANNING_CORE_CRITERIA" && "Scanning core criteria..."}
+                  {auditState === "ANALYZING_ACCESSIBILITY_BARRIERS" && "Analyzing accessibility barriers..."}
+                  {auditState === "GENERATING_PROPOSAL" && "Generating remediation code..."}
                 </span>
-                <span className="text-xs text-muted-foreground">{Math.round((loadingStep + 1) / 6 * 100)}%</span>
+                <span className="text-xs text-muted-foreground font-mono">{progress}%</span>
               </div>
-              <div className="h-2 w-full bg-accent rounded-full overflow-hidden">
+              <div 
+                className="h-2 w-full bg-accent rounded-full overflow-hidden"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={progress}
+              >
                 <div 
-                  className="h-full bg-primary transition-all duration-500 ease-out"
-                  style={{ width: `${((loadingStep + 1) / 6) * 100}%` }}
+                  className="h-full bg-primary"
+                  style={{ 
+                    width: `${progress}%`,
+                    transition: "width 0.3s ease-in-out" 
+                  }}
                 />
               </div>
             </div>
           </div>
-          <div className="text-xs text-muted-foreground leading-relaxed">
-            {loadingStep === 0 && "Establishing a secure connection to the target website to begin the scan..."}
-            {loadingStep === 1 && "Rendering the page exactly as a real visitor would see it, including dynamic content..."}
-            {loadingStep === 2 && "Building a map of headings, landmarks, and the document outline to check semantic structure..."}
-            {loadingStep === 3 && "Checking every image, icon, and media element for missing or meaningless alt text (WCAG 1.1.1)..."}
-            {loadingStep === 4 && "Measuring color contrast ratios across all text and UI components against the 4.5:1 AA threshold..."}
-            {loadingStep === 5 && "Simulating keyboard-only navigation to test focus order, skip links, and visible focus indicators..."}
-            {loadingStep === 6 && "Inspecting ARIA roles, labels, and landmark regions used by screen readers and assistive tech..."}
-            {loadingStep === 7 && "Cross-referencing every finding against 25+ WCAG 2.1 AA success criteria across all four principles..."}
-            {loadingStep === 8 && "Scoring each category, prioritizing violations by severity, and assembling your compliance report..."}
+          <div className="mt-4 pt-4 border-t border-border/40">
+            <p className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground mb-2">Audit Execution Log</p>
+            <div className="space-y-1.5 text-xs font-mono bg-slate-950/5 dark:bg-slate-950/20 p-3 rounded-md border border-border/40">
+              <div className={cn("flex items-center gap-2", progress >= 0 ? "text-emerald-600 dark:text-emerald-400 font-medium" : "text-muted-foreground/50")}>
+                 {progress >= 10 ? "✓" : "○"} Initializing audit engine...
+              </div>
+              <div className={cn("flex items-center gap-2", progress >= 10 ? "text-emerald-600 dark:text-emerald-400 font-medium" : "text-muted-foreground/50")}>
+                 {progress >= 50 ? "✓" : "○"} Scanned 25+ WCAG criteria
+              </div>
+              <div className={cn("flex items-center gap-2", progress >= 50 ? "text-emerald-600 dark:text-emerald-400 font-medium" : "text-muted-foreground/50")}>
+                 {progress >= 90 ? "✓" : "○"} Analyzed accessibility barriers and DOM structure
+              </div>
+              <div className={cn("flex items-center gap-2", progress >= 90 ? "text-emerald-600 dark:text-emerald-400 font-medium" : "text-muted-foreground/50")}>
+                 {progress === 100 ? "✓" : "○"} Compiling diagnostic data and remediation code...
+              </div>
+            </div>
           </div>
         </div>
       )}
