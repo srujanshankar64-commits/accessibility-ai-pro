@@ -497,14 +497,14 @@ function ProposalPage() {
             {pitchContent && !pitchBusy && (
               <div className="space-y-6 mt-6 animate-fade-in">
                 {[
-                  ["Executive Summary", pitchContent.executive_summary, <TrendingUp className="h-4 w-4" />],
-                  ["Market Analysis", pitchContent.market_analysis, <Users className="h-4 w-4" />],
-                  ["Competitor Insight", pitchContent.competitor_insight, <Globe className="h-4 w-4" />],
-                  ["Proposed Solution", pitchContent.proposed_solution, <Sparkles className="h-4 w-4" />],
-                ].map(([heading, body, icon]: any) => (
+                  ["Executive Summary", pitchContent.executive_summary],
+                  ["Market Analysis", pitchContent.market_analysis],
+                  ["Competitor Insight", pitchContent.competitor_insight],
+                  ["Proposed Solution", pitchContent.proposed_solution],
+                ].map(([heading, body]: any) => (
                   <section key={heading} className="space-y-1.5">
                     <h3 className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5" style={{ color: brandColor }}>
-                      {icon}{heading}
+                      {heading}
                     </h3>
                     <p className="text-sm text-zinc-700 leading-relaxed">{body}</p>
                   </section>
