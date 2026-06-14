@@ -16,6 +16,14 @@ import { getPlan, TIER } from "@/lib/tier.utils";
 
 export const Route = createFileRoute("/_authenticated/proposal")({
   component: ProposalPage,
+  errorComponent: () => (
+    <div className="p-8 text-center text-red-500 bg-red-50 rounded-xl border border-red-200 mt-10 max-w-2xl mx-auto">
+      <AlertTriangle className="h-10 w-10 mx-auto mb-4 text-red-400" />
+      <h2 className="text-lg font-bold">Proposal could not be generated</h2>
+      <p className="text-sm mt-2 opacity-80">We encountered an unexpected error while loading the proposal data. Please go back and try running the audit again.</p>
+      <Button onClick={() => window.history.back()} variant="outline" className="mt-4 border-red-200 hover:bg-red-100 text-red-700">Go Back</Button>
+    </div>
+  )
 });
 
 interface Seed { auditId?: string; url?: string; score?: number; violations?: Violation[] }
@@ -638,6 +646,7 @@ function ProposalPage() {
         </div>
       )}
 
+      {!noWebsiteMode && (
       <div className="grid lg:grid-cols-[1.3fr_1fr] gap-6 items-start">
         {/* Preview Panel Canvas */}
         <div className="card-elevated p-6 sm:p-8 bg-white text-zinc-900 max-h-[85vh] overflow-y-auto relative shadow-2xl rounded-2xl border border-zinc-200">
@@ -904,6 +913,7 @@ function ProposalPage() {
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 }
