@@ -548,7 +548,7 @@ Output STRICTLY valid JSON:
   "investment": "Professional price range statement for $[priceMin] - $[priceMax]. Break into: Design & Development, SEO Setup, Google My Business, 30-day post-launch support. Frame as ROI: at even 1 new client per month from the website, it pays for itself.",
   "roi_statement": "3 sentences. Quantify: local businesses with websites generate 35% more leads, 75% of consumers judge credibility by website design, first-page Google visibility for local searches. Frame as competitive advantage.",
   "next_steps": "4 steps: (1) Approve this proposal, (2) 48-hour kickoff call, (3) We deliver a free 1-page homepage mockup concept within 72 hours, (4) Full site live within 3-4 weeks.",
-  "pitch_email": "Subject line + email body. Subject: '[Business Name]: Your competitors are getting your customers online'. Body: Open with the single most powerful stat for their industry. Reference 3 competitors having websites. Offer the free homepage mockup. End with: 'I have 2 slots open this week for a 15-minute call. Reply with a time that works.' Sign off with exactly this agency name: ${data.agencyName}. NEVER invent a different agency name. Under 150 words. No filler phrases."
+  "pitch_email": "Output ONE plain text string only — never JSON, never an object with subject/body keys. Format: Subject: [Business Name] — Your competitors are winning online. Then two newlines. Then email body: open with the most powerful stat for their industry, reference 3 local competitors having websites, offer a free homepage mockup, end with: I have 2 slots open this week for a 15-minute call. Reply with a time that works. Sign off with agency name. Under 150 words."
 }`;
 
     const user = `Business Name: ${data.businessName}
