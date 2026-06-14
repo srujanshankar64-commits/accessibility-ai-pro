@@ -212,7 +212,13 @@ function ProposalPage() {
         tone: "professional", priceMin: 2500, priceMax: 8000,
         violations: s.violations ?? [],
       }});
-      setContent(out as ProposalContent);
+      const safeOut = out as any;
+      if (safeOut.follow_up_email && typeof safeOut.follow_up_email === "object") {
+        safeOut.follow_up_email = `Subject: ${safeOut.follow_up_email.subject || ""}
+
+${safeOut.follow_up_email.body || ""}`;
+      }
+      setContent(safeOut as ProposalContent);
       if (s.auditId) {
         await (supabase.from("audits") as any).update({ has_proposal: true }).eq("id", s.auditId);
         await (supabase.from("proposals") as any).insert({
@@ -241,7 +247,13 @@ function ProposalPage() {
         clientIndustry: industry, tone, priceMin, priceMax,
         violations: seed.violations ?? [],
       }});
-      setContent(out as ProposalContent);
+      const safeOut2 = out as any;
+      if (safeOut2.follow_up_email && typeof safeOut2.follow_up_email === "object") {
+        safeOut2.follow_up_email = `Subject: ${safeOut2.follow_up_email.subject || ""}
+
+${safeOut2.follow_up_email.body || ""}`;
+      }
+      setContent(safeOut2 as ProposalContent);
       if (seed.auditId) {
         await (supabase.from("audits") as any).update({ has_proposal: true }).eq("id", seed.auditId);
         await (supabase.from("proposals") as any).insert({
@@ -339,7 +351,9 @@ function ProposalPage() {
       ["Investment", content.investment || `Project scope fees range: $${priceMin.toLocaleString()} – $${priceMax.toLocaleString()}`],
       ["Return on Investment", content.roi_statement],
       ["Next Steps", content.next_steps],
-      ["3-Day Follow-Up Email Template", content.follow_up_email],
+      ["3-Day Follow-Up Email Template", typeof content.follow_up_email === "object" ? `Subject: ${(content.follow_up_email as any)?.subject || ""}
+
+${(content.follow_up_email as any)?.body || ""}` : (content.follow_up_email || "")],
     ];
 
     sections.forEach(([heading, body]) => {
