@@ -174,13 +174,13 @@ function SettingsPage() {
   return (
     <div className="space-y-10 animate-slide-up max-w-5xl mx-auto p-4 sm:p-6 ">
       <header>
-        <h1 className="font-display text-2xl text-white">Settings</h1>
+        <h1 className="font-display text-2xl text-[#1d1d1f]">Settings</h1>
         <p className="mt-2 text-sm text-muted-foreground">Manage your agency branding, active integrations, and subscription billing profiles.</p>
       </header>
 
       {/* DEV TOOL - Admin only */}
       {user.email === 'srujanshankar64@gmail.com' && (
-        <section className="p-4 border border-dashed border-purple-500/40 rounded-xl bg-purple-950/10 space-y-3">
+        <section className="p-4 border border-dashed border-[#d2d2d7] rounded-xl bg-[#f5f5f7] space-y-3">
           <p className="text-xs font-bold text-[#1d1d1f] uppercase tracking-widest">Dev Tools — Set Plan for Testing</p>
           <div className="flex flex-wrap gap-2">
             {["free", "starter", "agency", "business"].map((p) => (
@@ -191,7 +191,7 @@ function SettingsPage() {
                 className={cn(
                   "text-xs px-3 py-1.5 rounded-md font-semibold border transition-all",
                   currentPlan === p
-                    ? "border-[#1d1d1f] bg-[#1d1d1f] text-white"
+                    ? "border-[#1d1d1f] bg-[#1d1d1f] text-[#1d1d1f]"
                     : "border-[#d2d2d7] bg-white text-[#6e6e73] hover:bg-[#f5f5f7]"
                 )}
               >
@@ -207,12 +207,12 @@ function SettingsPage() {
         <div className="space-y-8">
 
           {/* Agency Branding */}
-          <section className="card-elevated p-6 space-y-5 relative overflow-hidden bg-slate-900/40 border border-slate-800 rounded-xl">
+          <section className="card-elevated p-6 space-y-5 relative overflow-hidden bg-white border border-[#d2d2d7] rounded-xl">
             {!hasBrandingAccess && (
-              <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-[1.5px] z-10 flex flex-col items-center justify-center p-6 text-center">
+              <div className="absolute inset-0 bg-white/85 backdrop-blur-[1.5px] z-10 flex flex-col items-center justify-center p-6 text-center">
                 <Lock className="h-5 w-5 text-[#1d1d1f] mb-2" />
-                <h3 className="text-sm font-bold text-white">White-Label Branding Locked</h3>
-                <p className="text-xs text-slate-400 max-w-xs mt-1 mb-4">Requires Agency plan or higher.</p>
+                <h3 className="text-sm font-bold text-[#1d1d1f]">White-Label Branding Locked</h3>
+                <p className="text-xs text-[#6e6e73] max-w-xs mt-1 mb-4">Requires Agency plan or higher.</p>
                 <Button size="sm" onClick={() => handleUpgradeCheckout("agency")} className="bg-primary hover:bg-primary-hover text-primary-foreground font-semibold text-xs h-9 px-4">
                   Unlock Branding
                 </Button>
@@ -224,7 +224,7 @@ function SettingsPage() {
               <p className="text-xs text-muted-foreground mt-1">Appears on generated proposals and white-label PDF exports.</p>
             </div>
 
-            <div className="border-2 border-dashed border-slate-800 rounded-md p-6 text-center bg-background/50">
+            <div className="border-2 border-dashed border-[#d2d2d7] rounded-md p-6 text-center bg-background/50">
               <UploadCloud className="h-6 w-6 mx-auto text-muted-foreground" />
               <p className="mt-2 text-sm text-muted-foreground">Upload agency logo</p>
               <p className="text-xs text-muted-foreground/70">PNG or SVG · max 2MB</p>
@@ -246,7 +246,7 @@ function SettingsPage() {
           </section>
 
           {/* AI API Key */}
-          <section className="card-elevated p-6 space-y-4 bg-slate-900/40 border border-slate-800 rounded-xl">
+          <section className="card-elevated p-6 space-y-4 bg-white border border-[#d2d2d7] rounded-xl">
             <div>
               <p className="text-sm font-bold tracking-wide">AI Engine API Key</p>
               <p className="text-xs text-muted-foreground mt-1">Optional. Leave blank to use the AccessAudit AI shared gateway.</p>
@@ -255,7 +255,7 @@ function SettingsPage() {
               <label className="text-xs text-muted-foreground">Gemini API Key (Google AI Studio)</label>
               <div className="relative">
                 <input type={showKey ? "text" : "password"} value={apiKey} onChange={(e) => setApiKey(e.target.value)} className={cn(inputCls, "font-mono pr-10")} placeholder="AIzaSy..." />
-                <button type="button" onClick={() => setShowKey((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-slate-300">
+                <button type="button" onClick={() => setShowKey((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-[#1d1d1f]">
                   {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
                 </button>
               </div>
@@ -269,21 +269,21 @@ function SettingsPage() {
             </Button>
           </div>
 
-          <div className="h-px bg-slate-800" />
+          <div className="h-px bg-[#e8e8ed]" />
 
           {/* Account */}
           <section className="space-y-4">
             <p className="text-sm font-bold tracking-wide">Account Profile</p>
-            <div className="card-elevated p-6 space-y-5 bg-slate-900/40 border border-slate-800 rounded-xl">
+            <div className="card-elevated p-6 space-y-5 bg-white border border-[#d2d2d7] rounded-xl">
               <div className="space-y-1.5">
                 <label className="text-xs text-muted-foreground">Email</label>
                 <input value={user.email ?? ""} disabled className={cn(inputCls, "font-mono opacity-70")} />
               </div>
-              <Button variant="outline" onClick={() => setShowPasswordModal(true)} className="border-slate-800 hover:bg-slate-800 text-slate-300">Change password</Button>
-              <div className="pt-5 border-t border-slate-800">
-                <p className="text-red-400 font-semibold text-sm">Danger Zone</p>
+              <Button variant="outline" onClick={() => setShowPasswordModal(true)} className="border-[#d2d2d7] hover:bg-[#f5f5f7] text-[#1d1d1f]">Change password</Button>
+              <div className="pt-5 border-t border-[#d2d2d7]">
+                <p className="text-[#ff3b30] font-semibold text-sm">Danger Zone</p>
                 <p className="mt-1 text-xs text-muted-foreground">Permanently delete your account and all data. This cannot be undone.</p>
-                <Button variant="outline" onClick={() => setShowDeleteConfirm(true)} className="mt-3 border-red-500/30 text-red-400 hover:bg-red-500/10">Delete account</Button>
+                <Button variant="outline" onClick={() => setShowDeleteConfirm(true)} className="mt-3 border-[#ff3b30]/40 text-[#ff3b30] hover:bg-[#ff3b30]/10">Delete account</Button>
               </div>
             </div>
           </section>
@@ -293,7 +293,7 @@ function SettingsPage() {
         <div className="space-y-6">
           <section className="space-y-4">
             <p className="text-sm font-bold tracking-wide">Active Plan</p>
-            <div className="card-elevated p-6 space-y-5 bg-slate-900/40 border border-slate-800 rounded-xl">
+            <div className="card-elevated p-6 space-y-5 bg-white border border-[#d2d2d7] rounded-xl">
               <div className="flex items-baseline justify-between flex-wrap gap-2">
                 <div>
                   <div className="flex items-center gap-2.5">
@@ -313,14 +313,14 @@ function SettingsPage() {
                   <span className="text-muted-foreground">Audits used this month</span>
                   <span className="font-mono text-primary font-bold">{used} / {isUnlimited ? "∞" : auditLimit}</span>
                 </div>
-                <div className="h-2 w-full bg-slate-950 rounded-full overflow-hidden border border-slate-800">
+                <div className="h-2 w-full bg-[#f5f5f7] rounded-full overflow-hidden border border-[#d2d2d7]">
                   {isUnlimited ? (
-                    <div className="h-full w-full bg-gradient-to-r from-purple-500/20 via-primary/40 to-purple-500/20 animate-pulse" />
+                    <div className="h-full w-full bg-gradient-to-r from-[#0071e3]/20 via-primary/40 to-[#0071e3]/20 animate-pulse" />
                   ) : (
                     <div className="h-full bg-primary transition-all" style={{ width: `${Math.min(100, progressValue)}%` }} />
                   )}
                 </div>
-                <p className="text-[10px] text-slate-500">
+                <p className="text-[10px] text-[#aeaeb2]">
                   {config.proposals ? "✅ Proposals" : "❌ Proposals"} · {config.coldEmail ? "✅ Cold email" : "❌ Cold email"} · {config.codeFixes ? "✅ Code fixes" : "❌ Code fixes"} · {config.teamSeats} seat(s)
                 </p>
               </div>
@@ -328,27 +328,27 @@ function SettingsPage() {
           </section>
 
           {/* Referral system */}
-          <section className="card-elevated p-5 bg-slate-900/20 border border-slate-800 rounded-xl space-y-4">
+          <section className="card-elevated p-5 bg-white border border-[#d2d2d7] rounded-xl space-y-4">
             <div className="flex items-center justify-between">
-              <p className="text-xs font-bold uppercase text-emerald-400/80 tracking-widest flex items-center gap-1.5">
+              <p className="text-xs font-bold uppercase text-[#34c759] tracking-widest flex items-center gap-1.5">
                 <Gift className="h-3 w-3" /> Refer & Earn
               </p>
-              <span className="text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full font-semibold">1 month free per referral</span>
+              <span className="text-[10px] bg-[#34c759]/10 text-[#34c759] border border-[#34c759]/30 px-2 py-0.5 rounded-full font-semibold">1 month free per referral</span>
             </div>
-            <p className="text-xs text-muted-foreground">Share your unique link. When an agency signs up and upgrades to any paid plan, you get <strong className="text-white">1 month free</strong> automatically applied.</p>
+            <p className="text-xs text-muted-foreground">Share your unique link. When an agency signs up and upgrades to any paid plan, you get <strong className="text-[#1d1d1f]">1 month free</strong> automatically applied.</p>
 
             {/* Referral stats */}
             <div className="grid grid-cols-3 gap-2">
-              <div className="bg-slate-950 border border-slate-800 rounded-lg p-3 text-center">
-                <div className="text-lg font-bold text-white">{referralStats.clicks}</div>
+              <div className="bg-[#f5f5f7] border border-[#d2d2d7] rounded-lg p-3 text-center">
+                <div className="text-lg font-bold text-[#1d1d1f]">{referralStats.clicks}</div>
                 <div className="text-[10px] text-muted-foreground mt-0.5">Link clicks</div>
               </div>
-              <div className="bg-slate-950 border border-slate-800 rounded-lg p-3 text-center">
-                <div className="text-lg font-bold text-white">{referralStats.signups}</div>
+              <div className="bg-[#f5f5f7] border border-[#d2d2d7] rounded-lg p-3 text-center">
+                <div className="text-lg font-bold text-[#1d1d1f]">{referralStats.signups}</div>
                 <div className="text-[10px] text-muted-foreground mt-0.5">Signups</div>
               </div>
-              <div className="bg-slate-950 border border-slate-800 rounded-lg p-3 text-center">
-                <div className="text-lg font-bold text-emerald-400">{referralStats.earned}</div>
+              <div className="bg-[#f5f5f7] border border-[#d2d2d7] rounded-lg p-3 text-center">
+                <div className="text-lg font-bold text-[#34c759]">{referralStats.earned}</div>
                 <div className="text-[10px] text-muted-foreground mt-0.5">Months earned</div>
               </div>
             </div>
@@ -357,14 +357,14 @@ function SettingsPage() {
             <div className="space-y-2">
               <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Your referral link</p>
               <div className="flex items-center gap-2">
-                <div className="flex-1 bg-slate-950 border border-slate-800 rounded-md px-3 py-2 font-mono text-xs text-muted-foreground truncate">
+                <div className="flex-1 bg-[#f5f5f7] border border-[#d2d2d7] rounded-md px-3 py-2 font-mono text-xs text-muted-foreground truncate">
                   {referralLink}
                 </div>
                 <button
                   onClick={copyReferral}
-                  className="h-9 px-3 rounded-md border border-slate-700 hover:bg-slate-800 text-xs text-slate-300 flex items-center gap-1.5 transition-colors shrink-0"
+                  className="h-9 px-3 rounded-md border border-[#d2d2d7] hover:bg-[#f5f5f7] text-xs text-[#1d1d1f] flex items-center gap-1.5 transition-colors shrink-0"
                 >
-                  {referralCopied ? <><Check className="h-3 w-3 text-emerald-400" />Copied!</> : <><Copy className="h-3 w-3" />Copy</>}
+                  {referralCopied ? <><Check className="h-3 w-3 text-[#34c759]" />Copied!</> : <><Copy className="h-3 w-3" />Copy</>}
                 </button>
               </div>
             </div>
@@ -373,13 +373,13 @@ function SettingsPage() {
             <div className="grid grid-cols-2 gap-2">
               <button
                 onClick={() => window.open(`https://twitter.com/intent/tweet?text=I've been using AccessAudit AI to generate WCAG compliance proposals for my agency clients. Try it free: ${encodeURIComponent(referralLink)}`, "_blank")}
-                className="h-9 rounded-md border border-slate-700 hover:bg-slate-800 text-xs text-slate-300 flex items-center justify-center gap-2 transition-colors"
+                className="h-9 rounded-md border border-[#d2d2d7] hover:bg-[#f5f5f7] text-xs text-[#1d1d1f] flex items-center justify-center gap-2 transition-colors"
               >
                 Share on X
               </button>
               <button
                 onClick={() => window.open(`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(referralLink)}`, "_blank")}
-                className="h-9 rounded-md border border-slate-700 hover:bg-slate-800 text-xs text-slate-300 flex items-center justify-center gap-2 transition-colors"
+                className="h-9 rounded-md border border-[#d2d2d7] hover:bg-[#f5f5f7] text-xs text-[#1d1d1f] flex items-center justify-center gap-2 transition-colors"
               >
                 Share on LinkedIn
               </button>
@@ -388,7 +388,7 @@ function SettingsPage() {
           </section>
 
           {/* Upgrade options */}
-          <section className="card-elevated p-5 bg-slate-900/20 border border-slate-800 rounded-xl space-y-4">
+          <section className="card-elevated p-5 bg-white border border-[#d2d2d7] rounded-xl space-y-4">
             <p className="text-xs font-bold uppercase text-primary/80 tracking-widest flex items-center gap-1.5">
               <Zap className="h-3 w-3" /> Upgrade Options
             </p>
@@ -405,12 +405,12 @@ function SettingsPage() {
                     "p-3.5 border rounded-xl space-y-1.5 transition-all cursor-pointer",
                     currentPlan === key
                       ? "border-primary bg-primary/5 ring-1 ring-primary/20"
-                      : "border-slate-800 bg-slate-950/40 hover:border-slate-700"
+                      : "border-[#d2d2d7] bg-[#fafafa] hover:border-[#d2d2d7]"
                   )}
                 >
                   <div className="flex items-center justify-between">
                     <div>
-                      <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                      <h4 className="text-xs font-bold text-[#1d1d1f] flex items-center gap-1.5">
                         {label}
                         {currentPlan === key && (
                           <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-primary/20 text-primary tracking-wider uppercase">Active</span>
@@ -419,12 +419,12 @@ function SettingsPage() {
                       <p className="text-[10px] text-muted-foreground font-mono mt-0.5">{price}</p>
                     </div>
                     {currentPlan !== key && (
-                      <Button size="sm" className="bg-slate-900 text-slate-300 border border-slate-800 hover:bg-slate-800 text-[10px] font-bold h-7 px-2.5">
+                      <Button size="sm" className="bg-[#f5f5f7] text-[#1d1d1f] border border-[#d2d2d7] hover:bg-[#f5f5f7] text-[10px] font-bold h-7 px-2.5">
                         Select
                       </Button>
                     )}
                   </div>
-                  <p className="text-[11px] text-muted-foreground border-t border-slate-900 pt-1.5">{description}</p>
+                  <p className="text-[11px] text-muted-foreground border-t border-[#e8e8ed] pt-1.5">{description}</p>
                 </div>
               ))}
             </div>
