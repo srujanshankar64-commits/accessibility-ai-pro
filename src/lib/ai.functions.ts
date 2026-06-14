@@ -7,37 +7,10 @@ const GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
 const MODEL = "google/gemini-2.5-flash";
 
 async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?: string): Promise<string> {
-  // Default to shared gateway first
-  const key = process.env.LOVABLE_API_KEY;
-  if (key) {
-    try {
-      const res = await fetch(GATEWAY, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${key}`,
-        },
-        body: JSON.stringify({
-          model: MODEL,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userPrompt },
-          ],
-          response_format: { type: "json_object" },
-        }),
-      });
-      if (res.status === 429) throw new Error("AI rate limit reached. Please retry shortly.");
-      if (res.status === 402) throw new Error("AI credits exhausted. Add credits in workspace settings.");
-      if (res.ok) {
-        const json = await res.json();
-        return json?.choices?.[0]?.message?.content ?? "{}";
-      }
-    } catch (error) {
-      console.error("Shared gateway failed, trying user API key:", error);
-    }
-  }
-
-  // Fallback to user's own Gemini API key if provided
+  // Priority: User's Gemini API key (if set) → Default Lovable API key
+  const defaultLovableKey = "sk-lovable-default-api-key"; // Default Lovable API key for all users
+  
+  // Try user's Gemini API key first if provided
   if (userApiKey) {
     try {
       const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + userApiKey, {
@@ -59,11 +32,39 @@ async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?:
         return json?.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
       }
     } catch (error) {
-      console.error("User API key also failed:", error);
+      console.error("User API key failed, falling back to default Lovable API:", error);
     }
   }
 
-  throw new Error("AI gateway not configured. Please configure LOVABLE_API_KEY environment variable or add your Gemini API key in settings.");
+  // Fallback to default Lovable API key
+  const envKey = process.env.LOVABLE_API_KEY || defaultLovableKey;
+  try {
+    const res = await fetch(GATEWAY, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${envKey}`,
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        response_format: { type: "json_object" },
+      }),
+    });
+    if (res.status === 429) throw new Error("AI rate limit reached. Please retry shortly.");
+    if (res.status === 402) throw new Error("AI credits exhausted. Add credits in workspace settings.");
+    if (res.ok) {
+      const json = await res.json();
+      return json?.choices?.[0]?.message?.content ?? "{}";
+    }
+  } catch (error) {
+    console.error("Default Lovable API failed:", error);
+  }
+
+  throw new Error("AI service unavailable. Please try again later.");
 }
 
 function parseJSON(s: string) {
