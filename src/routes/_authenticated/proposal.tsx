@@ -43,15 +43,30 @@ function UpgradeBanner({ message, target }: { message: string; target: string })
 }
 
 function sanitizeContent(out: any): any {
+  if (!out || typeof out !== "object") return {};
   const safe: any = {};
   for (const key of Object.keys(out)) {
-    const val = out[key];
-    if (typeof val === "object" && val !== null && !Array.isArray(val)) {
-      safe[key] = Object.values(val).join("\n\n");
-    } else if (Array.isArray(val)) {
-      safe[key] = val.join("\n");
-    } else {
-      safe[key] = val ?? "";
+    try {
+      const val = out[key];
+      if (val === null || val === undefined) {
+        safe[key] = "";
+      } else if (typeof val === "string") {
+        safe[key] = val;
+      } else if (typeof val === "number" || typeof val === "boolean") {
+        safe[key] = String(val);
+      } else if (Array.isArray(val)) {
+        safe[key] = val.map((v: any) => typeof v === "string" ? v : JSON.stringify(v)).join("\n");
+      } else if (typeof val === "object") {
+        if (val.subject && val.body) {
+          safe[key] = `Subject: ${val.subject}\n\n${val.body}`;
+        } else {
+          safe[key] = Object.entries(val).map(([k,v]) => `${k}: ${v}`).join("\n");
+        }
+      } else {
+        safe[key] = "";
+      }
+    } catch {
+      safe[key] = "";
     }
   }
   return safe;
@@ -210,7 +225,11 @@ function ProposalPage() {
         TIER[currentPlan].proposals
       ) {
         hasAutoRun.current = true;
-        autoGenerate(parsedSeed, (data as any)?.agency_name ?? "Your Agency");
+        try {
+          autoGenerate(parsedSeed, (data as any)?.agency_name ?? "Your Agency");
+        } catch(e) {
+          console.error("AutoGenerate failed:", e);
+        }
       }
     });
   }, []);
