@@ -31,7 +31,7 @@ function severityColor(s: string) {
   if (s === "critical") return "bg-danger/10 text-danger border-danger/20";
   if (s === "serious") return "bg-warning/10 text-warning border-warning/20";
   if (s === "moderate") return "bg-blue-500/10 text-blue-400 border-blue-500/20";
-  return "bg-slate-500/10 text-[#6e6e73] border-slate-500/20";
+  return "bg-[#f5f5f7] text-[#6e6e73] border-[#d2d2d7]";
 }
 
 function NewAuditPage() {
