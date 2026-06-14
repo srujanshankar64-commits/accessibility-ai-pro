@@ -410,7 +410,7 @@ function ProposalPage() {
   const canColdEmail = TIER[currentPlan].coldEmail;
   const canCertificate = TIER[currentPlan].certificate;
   const isLoading = busy || autoLoading;
-  const hasContent = content.executive_summary && content.executive_summary.length > 10;
+  const hasContent = content.executive_summary && typeof content.executive_summary === "string" && content.executive_summary.length > 10;
 
   const currentAccentColor = canWhiteLabel ? brandColor : "#6C63FF";
 
@@ -770,7 +770,7 @@ function ProposalPage() {
                   <Mail className="h-4 w-4" style={{ color: currentAccentColor }} />
                   <h3 className="text-xs font-bold uppercase tracking-wider" style={{ color: currentAccentColor }}>3-Day Automated Follow-Up Sequence</h3>
                 </div>
-                <Textarea value={content.follow_up_email} onChange={(e) => setContent((c) => ({ ...c, follow_up_email: e.target.value }))} className="bg-white border-zinc-200 text-zinc-800 focus-visible:ring-zinc-300 min-h-[120px] font-mono text-xs leading-relaxed rounded-lg shadow-sm" placeholder="Awaiting proposal compilation parameters..." />
+                <Textarea value={typeof content.follow_up_email === "object" ? JSON.stringify(content.follow_up_email) : (content.follow_up_email || "")} onChange={(e) => setContent((c) => ({ ...c, follow_up_email: e.target.value }))} className="bg-white border-zinc-200 text-zinc-800 focus-visible:ring-zinc-300 min-h-[120px] font-mono text-xs leading-relaxed rounded-lg shadow-sm" placeholder="Awaiting proposal compilation parameters..." />
               </section>
             </div>
           )}
