@@ -7,6 +7,11 @@ import { FileSearch, Search, ArrowUpRight, Lock, Loader2, FileDown, Share2, Tren
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { getPlan, TIER } from "@/lib/tier.utils";
+import { getScoreHistory, calculateVelocity, predictScore } from "@/lib/compliance-velocity";
+import { Line } from "react-chartjs-2";
+import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend } from "chart.js";
+
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
 export const Route = createFileRoute("/_authenticated/history")({
   component: HistoryPage,
@@ -32,6 +37,9 @@ function HistoryPage() {
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkProgress, setBulkProgress] = useState(0);
   const [plan, setPlan] = useState("free");
+  const [selectedUrl, setSelectedUrl] = useState<string | null>(null);
+  const [scoreHistory, setScoreHistory] = useState<any[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
   const navigate = useNavigate();
   const proposalFn = useServerFn(generateProposal);
 
@@ -42,6 +50,21 @@ function HistoryPage() {
       toast.success("Client portal link copied to clipboard!");
     } catch {
       toast.error("Failed to copy link");
+    }
+  };
+
+  const loadScoreHistory = async (url: string) => {
+    if (!TIER[getPlan(plan)].complianceVelocity) return;
+    
+    setLoadingHistory(true);
+    try {
+      const history = await getScoreHistory(url, 10);
+      setScoreHistory(history);
+      setSelectedUrl(url);
+    } catch (err) {
+      toast.error("Failed to load score history");
+    } finally {
+      setLoadingHistory(false);
     }
   };
 

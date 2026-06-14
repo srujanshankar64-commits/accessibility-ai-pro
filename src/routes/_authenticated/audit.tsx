@@ -8,7 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { ScoreGauge } from "@/components/ScoreGauge";
 import type { Violation } from "@/lib/audit-types";
 import { toast } from "sonner";
-import { ArrowRight, Loader2, ShieldCheck, ScanLine, Copy, Check, ChevronDown, ChevronUp, Code2, Lock, AlertTriangle, Zap, Upload } from "lucide-react";
+import { ArrowRight, Loader2, ShieldCheck, ScanLine, Copy, Check, ChevronDown, ChevronUp, Code2, Lock, AlertTriangle, Zap, Upload, Share2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getPlan, TIER } from "@/lib/tier.utils";
 
@@ -66,6 +66,12 @@ function NewAuditPage() {
 
   const [businessCity, setBusinessCity] = useState("");
 
+  // Business Elite features
+  const [multiPageCrawlEnabled, setMultiPageCrawlEnabled] = useState(false);
+  const [competitorUrl, setCompetitorUrl] = useState("");
+  const [crawlProgress, setCrawlProgress] = useState(0);
+  const [crawledPages, setCrawledPages] = useState<string[]>([]);
+
   const generatePitch = async () => {
     if (!businessName || !businessIndustry) return;
     setPitchLoading(true);
@@ -116,6 +122,8 @@ function NewAuditPage() {
   const currentPlan = getPlan(plan);
   const canCodeFix = TIER[currentPlan].codeFixes;
   const canBulkCsv = TIER[currentPlan].bulkCsv;
+  const canMultiPageCrawl = TIER[currentPlan].multiPageCrawl;
+  const canCompetitorBenchmark = TIER[currentPlan].competitorBenchmark;
   const auditLimit = TIER[currentPlan].audits;
   const isUnlimited = auditLimit >= 999999;
 
@@ -285,6 +293,48 @@ function NewAuditPage() {
             {!loading && <ArrowRight className="h-4 w-4 ml-2" />}
           </button>
         </form>
+
+        {/* Business Elite Options */}
+        {(canMultiPageCrawl || canCompetitorBenchmark) && (
+          <div className="card-elevated p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-foreground">Business Elite Options</span>
+              <span className="text-[10px] text-primary font-medium">Business Tier</span>
+            </div>
+            
+            {canMultiPageCrawl && (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Code2 className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-xs text-muted-foreground">Multi-page crawl (up to 50 pages)</span>
+                </div>
+                <Switch
+                  checked={multiPageCrawlEnabled}
+                  onCheckedChange={setMultiPageCrawlEnabled}
+                  disabled={loading}
+                />
+              </div>
+            )}
+            
+            {canCompetitorBenchmark && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Zap className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-xs text-muted-foreground">Competitor benchmark</span>
+                </div>
+                <input
+                  type="url"
+                  value={competitorUrl}
+                  onChange={(e) => setCompetitorUrl(e.target.value)}
+                  placeholder="https://competitor.com"
+                  className="w-full h-9 bg-background border border-border rounded-md px-3 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  disabled={loading}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="flex justify-start px-2">
           <Link to="/proposal" className="text-xs text-muted-foreground hover:text-primary transition-colors flex items-center gap-1.5 font-medium">
              Prospect has no website? Jump straight to proposal <ArrowRight className="h-3 w-3" />
@@ -415,6 +465,39 @@ function NewAuditPage() {
                 {(audit.violations as Violation[]).length} shown
               </span>
             </div>
+
+            {/* Compliance Shield Embed - Business Tier */}
+            {TIER[currentPlan].complianceShield && audit && (
+              <div className="px-5 py-4 border-b border-border bg-primary/5">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="h-4 w-4 text-primary" />
+                    <p className="text-xs font-semibold text-foreground">Compliance Shield Widget</p>
+                  </div>
+                  <span className="text-[10px] text-primary font-medium">Business Tier</span>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground">
+                    Add this embed code to your client's website footer to display a live compliance badge.
+                  </p>
+                  <div className="bg-background border border-border rounded-md p-3">
+                    <code className="text-xs font-mono text-muted-foreground break-all">
+                      {`<script src="https://accessibility-ai-pro.lovable.app/compliance-shield.js" data-audit-id="${audit.id}"></script>`}
+                    </code>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const code = `<script src="https://accessibility-ai-pro.lovable.app/compliance-shield.js" data-audit-id="${audit.id}"></script>`;
+                      navigator.clipboard.writeText(code);
+                      toast.success("Embed code copied to clipboard");
+                    }}
+                    className="text-xs text-primary hover:text-primary-hover flex items-center gap-1"
+                  >
+                    <Copy className="h-3 w-3" /> Copy embed code
+                  </button>
+                </div>
+              </div>
+            )}
 
             <div className="p-3 space-y-1">
               {((audit.violations as unknown) as Violation[]).map((v: any) => {

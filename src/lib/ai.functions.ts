@@ -340,6 +340,9 @@ export const generateProposal = createServerFn({ method: "POST" })
       priceMin: z.number().default(2500),
       priceMax: z.number().default(8000),
       violations: z.array(z.any()).default([]),
+      competitorUrl: z.string().optional(),
+      competitorScore: z.number().optional(),
+      competitorViolations: z.number().optional(),
     }).parse(data),
   )
   .handler(async ({ data, context }) => {
@@ -411,6 +414,21 @@ Output STRICTLY JSON:
     "follow_up_email": "Output a PLAIN TEXT STRING only — never an object or JSON. Format: first sentence names the single most critical violation found on the site. Second sentence states the ADA Title II April 2026 deadline. Third sentence references the exact price range. Final sentence: I have 2 slots open this week for a 15-minute call. Reply with a time that works. Sign off with the agency name. No subject line, no JSON, no object — plain email body text only."
 }`;
 
+    // Build competitive gap analysis if competitor data provided
+    let competitiveAnalysis = "";
+    if (data.competitorUrl && data.competitorScore !== undefined) {
+      const scoreGap = score - data.competitorScore;
+      const gapDirection = scoreGap > 0 ? "ahead of" : scoreGap < 0 ? "behind" : "tied with";
+      competitiveAnalysis = `
+
+COMPETITIVE BENCHMARK:
+Competitor: ${data.competitorUrl}
+Competitor Score: ${data.competitorScore}/100
+Your Client Score: ${score}/100
+Gap: Your client is ${Math.abs(scoreGap)} points ${gapDirection} the competitor
+${scoreGap < 0 ? "MARKET RISK: Your client lags behind competitor on accessibility, creating legal and competitive disadvantage." : "COMPETITIVE ADVANTAGE: Your client leads competitor on accessibility compliance."}`;
+    }
+
     const user = `Agency: ${data.agencyName}
 Client: ${data.clientName}
 Industry: ${data.clientIndustry}
@@ -418,7 +436,7 @@ Website: ${data.url ?? ""}
 Score: ${score}/100
 Violations: ${data.violations.length} total, ${criticalViolations.length} critical/serious
 Estimated fix time: ${totalFixTime} hours
-Price range: $${data.priceMin} - $${data.priceMax}
+Price range: $${data.priceMin} - $${data.priceMax}${competitiveAnalysis}
 
 Violations:
 ${data.violations.map((v: any, i: number) => `${i + 1}. [${v.severity?.toUpperCase()}] ${v.name} (${v.wcag_criterion}) - ${v.description} | Fix: ${v.fix_instructions} | Time: ${v.estimated_fix_time ?? "2 hours"}`).join("\n")}`;

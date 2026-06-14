@@ -229,8 +229,8 @@ function Landing() {
             <PriceCard
               tier="BUSINESS"
               price="$199"
-              tagline="For medium agencies"
-              features={["Everything in Agency", "Auto monthly re-audits", "Score drop email alerts", "Bulk proposal generation", "10 team seats", "Performance dashboard", "Priority support"]}
+              tagline="Elite consulting tier"
+              features={["Everything in Agency", "Multi-page site crawling (50 pages)", "Competitor benchmarking", "AI-powered remediation roadmap", "Compliance velocity tracking", "White-labeled client portal", "Compliance shield widget", "10 team seats", "Priority support"]}
               cta="Start free trial"
               variant="ghost"
               priceId={process.env.VITE_DODO_BUSINESS_PRODUCT_ID || "pdt_0Ngl5RCV0T6Vc40K5mtdr"}
