@@ -31,6 +31,47 @@ function SettingsPage() {
   const [settingPlan, setSettingPlan] = useState(false);
   const [settings, setSettings] = useState<any>(null);
   const [referralCopied, setReferralCopied] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordLoading, setPasswordLoading] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+
+  const changePassword = async () => {
+    if (newPassword !== confirmPassword) { toast.error("Passwords don't match"); return; }
+    if (newPassword.length < 6) { toast.error("Password must be at least 6 characters"); return; }
+    setPasswordLoading(true);
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    setPasswordLoading(false);
+    if (error) { toast.error(error.message); }
+    else {
+      toast.success("Password updated successfully!");
+      setShowPasswordModal(false);
+      setNewPassword("");
+      setConfirmPassword("");
+    }
+  };
+
+  const deleteAccount = async () => {
+    if (deleteConfirmText !== "DELETE") { toast.error("Type DELETE to confirm"); return; }
+    setDeleteLoading(true);
+    try {
+      await (supabase as any).from("settings").delete().eq("user_id", user.id);
+      await (supabase as any).from("audits").delete().eq("user_id", user.id);
+      await (supabase as any).from("proposals").delete().eq("user_id", user.id);
+      const { error } = await supabase.auth.admin?.deleteUser?.(user.id) ?? { error: null };
+      await supabase.auth.signOut();
+      window.location.href = "/";
+    } catch (err: any) {
+      await supabase.auth.signOut();
+      window.location.href = "/";
+    }
+    setDeleteLoading(false);
+  };
+
+  const referralStats = { clicks: 0, signups: 0, earned: 0 };
 
   const referralCode = user.email ? btoa(user.email).slice(0, 8).toUpperCase() : "XXXXXXXX";
   const referralLink = `https://accessibility-ai-pro.lovable.app?ref=${referralCode}`;
@@ -238,11 +279,11 @@ function SettingsPage() {
                 <label className="text-xs text-muted-foreground">Email</label>
                 <input value={user.email ?? ""} disabled className={cn(inputCls, "font-mono opacity-70")} />
               </div>
-              <Button variant="outline" className="border-slate-800 hover:bg-slate-800 text-slate-300">Change password</Button>
+              <Button variant="outline" onClick={() => setShowPasswordModal(true)} className="border-slate-800 hover:bg-slate-800 text-slate-300">Change password</Button>
               <div className="pt-5 border-t border-slate-800">
                 <p className="text-red-400 font-semibold text-sm">Danger Zone</p>
                 <p className="mt-1 text-xs text-muted-foreground">Permanently delete your account and all data. This cannot be undone.</p>
-                <Button variant="outline" className="mt-3 border-red-500/30 text-red-400 hover:bg-red-500/10">Delete account</Button>
+                <Button variant="outline" onClick={() => setShowDeleteConfirm(true)} className="mt-3 border-red-500/30 text-red-400 hover:bg-red-500/10">Delete account</Button>
               </div>
             </div>
           </section>
@@ -287,20 +328,60 @@ function SettingsPage() {
           </section>
 
           {/* Referral system */}
-          <section className="card-elevated p-5 bg-slate-900/20 border border-slate-800 rounded-xl space-y-3">
-            <p className="text-xs font-bold uppercase text-emerald-400/80 tracking-widest flex items-center gap-1.5">
-              <Gift className="h-3 w-3" /> Refer & Earn
-            </p>
-            <p className="text-xs text-muted-foreground">Refer an agency and get <strong className="text-white">1 month free</strong> when they upgrade to any paid plan.</p>
-            <div className="flex items-center gap-2">
-              <div className="flex-1 bg-slate-950 border border-slate-800 rounded-md px-3 py-2 font-mono text-xs text-muted-foreground truncate">
-                {referralLink}
+          <section className="card-elevated p-5 bg-slate-900/20 border border-slate-800 rounded-xl space-y-4">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-bold uppercase text-emerald-400/80 tracking-widest flex items-center gap-1.5">
+                <Gift className="h-3 w-3" /> Refer & Earn
+              </p>
+              <span className="text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full font-semibold">1 month free per referral</span>
+            </div>
+            <p className="text-xs text-muted-foreground">Share your unique link. When an agency signs up and upgrades to any paid plan, you get <strong className="text-white">1 month free</strong> automatically applied.</p>
+
+            {/* Referral stats */}
+            <div className="grid grid-cols-3 gap-2">
+              <div className="bg-slate-950 border border-slate-800 rounded-lg p-3 text-center">
+                <div className="text-lg font-bold text-white">{referralStats.clicks}</div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">Link clicks</div>
               </div>
+              <div className="bg-slate-950 border border-slate-800 rounded-lg p-3 text-center">
+                <div className="text-lg font-bold text-white">{referralStats.signups}</div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">Signups</div>
+              </div>
+              <div className="bg-slate-950 border border-slate-800 rounded-lg p-3 text-center">
+                <div className="text-lg font-bold text-emerald-400">{referralStats.earned}</div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">Months earned</div>
+              </div>
+            </div>
+
+            {/* Referral link */}
+            <div className="space-y-2">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Your referral link</p>
+              <div className="flex items-center gap-2">
+                <div className="flex-1 bg-slate-950 border border-slate-800 rounded-md px-3 py-2 font-mono text-xs text-muted-foreground truncate">
+                  {referralLink}
+                </div>
+                <button
+                  onClick={copyReferral}
+                  className="h-9 px-3 rounded-md border border-slate-700 hover:bg-slate-800 text-xs text-slate-300 flex items-center gap-1.5 transition-colors shrink-0"
+                >
+                  {referralCopied ? <><Check className="h-3 w-3 text-emerald-400" />Copied!</> : <><Copy className="h-3 w-3" />Copy</>}
+                </button>
+              </div>
+            </div>
+
+            {/* Share buttons */}
+            <div className="grid grid-cols-2 gap-2">
               <button
-                onClick={copyReferral}
-                className="h-9 px-3 rounded-md border border-slate-700 hover:bg-slate-800 text-xs text-slate-300 flex items-center gap-1.5 transition-colors"
+                onClick={() => window.open(`https://twitter.com/intent/tweet?text=I've been using AccessAudit AI to generate WCAG compliance proposals for my agency clients. Try it free: ${encodeURIComponent(referralLink)}`, "_blank")}
+                className="h-9 rounded-md border border-slate-700 hover:bg-slate-800 text-xs text-slate-300 flex items-center justify-center gap-2 transition-colors"
               >
-                {referralCopied ? <><Check className="h-3 w-3 text-emerald-400" />Copied!</> : <><Copy className="h-3 w-3" />Copy</>}
+                Share on X
+              </button>
+              <button
+                onClick={() => window.open(`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(referralLink)}`, "_blank")}
+                className="h-9 rounded-md border border-slate-700 hover:bg-slate-800 text-xs text-slate-300 flex items-center justify-center gap-2 transition-colors"
+              >
+                Share on LinkedIn
               </button>
             </div>
             <p className="text-[10px] text-muted-foreground">Your referral code: <span className="font-mono text-primary font-bold">{referralCode}</span></p>
