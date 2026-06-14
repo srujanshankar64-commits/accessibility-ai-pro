@@ -22,6 +22,7 @@ const PLAN_LABELS: Record<string, string> = {
 function SettingsPage() {
   const { user } = Route.useRouteContext();
   const [agencyName, setAgencyName] = useState("");
+  const [agencyLogo, setAgencyLogo] = useState("");
   const [brandColor, setBrandColor] = useState("#6E56CF");
   const [apiKey, setApiKey] = useState("");
   const [showKey, setShowKey] = useState(false);
@@ -87,6 +88,7 @@ function SettingsPage() {
       if (!data) return;
       setSettings(data);
       setAgencyName(data.agency_name ?? "");
+      setAgencyLogo(data.agency_logo_url ?? "");
       setBrandColor(data.brand_color ?? "#6E56CF");
       setApiKey(data.gemini_api_key ?? "");
       setPlan((data.plan as any) ?? "free");
@@ -224,10 +226,40 @@ function SettingsPage() {
               <p className="text-xs text-muted-foreground mt-1">Appears on generated proposals and white-label PDF exports.</p>
             </div>
 
-            <div className="border-2 border-dashed border-[#d2d2d7] rounded-md p-6 text-center bg-background/50">
-              <UploadCloud className="h-6 w-6 mx-auto text-muted-foreground" />
-              <p className="mt-2 text-sm text-muted-foreground">Upload agency logo</p>
-              <p className="text-xs text-muted-foreground/70">PNG or SVG · max 2MB</p>
+            <div className="border-2 border-dashed border-border rounded-md p-6 text-center bg-background/50">
+              <input
+                type="file"
+                accept="image/png,image/svg+xml,image/jpeg"
+                className="hidden"
+                id="logo-upload"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  if (file.size > 2 * 1024 * 1024) {
+                    toast.error("File too large. Max 2MB.");
+                    return;
+                  }
+                  try {
+                    const { data, error } = await supabase.storage
+                      .from('logos')
+                      .upload(`${user.id}/${Date.now()}_${file.name}`, file);
+                    if (error) throw error;
+                    const { data: { publicUrl } } = supabase.storage
+                      .from('logos')
+                      .getPublicUrl(data.path);
+                    await (supabase as any).from('settings').update({ agency_logo_url: publicUrl }).eq('user_id', user.id);
+                    setAgencyLogo(publicUrl);
+                    toast.success("Logo uploaded successfully");
+                  } catch (err) {
+                    toast.error("Failed to upload logo");
+                  }
+                }}
+              />
+              <label htmlFor="logo-upload" className="cursor-pointer">
+                <UploadCloud className="h-6 w-6 mx-auto text-muted-foreground" />
+                <p className="mt-2 text-sm text-muted-foreground">Upload agency logo</p>
+                <p className="text-xs text-muted-foreground/70">PNG or SVG · max 2MB</p>
+              </label>
             </div>
 
             <div className="grid sm:grid-cols-2 gap-4">
@@ -246,7 +278,7 @@ function SettingsPage() {
           </section>
 
           {/* AI API Key */}
-          <section className="card-elevated p-6 space-y-4 bg-white border border-[#d2d2d7] rounded-xl">
+          <section className="card-elevated p-6 space-y-4 bg-slate-900/40 border border-slate-800 rounded-xl">
             <div>
               <p className="text-sm font-bold tracking-wide">AI Engine API Key</p>
               <p className="text-xs text-muted-foreground mt-1">Optional. Leave blank to use the AccessAudit AI shared gateway.</p>
@@ -255,7 +287,7 @@ function SettingsPage() {
               <label className="text-xs text-muted-foreground">Gemini API Key (Google AI Studio)</label>
               <div className="relative">
                 <input type={showKey ? "text" : "password"} value={apiKey} onChange={(e) => setApiKey(e.target.value)} className={cn(inputCls, "font-mono pr-10")} placeholder="AIzaSy..." />
-                <button type="button" onClick={() => setShowKey((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-[#1d1d1f]">
+                <button type="button" onClick={() => setShowKey((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                   {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
                 </button>
               </div>

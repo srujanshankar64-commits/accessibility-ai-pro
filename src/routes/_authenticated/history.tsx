@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { generateProposal } from "@/lib/ai.functions";
 import { supabase } from "@/integrations/supabase/client";
-import { FileSearch, Search, ArrowUpRight, Lock, Loader2, FileDown, Share2, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { FileSearch, Search, ArrowUpRight, Lock, Loader2, FileDown, Share2, TrendingUp, TrendingDown, Minus, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { getPlan, TIER } from "@/lib/tier.utils";
@@ -345,6 +345,13 @@ function HistoryPage() {
                           title="Copy client portal link"
                         >
                           <Share2 className="h-3 w-3" />
+                        </button>
+                        <button
+                          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                          title="Schedule re-audit"
+                          onClick={() => toast.info("Audit scheduling coming soon")}
+                        >
+                          <RefreshCw className="h-3 w-3" />
                         </button>
                         <button
                           className="inline-flex items-center gap-1 text-xs text-primary hover:text-primary-hover"

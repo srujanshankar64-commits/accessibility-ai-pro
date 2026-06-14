@@ -71,6 +71,7 @@ function NewAuditPage() {
     setPitchLoading(true);
     setPitchResult(null);
     try {
+      const cityContext = businessCity ? ` based in ${businessCity}` : "";
       const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${import.meta.env.VITE_LOVABLE_API_KEY || ""}` },
@@ -78,7 +79,7 @@ function NewAuditPage() {
           model: "google/gemini-2.5-flash",
           messages: [
             { role: "system", content: "You are an expert digital agency consultant writing a website creation pitch email. Be specific, data-driven, and persuasive. Under 200 words." },
-            { role: "user", content: `Write a cold email pitch for a business called '${businessName}' in the '${businessIndustry}' industry that has NO website. Include: 80%+ of local consumers research online before buying, how missing a website hands market share to competitors, and offer a free 1-page homepage mockup concept. End with a call to action for a 15-minute call.` }
+            { role: "user", content: `Write a cold email pitch for a business called '${businessName}'${cityContext} in the '${businessIndustry}' industry that has NO website. Include: 80%+ of local consumers research online before buying, how missing a website hands market share to competitors, and offer a free 1-page homepage mockup concept. End with a call to action for a 15-minute call.` }
           ]
         })
       });
@@ -239,11 +240,14 @@ function NewAuditPage() {
           </span>
           <span className={cn(
             "text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full",
-            currentPlan === "business" ? "bg-blue-100 text-blue-700" :
-            currentPlan === "agency" ? "bg-blue-500/20 text-blue-300" :
+            currentPlan === "business" ? "bg-blue-500/20 text-blue-300" :
+            currentPlan === "agency" ? "bg-purple-500/20 text-purple-300" :
             currentPlan === "starter" ? "bg-emerald-500/20 text-emerald-300" :
-            "bg-[#f5f5f7] text-[#6e6e73]"
+            "bg-slate-700 text-slate-300"
           )}>{currentPlan}</span>
+          {!isUnlimited && used >= auditLimit - 2 && currentPlan === "starter" && (
+            <span className="text-[9px] font-bold text-amber-400">⚠️ Near limit</span>
+          )}
         </div>
       </header>
 

@@ -252,7 +252,7 @@ function ProposalPage() {
 
       const out = await proposalFn({ data: {
         auditId: s.auditId, url: s.url, agencyName,
-        clientName: "", clientIndustry: "General Business",
+        clientName: "", clientIndustry: "E-commerce",
         tone: "professional", priceMin: 2500, priceMax: 8000,
         violations: s.violations ?? [],
       }});
@@ -282,7 +282,7 @@ function ProposalPage() {
 
       const out = await proposalFn({ data: {
         auditId: seed.auditId, url: seed.url, agencyName: agency, clientName: client,
-        clientIndustry: industry, tone, priceMin, priceMax,
+        clientIndustry: industry || "E-commerce", tone, priceMin, priceMax,
         violations: seed.violations ?? [],
       }});
       setContent(sanitizeContent(out) as ProposalContent);
