@@ -234,7 +234,7 @@ function NewAuditPage() {
           </span>
           <span className={cn(
             "text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full",
-            currentPlan === "business" ? "bg-violet-500/20 text-violet-300" :
+            currentPlan === "business" ? "bg-blue-100 text-blue-700" :
             currentPlan === "agency" ? "bg-blue-500/20 text-blue-300" :
             currentPlan === "starter" ? "bg-emerald-500/20 text-emerald-300" :
             "bg-zinc-500/20 text-zinc-400"
@@ -349,18 +349,18 @@ function NewAuditPage() {
 
           {/* Limited violations banner for free users */}
           {audit.isLimited && (
-            <div className="flex items-center gap-3 p-4 rounded-lg border border-violet-500/30 bg-violet-500/10">
-              <Zap className="h-4 w-4 text-violet-400 shrink-0" />
+            <div className="flex items-center gap-3 p-4 rounded-lg border border-blue-200 bg-blue-50">
+              <Zap className="h-4 w-4 text-blue-600 shrink-0" />
               <div className="flex-1">
-                <p className="text-sm font-semibold text-violet-300">
+                <p className="text-sm font-semibold text-blue-700">
                   {audit.totalViolationsFound} violations found — showing 5 of {audit.totalViolationsFound}
                 </p>
-                <p className="text-xs text-violet-400/80 mt-0.5">
+                <p className="text-xs text-blue-600/80 mt-0.5">
                   Upgrade to Starter ($49/mo) to see all violations and generate proposals.
                 </p>
               </div>
               <Link to="/settings">
-                <Button size="sm" className="bg-violet-600 hover:bg-violet-700 text-white text-xs shrink-0">
+                <Button size="sm" className="bg-[#1d1d1f] hover:opacity-80 text-white text-xs shrink-0">
                   Upgrade
                 </Button>
               </Link>
@@ -509,9 +509,9 @@ function NewAuditPage() {
                             )}
                           </div>
                         ) : (
-                          <div className="flex items-center gap-2 p-3 rounded-md border border-violet-500/30 bg-violet-500/10">
-                            <Lock className="h-3.5 w-3.5 text-violet-400 shrink-0" />
-                            <p className="text-xs text-violet-300">
+                          <div className="flex items-center gap-2 p-3 rounded-md border border-blue-200 bg-blue-50">
+                            <Lock className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                            <p className="text-xs text-blue-700">
                               AI code fixes available on <Link to="/settings" className="underline font-semibold">Agency ($99/mo)</Link> and above.
                             </p>
                           </div>

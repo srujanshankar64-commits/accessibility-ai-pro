@@ -888,7 +888,7 @@ function ProposalPage() {
             <div className="flex items-center justify-between">
               <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Active Workspace Provision</span>
               <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full tracking-wider shadow-sm ${
-                currentPlan === "business" ? "bg-violet-500/15 text-violet-400 border border-violet-500/20" :
+                currentPlan === "business" ? "bg-violet-500/15 text-blue-600 border border-violet-500/20" :
                 currentPlan === "agency" ? "bg-blue-500/15 text-blue-400 border border-blue-500/20" :
                 currentPlan === "starter" ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20" :
                 "bg-zinc-500/15 text-zinc-400 border border-zinc-500/20"
