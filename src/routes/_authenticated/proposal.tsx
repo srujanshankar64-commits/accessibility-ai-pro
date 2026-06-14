@@ -1,14 +1,14 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState, useRef } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { generateProposal, generateColdEmail, generateCertificate, getPlanStatus } from "@/lib/ai.functions";
+import { generateProposal, generateColdEmail, generateCertificate, getPlanStatus, generateWebsitePitch } from "@/lib/ai.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Sparkles, Download, Mail, ShieldCheck, Lock, Award, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Loader2, Sparkles, Download, Mail, ShieldCheck, Lock, Award, AlertTriangle, CheckCircle2, Building2, Globe, TrendingUp, Users, Copy } from "lucide-react";
 import type { Violation, ProposalContent } from "@/lib/audit-types";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -63,6 +63,97 @@ function ProposalPage() {
     follow_up_email: "",
   });
   const [busy, setBusy] = useState(false);
+  const [noWebsiteMode, setNoWebsiteMode] = useState(false);
+  const [bizName, setBizName] = useState("");
+  const [bizIndustry, setBizIndustry] = useState("");
+  const [pitchBusy, setPitchBusy] = useState(false);
+  const [pitchContent, setPitchContent] = useState<any>(null);
+  const pitchFn = useServerFn(generateWebsitePitch);
+
+  const generatePitchProposal = async () => {
+    if (!bizName || !bizIndustry) { toast.error("Enter business name and industry"); return; }
+    setPitchBusy(true);
+    try {
+      const out = await pitchFn({ data: {
+        businessName: bizName,
+        industry: bizIndustry,
+        agencyName: agency,
+        priceMin,
+        priceMax,
+      }});
+      setPitchContent(out);
+      toast.success("Website pitch proposal generated!");
+    } catch (err: any) {
+      toast.error(err.message ?? "Failed to generate pitch");
+    } finally { setPitchBusy(false); }
+  };
+
+  const exportPitchPDF = async () => {
+    if (!pitchContent) return;
+    const { jsPDF } = await import("jspdf");
+    const doc = new jsPDF({ unit: "pt", format: "a4" });
+    const W = doc.internal.pageSize.getWidth();
+    let y = 60;
+    const [r, g, b] = hexToRgb(brandColor);
+
+    doc.setFillColor(r, g, b);
+    doc.rect(0, 0, W, 8, "F");
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16);
+    doc.setTextColor(20, 20, 30);
+    doc.text(agency, 48, y); y += 28;
+
+    doc.setFontSize(22);
+    doc.text("Digital Presence Proposal", 48, y); y += 28;
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(11);
+    doc.setTextColor(100, 100, 115);
+    doc.text(`Prepared exclusively for: ${bizName}`, 48, y); y += 16;
+    doc.text(`Industry: ${bizIndustry}`, 48, y); y += 16;
+    doc.text(`Date: ${new Date().toLocaleDateString()}`, 48, y); y += 28;
+
+    const sections: [string, string][] = [
+      ["Executive Summary", pitchContent.executive_summary ?? ""],
+      ["Market Analysis", pitchContent.market_analysis ?? ""],
+      ["Competitor Insight", pitchContent.competitor_insight ?? ""],
+      ["Proposed Solution", pitchContent.proposed_solution ?? ""],
+      ["Investment", pitchContent.investment ?? ""],
+      ["Return on Investment", pitchContent.roi_statement ?? ""],
+      ["Next Steps", pitchContent.next_steps ?? ""],
+      ["Outreach Email", pitchContent.pitch_email ?? ""],
+    ];
+
+    sections.forEach(([heading, body]) => {
+      if (y > 700) { doc.addPage(); y = 60; }
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(13);
+      doc.setTextColor(r, g, b);
+      doc.text(heading, 48, y); y += 20;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10.5);
+      doc.setTextColor(50, 50, 65);
+      const lines = doc.splitTextToSize(body, W - 96);
+      for (const line of lines) {
+        if (y > 750) { doc.addPage(); y = 60; }
+        doc.text(line, 48, y); y += 15;
+      }
+      y += 20;
+    });
+
+    const pageCount = doc.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.setFontSize(9);
+      doc.setTextColor(150, 150, 160);
+      doc.text(`${agency} — Confidential`, 48, doc.internal.pageSize.getHeight() - 20);
+      doc.text(`Page ${i} of ${pageCount}`, W - 48, doc.internal.pageSize.getHeight() - 20, { align: "right" });
+    }
+
+    doc.save(`Website_Pitch_${bizName.replace(/\s+/g, "_")}.pdf`);
+    toast.success("Pitch PDF exported!");
+  };
   const [autoLoading, setAutoLoading] = useState(false);
   const [certificate, setCertificate] = useState<any>(null);
   const hasAutoRun = useRef(false);
@@ -331,6 +422,175 @@ function ProposalPage() {
           message="Proposal pipeline orchestration is available on our Starter tier configurations ($49/mo) and up."
           target="starter"
         />
+      )}
+
+      {/* No Website Mode Toggle */}
+      <div className="flex items-center gap-3 p-4 rounded-xl border border-border/40 bg-card/60">
+        <label className="flex items-center gap-3 cursor-pointer select-none flex-1">
+          <div
+            onClick={() => { setNoWebsiteMode(n => !n); setPitchContent(null); }}
+            className={`relative w-10 h-5 rounded-full transition-colors cursor-pointer ${noWebsiteMode ? "bg-primary" : "bg-accent border border-border"}`}
+          >
+            <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${noWebsiteMode ? "left-5" : "left-0.5"}`} />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-foreground flex items-center gap-2">
+              <Building2 className="h-4 w-4 text-primary" />
+              Prospect has NO website
+            </p>
+            <p className="text-xs text-muted-foreground">Switch to website creation pitch mode</p>
+          </div>
+        </label>
+      </div>
+
+      {/* NO WEBSITE MODE — Elite Pitch Generator */}
+      {noWebsiteMode && (
+        <div className="grid lg:grid-cols-[1.3fr_1fr] gap-6 items-start animate-fade-in">
+          {/* Pitch Preview */}
+          <div className="card-elevated p-6 sm:p-8 bg-white text-zinc-900 max-h-[85vh] overflow-y-auto relative shadow-2xl rounded-2xl border border-zinc-200">
+            <div className="flex items-center justify-between border-b border-zinc-100 pb-5 mb-6">
+              <div className="flex items-center gap-3">
+                <div className="h-8 w-8 rounded-lg grid place-items-center shadow-sm" style={{ backgroundColor: brandColor }}>
+                  <Globe className="h-4 w-4 text-white" />
+                </div>
+                <span className="font-bold tracking-tight text-zinc-800 text-sm">{agency}</span>
+              </div>
+              <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400 bg-zinc-50 px-2.5 py-1 rounded border border-zinc-100">Digital Presence Proposal</span>
+            </div>
+
+            <h2 className="text-2xl font-bold tracking-tight text-zinc-900 leading-tight">Website Creation Proposal</h2>
+            <p className="text-sm text-zinc-500 mt-1.5 font-medium">Prepared exclusively for: <span className="text-zinc-800 font-semibold">{bizName || "Business Name"}</span></p>
+            <p className="text-xs text-zinc-400 mt-1">{bizIndustry || "Industry"} · {new Date().toLocaleDateString()}</p>
+
+            {!pitchContent && !pitchBusy && (
+              <div className="mt-12 text-center py-16 border border-dashed border-zinc-200 rounded-xl bg-zinc-50/50">
+                <Globe className="h-8 w-8 mx-auto mb-3 text-zinc-400 opacity-60" />
+                <p className="text-sm font-medium text-zinc-600">No pitch generated yet</p>
+                <p className="text-xs text-zinc-400 mt-1 max-w-xs mx-auto">Enter business name and industry, then click Generate Pitch Proposal.</p>
+              </div>
+            )}
+
+            {pitchBusy && (
+              <div className="mt-12 text-center py-16 border border-dashed border-zinc-200 rounded-xl bg-zinc-50/50">
+                <Loader2 className="h-7 w-7 mx-auto mb-3 animate-spin text-zinc-400" />
+                <p className="text-sm font-medium text-zinc-600">Generating elite pitch proposal...</p>
+                <p className="text-xs text-zinc-400 mt-1">Analyzing market opportunity and competitor landscape.</p>
+              </div>
+            )}
+
+            {pitchContent && !pitchBusy && (
+              <div className="space-y-6 mt-6 animate-fade-in">
+                {[
+                  ["Executive Summary", pitchContent.executive_summary, <TrendingUp className="h-4 w-4" />],
+                  ["Market Analysis", pitchContent.market_analysis, <Users className="h-4 w-4" />],
+                  ["Competitor Insight", pitchContent.competitor_insight, <Globe className="h-4 w-4" />],
+                  ["Proposed Solution", pitchContent.proposed_solution, <Sparkles className="h-4 w-4" />],
+                ].map(([heading, body, icon]: any) => (
+                  <section key={heading} className="space-y-1.5">
+                    <h3 className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5" style={{ color: brandColor }}>
+                      {icon}{heading}
+                    </h3>
+                    <p className="text-sm text-zinc-700 leading-relaxed">{body}</p>
+                  </section>
+                ))}
+
+                <section className="rounded-xl bg-zinc-50 border border-zinc-200 p-5 space-y-2 shadow-sm">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Investment</span>
+                  <p className="font-mono font-black text-zinc-900 text-2xl tracking-tight">${priceMin.toLocaleString()} – ${priceMax.toLocaleString()} USD</p>
+                  <p className="text-xs text-zinc-500 leading-relaxed">{pitchContent.investment}</p>
+                  {pitchContent.roi_statement && (
+                    <p className="text-xs text-zinc-600 font-medium italic border-t border-zinc-200/60 pt-2.5 mt-2">{pitchContent.roi_statement}</p>
+                  )}
+                </section>
+
+                {pitchContent.next_steps && (
+                  <section className="space-y-1.5">
+                    <h3 className="text-xs font-bold uppercase tracking-wider" style={{ color: brandColor }}>Next Steps</h3>
+                    <p className="text-sm text-zinc-700 leading-relaxed">{pitchContent.next_steps}</p>
+                  </section>
+                )}
+
+                <section className="rounded-xl border-2 p-5 space-y-3 shadow-sm" style={{ borderColor: `${brandColor}25`, backgroundColor: `${brandColor}04` }}>
+                  <div className="flex items-center justify-between border-b pb-2.5" style={{ borderColor: `${brandColor}15` }}>
+                    <div className="flex items-center gap-2">
+                      <Mail className="h-4 w-4" style={{ color: brandColor }} />
+                      <h3 className="text-xs font-bold uppercase tracking-wider" style={{ color: brandColor }}>Cold Outreach Email</h3>
+                    </div>
+                    <button
+                      onClick={() => { navigator.clipboard.writeText(pitchContent.pitch_email); toast.success("Email copied!"); }}
+                      className="h-7 px-2.5 rounded border border-zinc-200 text-xs text-zinc-500 hover:bg-zinc-100 flex items-center gap-1"
+                    >
+                      <Copy className="h-3 w-3" /> Copy
+                    </button>
+                  </div>
+                  <pre className="text-xs text-zinc-700 whitespace-pre-wrap leading-relaxed font-mono">{pitchContent.pitch_email}</pre>
+                </section>
+              </div>
+            )}
+          </div>
+
+          {/* Pitch Controls */}
+          <div className="space-y-4 lg:sticky lg:top-6">
+            <div className="card-elevated p-5 space-y-4 rounded-2xl border border-border/40 shadow-xl bg-card">
+              <h3 className="font-display text-base font-bold tracking-tight">Pitch Configuration</h3>
+              <div className="space-y-1.5">
+                <label className="text-[10px] tracking-wider text-muted-foreground uppercase font-bold">Business Name</label>
+                <input value={bizName} onChange={e => setBizName(e.target.value)} placeholder="e.g. Joe's Plumbing" className="w-full h-10 px-3 bg-background/50 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[10px] tracking-wider text-muted-foreground uppercase font-bold">Industry / Niche</label>
+                <input value={bizIndustry} onChange={e => setBizIndustry(e.target.value)} placeholder="e.g. Local Plumbing Services" className="w-full h-10 px-3 bg-background/50 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[10px] tracking-wider text-muted-foreground uppercase font-bold">Agency Name</label>
+                <input value={agency} onChange={e => setAgency(e.target.value)} className="w-full h-10 px-3 bg-background/50 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+              </div>
+              <div className="space-y-3 pt-2 border-t border-border/40">
+                <div>
+                  <div className="flex items-center justify-between text-xs mb-1">
+                    <span className="text-[10px] tracking-wider text-muted-foreground uppercase font-bold">Min Budget</span>
+                    <span className="font-mono text-primary font-bold">${priceMin.toLocaleString()}</span>
+                  </div>
+                  <Slider value={[priceMin]} min={500} max={20000} step={250} onValueChange={(v) => setPriceMin(v[0])} className="py-2" />
+                </div>
+                <div>
+                  <div className="flex items-center justify-between text-xs mb-1">
+                    <span className="text-[10px] tracking-wider text-muted-foreground uppercase font-bold">Max Budget</span>
+                    <span className="font-mono text-primary font-bold">${priceMax.toLocaleString()}</span>
+                  </div>
+                  <Slider value={[priceMax]} min={1000} max={50000} step={500} onValueChange={(v) => setPriceMax(v[0])} className="py-2" />
+                </div>
+              </div>
+            </div>
+
+            <div className="card-elevated p-5 space-y-3 rounded-2xl border border-border/40 shadow-xl bg-card">
+              <button
+                onClick={generatePitchProposal}
+                disabled={pitchBusy || !bizName || !bizIndustry}
+                className="w-full h-11 bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl font-medium flex items-center justify-center gap-2 disabled:opacity-60 transition-all"
+              >
+                {pitchBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                {pitchContent ? "Regenerate Pitch Proposal" : "Generate Pitch Proposal"}
+              </button>
+              <button
+                onClick={exportPitchPDF}
+                disabled={!pitchContent}
+                className="w-full h-11 bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded-xl font-medium flex items-center justify-center gap-2 disabled:opacity-60 transition-all"
+              >
+                <Download className="h-4 w-4" />
+                Export White-Label Pitch PDF
+              </button>
+              <button
+                onClick={() => { if (pitchContent?.pitch_email) { navigator.clipboard.writeText(pitchContent.pitch_email); toast.success("Email copied!"); } }}
+                disabled={!pitchContent}
+                className="w-full h-11 border border-border hover:bg-accent text-foreground rounded-xl font-medium flex items-center justify-center gap-2 disabled:opacity-60 transition-all text-sm"
+              >
+                <Mail className="h-4 w-4" />
+                Copy Cold Outreach Email
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {autoLoading && (

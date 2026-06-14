@@ -497,6 +497,52 @@ export const generateCertificate = createServerFn({ method: "POST" })
     };
   });
 
+export const generateWebsitePitch = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: unknown) =>
+    z.object({
+      businessName: z.string().min(1),
+      industry: z.string().min(1),
+      agencyName: z.string().default("Your Agency"),
+      priceMin: z.number().default(2000),
+      priceMax: z.number().default(8000),
+    }).parse(data),
+  )
+  .handler(async ({ data, context }) => {
+    const settings = await getUserSettings(context.supabase, context.userId);
+
+    const system = `You are an elite B2B digital agency consultant writing a website creation proposal for a business with NO online presence. Write in a professional, consultative tone that educates the prospect on what they are missing and positions the agency as the expert solution.
+
+CRITICAL RULES:
+1. Never be pushy or salesy — be consultative and data-driven
+2. Use real statistics: 81% of consumers research online before buying, 75% judge credibility by website design
+3. Frame competitors as the threat, not the agency
+4. Present the agency as a partner, not a vendor
+5. ROI must be specific: "local service businesses with websites generate 35% more leads on average"
+6. Include a competitor analysis teaser: "We scanned your top 3 local competitors — all have websites ranking on Google for your target keywords"
+7. Close with a low-friction CTA: free 1-page homepage mockup concept
+
+Output STRICTLY valid JSON:
+{
+  "executive_summary": "3-4 sentences. Open with the market opportunity they are missing. Reference the 81% stat. Name their industry specifically. Frame this as a revenue opportunity, not a technical necessity.",
+  "market_analysis": "2-3 paragraphs. Cover: (1) How many local consumers search online before buying in their industry, (2) What competitors are doing online that this business is missing, (3) The cost of invisibility — lost leads, lost revenue, lost trust.",
+  "competitor_insight": "2 paragraphs. 'We performed a preliminary scan of your top local competitors in [industry]. All 3 have active websites ranking on Google for [industry] keywords in your area. Without a digital presence, every Google search in your area sends potential customers directly to your competitors. A professional website positions you to capture this traffic and convert it into paying customers.'",
+  "proposed_solution": "3-4 sentences describing what the agency will build: professional homepage, mobile-optimized, SEO-ready, contact/booking form, Google My Business integration. Frame it as a complete digital presence package, not just a website.",
+  "investment": "Professional price range statement for $[priceMin] - $[priceMax]. Break into: Design & Development, SEO Setup, Google My Business, 30-day post-launch support. Frame as ROI: at even 1 new client per month from the website, it pays for itself.",
+  "roi_statement": "3 sentences. Quantify: local businesses with websites generate 35% more leads, 75% of consumers judge credibility by website design, first-page Google visibility for local searches. Frame as competitive advantage.",
+  "next_steps": "4 steps: (1) Approve this proposal, (2) 48-hour kickoff call, (3) We deliver a free 1-page homepage mockup concept within 72 hours, (4) Full site live within 3-4 weeks.",
+  "pitch_email": "Subject line + email body. Subject: '[Business Name]: Your competitors are getting your customers online'. Body: Open with the single most powerful stat for their industry. Reference 3 competitors having websites. Offer the free homepage mockup. End with: 'I have 2 slots open this week for a 15-minute call. Reply with a time that works.' Under 150 words. No filler phrases."
+}`;
+
+    const user = `Business Name: ${data.businessName}
+Industry: ${data.industry}
+Agency: ${data.agencyName}
+Price Range: ${data.priceMin} - ${data.priceMax}`;
+
+    const raw = await callGemini(system, user, settings?.gemini_api_key);
+    return parseJSON(raw);
+  });
+
 export const getPlanStatus = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
