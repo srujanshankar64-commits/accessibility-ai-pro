@@ -503,6 +503,10 @@ export const generateWebsitePitch = createServerFn({ method: "POST" })
     z.object({
       businessName: z.string().min(1),
       industry: z.string().min(1),
+      city: z.string().default(""),
+      customerType: z.string().default("B2C"),
+      currentMarketing: z.string().default("Word of mouth only"),
+      employees: z.string().default("1-5"),
       agencyName: z.string().default("Your Agency"),
       priceMin: z.number().default(2000),
       priceMax: z.number().default(8000),
@@ -519,7 +523,8 @@ CRITICAL RULES:
 3. Frame competitors as the threat, not the agency
 4. Present the agency as a partner, not a vendor
 5. ROI must be specific: "local service businesses with websites generate 35% more leads on average"
-6. Include a competitor analysis teaser: "We scanned your top 3 local competitors — all have websites ranking on Google for your target keywords"
+6. Include a competitor analysis teaser: "We scanned your top 3 local competitors in [city] — all have websites ranking on Google for [industry] keywords in your area"
+7. Personalize based on customer type, current marketing method, and team size — make it feel like real research was done on this specific business
 7. Close with a low-friction CTA: free 1-page homepage mockup concept
 
 Output STRICTLY valid JSON:

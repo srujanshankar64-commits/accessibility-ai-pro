@@ -55,6 +55,8 @@ function NewAuditPage() {
   const [pitchLoading, setPitchLoading] = useState(false);
   const [pitchResult, setPitchResult] = useState<string | null>(null);
 
+  const [businessCity, setBusinessCity] = useState("");
+
   const generatePitch = async () => {
     if (!businessName || !businessIndustry) return;
     setPitchLoading(true);

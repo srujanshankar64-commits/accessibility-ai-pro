@@ -66,6 +66,10 @@ function ProposalPage() {
   const [noWebsiteMode, setNoWebsiteMode] = useState(false);
   const [bizName, setBizName] = useState("");
   const [bizIndustry, setBizIndustry] = useState("");
+  const [bizCity, setBizCity] = useState("");
+  const [bizCustomerType, setBizCustomerType] = useState("B2C");
+  const [bizMarketing, setBizMarketing] = useState("Word of mouth only");
+  const [bizEmployees, setBizEmployees] = useState("1-5");
   const [pitchBusy, setPitchBusy] = useState(false);
   const [pitchContent, setPitchContent] = useState<any>(null);
   const pitchFn = useServerFn(generateWebsitePitch);
@@ -77,6 +81,10 @@ function ProposalPage() {
       const out = await pitchFn({ data: {
         businessName: bizName,
         industry: bizIndustry,
+        city: bizCity,
+        customerType: bizCustomerType,
+        currentMarketing: bizMarketing,
+        employees: bizEmployees,
         agencyName: agency,
         priceMin,
         priceMax,
@@ -533,17 +541,47 @@ function ProposalPage() {
           <div className="space-y-4 lg:sticky lg:top-6">
             <div className="card-elevated p-5 space-y-4 rounded-2xl border border-border/40 shadow-xl bg-card">
               <h3 className="font-display text-base font-bold tracking-tight">Pitch Configuration</h3>
-              <div className="space-y-1.5">
-                <label className="text-[10px] tracking-wider text-muted-foreground uppercase font-bold">Business Name</label>
-                <input value={bizName} onChange={e => setBizName(e.target.value)} placeholder="e.g. Joe's Plumbing" className="w-full h-10 px-3 bg-background/50 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-[10px] tracking-wider text-muted-foreground uppercase font-bold">Industry / Niche</label>
-                <input value={bizIndustry} onChange={e => setBizIndustry(e.target.value)} placeholder="e.g. Local Plumbing Services" className="w-full h-10 px-3 bg-background/50 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-[10px] tracking-wider text-muted-foreground uppercase font-bold">Agency Name</label>
-                <input value={agency} onChange={e => setAgency(e.target.value)} className="w-full h-10 px-3 bg-background/50 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5 col-span-2">
+                  <label className="text-[10px] tracking-wider text-muted-foreground uppercase font-bold">Business Name</label>
+                  <input value={bizName} onChange={e => setBizName(e.target.value)} placeholder="e.g. Joe's Plumbing" className="w-full h-10 px-3 bg-background/50 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] tracking-wider text-muted-foreground uppercase font-bold">Industry / Niche</label>
+                  <input value={bizIndustry} onChange={e => setBizIndustry(e.target.value)} placeholder="e.g. Restaurant" className="w-full h-10 px-3 bg-background/50 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] tracking-wider text-muted-foreground uppercase font-bold">City</label>
+                  <input value={bizCity} onChange={e => setBizCity(e.target.value)} placeholder="e.g. Melbourne" className="w-full h-10 px-3 bg-background/50 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] tracking-wider text-muted-foreground uppercase font-bold">Customer Type</label>
+                  <select value={bizCustomerType} onChange={e => setBizCustomerType(e.target.value)} className="w-full h-10 px-3 bg-background/50 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                    <option>B2C — Local consumers</option>
+                    <option>B2B — Other businesses</option>
+                  </select>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] tracking-wider text-muted-foreground uppercase font-bold">Current Marketing</label>
+                  <select value={bizMarketing} onChange={e => setBizMarketing(e.target.value)} className="w-full h-10 px-3 bg-background/50 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                    <option>Word of mouth only</option>
+                    <option>Social media only</option>
+                    <option>Print ads</option>
+                    <option>None at all</option>
+                  </select>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] tracking-wider text-muted-foreground uppercase font-bold">Team Size</label>
+                  <select value={bizEmployees} onChange={e => setBizEmployees(e.target.value)} className="w-full h-10 px-3 bg-background/50 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                    <option>1-5</option>
+                    <option>6-20</option>
+                    <option>20+</option>
+                  </select>
+                </div>
+                <div className="space-y-1.5 col-span-2">
+                  <label className="text-[10px] tracking-wider text-muted-foreground uppercase font-bold">Agency Name</label>
+                  <input value={agency} onChange={e => setAgency(e.target.value)} className="w-full h-10 px-3 bg-background/50 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                </div>
               </div>
               <div className="space-y-3 pt-2 border-t border-border/40">
                 <div>
