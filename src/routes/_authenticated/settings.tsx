@@ -172,7 +172,7 @@ function SettingsPage() {
   const inputCls = "w-full h-10 px-3 rounded bg-background border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50";
 
   return (
-    <div className="space-y-10 animate-slide-up max-w-5xl mx-auto p-4 sm:p-6 text-slate-100">
+    <div className="space-y-10 animate-slide-up max-w-5xl mx-auto p-4 sm:p-6 ">
       <header>
         <h1 className="font-display text-2xl text-white">Settings</h1>
         <p className="mt-2 text-sm text-muted-foreground">Manage your agency branding, active integrations, and subscription billing profiles.</p>
@@ -181,7 +181,7 @@ function SettingsPage() {
       {/* DEV TOOL - Admin only */}
       {user.email === 'srujanshankar64@gmail.com' && (
         <section className="p-4 border border-dashed border-purple-500/40 rounded-xl bg-purple-950/10 space-y-3">
-          <p className="text-xs font-bold text-purple-400 uppercase tracking-widest">Dev Tools — Set Plan for Testing</p>
+          <p className="text-xs font-bold text-[#1d1d1f] uppercase tracking-widest">Dev Tools — Set Plan for Testing</p>
           <div className="flex flex-wrap gap-2">
             {["free", "starter", "agency", "business"].map((p) => (
               <button
@@ -191,14 +191,14 @@ function SettingsPage() {
                 className={cn(
                   "text-xs px-3 py-1.5 rounded-md font-semibold border transition-all",
                   currentPlan === p
-                    ? "border-purple-500 bg-purple-500/20 text-purple-300"
-                    : "border-slate-700 bg-slate-900 text-slate-400 hover:border-purple-500 hover:text-purple-300"
+                    ? "border-[#1d1d1f] bg-[#1d1d1f] text-white"
+                    : "border-[#d2d2d7] bg-white text-[#6e6e73] hover:bg-[#f5f5f7]"
                 )}
               >
                 {currentPlan === p ? `✓ ${p}` : `Set ${p}`}
               </button>
             ))}
-            {settingPlan && <Loader2 className="h-4 w-4 animate-spin text-purple-400 self-center" />}
+            {settingPlan && <Loader2 className="h-4 w-4 animate-spin text-[#1d1d1f] self-center" />}
           </div>
         </section>
       )}
@@ -210,7 +210,7 @@ function SettingsPage() {
           <section className="card-elevated p-6 space-y-5 relative overflow-hidden bg-slate-900/40 border border-slate-800 rounded-xl">
             {!hasBrandingAccess && (
               <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-[1.5px] z-10 flex flex-col items-center justify-center p-6 text-center">
-                <Lock className="h-5 w-5 text-purple-400 mb-2" />
+                <Lock className="h-5 w-5 text-[#1d1d1f] mb-2" />
                 <h3 className="text-sm font-bold text-white">White-Label Branding Locked</h3>
                 <p className="text-xs text-slate-400 max-w-xs mt-1 mb-4">Requires Agency plan or higher.</p>
                 <Button size="sm" onClick={() => handleUpgradeCheckout("agency")} className="bg-primary hover:bg-primary-hover text-primary-foreground font-semibold text-xs h-9 px-4">

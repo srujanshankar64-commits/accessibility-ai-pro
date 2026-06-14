@@ -31,7 +31,7 @@ function severityColor(s: string) {
   if (s === "critical") return "bg-danger/10 text-danger border-danger/20";
   if (s === "serious") return "bg-warning/10 text-warning border-warning/20";
   if (s === "moderate") return "bg-blue-500/10 text-blue-400 border-blue-500/20";
-  return "bg-slate-500/10 text-slate-400 border-slate-500/20";
+  return "bg-slate-500/10 text-[#6e6e73] border-slate-500/20";
 }
 
 function NewAuditPage() {
@@ -234,10 +234,10 @@ function NewAuditPage() {
           </span>
           <span className={cn(
             "text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full",
-            currentPlan === "business" ? "bg-violet-500/20 text-violet-300" :
+            currentPlan === "business" ? "bg-blue-100 text-blue-700" :
             currentPlan === "agency" ? "bg-blue-500/20 text-blue-300" :
             currentPlan === "starter" ? "bg-emerald-500/20 text-emerald-300" :
-            "bg-zinc-500/20 text-zinc-400"
+            "bg-[#f5f5f7] text-[#6e6e73]"
           )}>{currentPlan}</span>
         </div>
       </header>
@@ -349,18 +349,18 @@ function NewAuditPage() {
 
           {/* Limited violations banner for free users */}
           {audit.isLimited && (
-            <div className="flex items-center gap-3 p-4 rounded-lg border border-violet-500/30 bg-violet-500/10">
-              <Zap className="h-4 w-4 text-violet-400 shrink-0" />
+            <div className="flex items-center gap-3 p-4 rounded-lg border border-blue-200 bg-blue-50">
+              <Zap className="h-4 w-4 text-blue-600 shrink-0" />
               <div className="flex-1">
-                <p className="text-sm font-semibold text-violet-300">
+                <p className="text-sm font-semibold text-blue-700">
                   {audit.totalViolationsFound} violations found — showing 5 of {audit.totalViolationsFound}
                 </p>
-                <p className="text-xs text-violet-400/80 mt-0.5">
+                <p className="text-xs text-blue-600/80 mt-0.5">
                   Upgrade to Starter ($49/mo) to see all violations and generate proposals.
                 </p>
               </div>
               <Link to="/settings">
-                <Button size="sm" className="bg-violet-600 hover:bg-violet-700 text-white text-xs shrink-0">
+                <Button size="sm" className="bg-[#1d1d1f] hover:opacity-80 text-white text-xs shrink-0">
                   Upgrade
                 </Button>
               </Link>
@@ -448,27 +448,27 @@ function NewAuditPage() {
 
                     {/* Expanded drawer */}
                     {isExpanded && (
-                      <div className="px-10 pb-4 pt-1 border-t border-border/40 space-y-3 bg-slate-950/20">
+                      <div className="px-10 pb-4 pt-1 border-t border-border/40 space-y-3 bg-[#f5f5f7]">
 
                         {/* Issue description */}
                         <div className="space-y-1">
-                          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Issue:</span>
+                          <span className="text-[11px] font-bold text-[#6e6e73] uppercase tracking-wider block">Issue:</span>
                           <p className="text-xs text-muted-foreground leading-relaxed">{fixDescription}</p>
                         </div>
 
                         {/* Legal impact */}
                         {v.legal_impact && (
                           <div className="space-y-1">
-                            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Legal exposure:</span>
-                            <p className="text-xs text-amber-400/80 leading-relaxed">{v.legal_impact}</p>
+                            <span className="text-[11px] font-bold text-[#6e6e73] uppercase tracking-wider block">Legal exposure:</span>
+                            <p className="text-xs text-[#b47a0a] leading-relaxed">{v.legal_impact}</p>
                           </div>
                         )}
 
                         {/* Element affected */}
                         {v.element_affected && (
                           <div className="space-y-1">
-                            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Element affected:</span>
-                            <code className="block text-[11px] font-mono p-2 rounded bg-background/80 border border-border text-amber-300/90 break-all">
+                            <span className="text-[11px] font-bold text-[#6e6e73] uppercase tracking-wider block">Element affected:</span>
+                            <code className="block text-[11px] font-mono p-2 rounded bg-background/80 border border-border text-[#b47a0a] break-all">
                               {v.element_affected}
                             </code>
                           </div>
@@ -486,10 +486,10 @@ function NewAuditPage() {
                                   size="sm"
                                   variant="ghost"
                                   onClick={(e) => copyToClipboard(codeFixCode, v.id, e)}
-                                  className="h-7 px-2.5 text-xs text-slate-400 hover:text-white hover:bg-slate-800 border border-border/40"
+                                  className="h-7 px-2.5 text-xs text-[#6e6e73] hover:text-[#1d1d1f] hover:bg-[#e8e8ed] border border-border/40"
                                 >
                                   {copiedId === v.id ? (
-                                    <><Check size={12} className="mr-1 text-emerald-400" /> Copied</>
+                                    <><Check size={12} className="mr-1 text-[#1a7f3c]" /> Copied</>
                                   ) : (
                                     <><Copy size={12} className="mr-1" /> Copy Fix</>
                                   )}
@@ -497,8 +497,8 @@ function NewAuditPage() {
                               )}
                             </div>
                             {codeFixCode ? (
-                              <div className="relative rounded-md overflow-hidden border border-border bg-slate-950">
-                                <pre className="p-3.5 overflow-x-auto text-xs font-mono text-emerald-400 leading-normal">
+                              <div className="relative rounded-md overflow-hidden border border-border bg-[#f5f5f7]">
+                                <pre className="p-3.5 overflow-x-auto text-xs font-mono text-[#1a7f3c] leading-normal">
                                   <code>{codeFixCode}</code>
                                 </pre>
                               </div>
@@ -509,9 +509,9 @@ function NewAuditPage() {
                             )}
                           </div>
                         ) : (
-                          <div className="flex items-center gap-2 p-3 rounded-md border border-violet-500/30 bg-violet-500/10">
-                            <Lock className="h-3.5 w-3.5 text-violet-400 shrink-0" />
-                            <p className="text-xs text-violet-300">
+                          <div className="flex items-center gap-2 p-3 rounded-md border border-blue-200 bg-blue-50">
+                            <Lock className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                            <p className="text-xs text-blue-700">
                               AI code fixes available on <Link to="/settings" className="underline font-semibold">Agency ($99/mo)</Link> and above.
                             </p>
                           </div>

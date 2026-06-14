@@ -341,8 +341,9 @@ function PriceCard({
     <div
       className="relative rounded-lg p-6 flex flex-col"
       style={{
-        background: popular ? "#161618" : "#111113",
-        border: popular ? "1.5px solid #6E56CF" : "1px solid #1F1F23",
+        background: "#ffffff",
+        border: popular ? "1.5px solid #0071e3" : "0.5px solid #d2d2d7",
+
       }}
     >
       {popular && (
