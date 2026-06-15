@@ -181,7 +181,7 @@ function SettingsPage() {
   const progressValue = isUnlimited ? 100 : (used / auditLimit) * 100;
   const hasBrandingAccess = currentPlan === "agency" || currentPlan === "business";
 
-  const handleLogoUpload = async (e) => {
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.size > 2 * 1024 * 1024) { toast.error("Max 2MB"); return; }
@@ -193,9 +193,9 @@ function SettingsPage() {
       if (upErr) throw upErr;
       const { data: urlData } = supabase.storage.from("agency-assets").getPublicUrl(filePath);
       setLogoUrl(urlData.publicUrl);
-      await supabase.from("settings").upsert({ user_id: user.id, logo_url: urlData.publicUrl });
+      await supabase.from("settings").upsert({ user_id: user.id, logo_url: urlData.publicUrl } as never);
       toast.success("Logo uploaded!");
-    } catch (err) { toast.error(err.message ?? "Upload failed"); }
+    } catch (err) { toast.error(err instanceof Error ? err.message : "Upload failed"); }
     setLogoUploading(false);
   };
   const inputCls = "w-full h-10 px-3 rounded bg-background border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50";
