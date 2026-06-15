@@ -114,11 +114,28 @@ function NewAuditPage() {
   };
 
   useEffect(() => {
-    loadRecent();
-    supabase.from("settings").select("plan, audits_used").maybeSingle().then(({ data }) => {
-      if (data && 'plan' in data) setPlan((data as any).plan);
-      if (data && 'audits_used' in data) setUsed((data as any).audits_used);
-    });
+    let mounted = true;
+    
+    const loadInitialData = async () => {
+      try {
+        if (mounted) {
+          await loadRecent();
+        }
+        if (mounted) {
+          const { data } = await supabase.from("settings").select("plan, audits_used").maybeSingle();
+          if (data && 'plan' in data) setPlan((data as any).plan);
+          if (data && 'audits_used' in data) setUsed((data as any).audits_used);
+        }
+      } catch (err) {
+        console.error("Failed to load initial data:", err);
+      }
+    };
+    
+    loadInitialData();
+    
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const currentPlan = getPlan(plan);
