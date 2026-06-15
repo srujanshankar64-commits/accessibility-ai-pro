@@ -8,7 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { ScoreGauge } from "@/components/ScoreGauge";
 import type { Violation } from "@/lib/audit-types";
 import { toast } from "sonner";
-import { ArrowRight, Loader2, ShieldCheck, ScanLine, Copy, Check, ChevronDown, ChevronUp, Code2, Lock, AlertTriangle, Zap, Upload, Share2 } from "lucide-react";
+import { ArrowRight, Loader2, ShieldCheck, ScanLine, Copy, Check, ChevronDown, ChevronUp, Code2, Lock, AlertTriangle, Zap, Upload, Share2, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getPlan, TIER } from "@/lib/tier.utils";
 
@@ -71,6 +71,7 @@ function NewAuditPage() {
   const [competitorUrl, setCompetitorUrl] = useState("");
   const [crawlProgress, setCrawlProgress] = useState(0);
   const [crawledPages, setCrawledPages] = useState<string[]>([]);
+  const [autoReauditEnabled, setAutoReauditEnabled] = useState(false);
 
   const generatePitch = async () => {
     if (!businessName || !businessIndustry) return;
@@ -426,6 +427,20 @@ function NewAuditPage() {
                   onChange={(e) => setCompetitorUrl(e.target.value)}
                   placeholder="https://competitor.com"
                   className="w-full h-9 bg-background border border-border rounded-md px-3 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  disabled={loading}
+                />
+              </div>
+            )}
+            
+            {TIER[currentPlan].complianceVelocity && (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <RefreshCw className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-xs text-muted-foreground">Auto re-audits (monthly)</span>
+                </div>
+                <Switch
+                  checked={autoReauditEnabled}
+                  onCheckedChange={setAutoReauditEnabled}
                   disabled={loading}
                 />
               </div>
