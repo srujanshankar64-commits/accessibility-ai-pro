@@ -35,6 +35,50 @@ function parseJSON(s: string) {
     return m ? JSON.parse(m[0]) : {};
   }
 }
+      }
+      console.error("Gemini direct API error:", res.status, await res.text());
+    } catch (error) {
+      console.error("Gemini direct API call failed:", error);
+    }
+  }
+
+  if (envLovableKey) {
+    const res = await fetch(GATEWAY, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${envLovableKey}`,
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        response_format: { type: "json_object" },
+      }),
+    });
+    if (res.status === 429) throw new Error("AI rate limit reached. Please retry shortly.");
+    if (res.status === 402) throw new Error("AI credits exhausted. Add credits in workspace settings.");
+    if (res.ok) {
+      const json = await res.json();
+      return json?.choices?.[0]?.message?.content ?? "{}";
+    }
+    console.error("Lovable AI Gateway error:", res.status, await res.text());
+  }
+
+  throw new Error("AI service temporarily unavailable. Add your Gemini API key in Settings, or contact support.");
+>>>>>>> 421abb6b7ffaba7cfb2a3df1880c44b654fe3fdc
+}
+
+
+function parseJSON(s: string) {
+  try { return JSON.parse(s); }
+  catch {
+    const m = s.match(/\{[\s\S]*\}/);
+    return m ? JSON.parse(m[0]) : {};
+  }
+}
 
 async function getUserSettings(supabase: any, userId: string) {
   const { data } = await supabase
