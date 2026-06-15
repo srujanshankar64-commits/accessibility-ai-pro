@@ -2,11 +2,9 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { getPlan, TIER, canRunAudit, PLAN_PRICES } from "@/lib/tier.utils";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 
 async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?: string): Promise<string> {
-  // Priority: User's settings key → GOOGLE_GEMINI_API_KEY
-  // Use process.env for environment variable access
   const apiKey = userApiKey || process.env.GOOGLE_GEMINI_API_KEY;
   
   if (!apiKey) {
@@ -14,17 +12,17 @@ async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?:
   }
 
   try {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ 
+    const ai = new GoogleGenAI({ apiKey: apiKey });
+    
+    const response = await ai.models.generateContent({
       model: "gemini-1.5-flash",
-      generationConfig: { responseMimeType: "application/json" }
+      contents: `${systemPrompt}\n\n${userPrompt}`,
+      config: {
+        responseMimeType: "application/json"
+      }
     });
     
-    const result = await model.generateContent(`${systemPrompt}\n\n${userPrompt}`);
-    const response = await result.response;
-    const text = response.text();
-    
-    return text;
+    return response.text || "{}";
   } catch (error: any) {
     // Explicitly logging the full error response object, status, and message
     console.error("[Diagnostics] Google AI API error:", {

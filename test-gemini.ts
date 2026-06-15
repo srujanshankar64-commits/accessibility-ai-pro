@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 import * as dotenv from "dotenv";
 
 // Load environment variables if running locally
@@ -16,18 +16,20 @@ async function testGeminiConnection() {
   }
 
   console.log(`✅ API Key found: ${apiKey.substring(0, 8)}... (truncated)`);
-  console.log("📡 Initializing @google/generative-ai SDK...");
+  console.log("📡 Initializing @google/genai SDK...");
 
   try {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const ai = new GoogleGenAI({ apiKey: apiKey });
 
     console.log("🤖 Sending ping to gemini-1.5-flash...");
     
     // Send a minimal prompt to minimize token usage
-    const result = await model.generateContent("Respond with exactly one word: 'SUCCESS'.");
-    const response = await result.response;
-    const text = response.text();
+    const response = await ai.models.generateContent({
+      model: "gemini-1.5-flash",
+      contents: "Respond with exactly one word: 'SUCCESS'."
+    });
+    
+    const text = response.text;
 
     console.log("==========================================");
     console.log("🎉 SUCCESS! Received response from Gemini:");
