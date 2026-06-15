@@ -7,12 +7,38 @@ const GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
 const MODEL = "google/gemini-2.5-flash";
 
 async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?: string): Promise<string> {
-  // Priority: User's Gemini API key (if set) → Lovable API key from environment
-  // Server-side access to environment variables
-  const envKey = (typeof process !== 'undefined' && process.env?.VITE_LOVABLE_API_KEY) || 
-                  (typeof process !== 'undefined' && process.env?.LOVABLE_API_KEY);
+  // Priority: Environment variable GEMINI_API_KEY → User's settings key → Lovable API key
+  const envGeminiKey = typeof process !== 'undefined' ? process.env?.GEMINI_API_KEY : null;
+  const envLovableKey = (typeof process !== 'undefined' && process.env?.VITE_LOVABLE_API_KEY) || 
+                        (typeof process !== 'undefined' && process.env?.LOVABLE_API_KEY);
   
-  // Try user's Gemini API key first if provided
+  // Try environment Gemini API key first (highest priority)
+  if (envGeminiKey) {
+    try {
+      const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + envGeminiKey, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          contents: [
+            { role: "user", parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }
+          ],
+          generationConfig: {
+            response_mime_type: "application/json",
+          },
+        }),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        return json?.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
+      }
+    } catch (error) {
+      console.error("Environment Gemini API key failed, trying user settings key:", error);
+    }
+  }
+  
+  // Try user's Gemini API key from settings
   if (userApiKey) {
     try {
       const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + userApiKey, {
@@ -39,13 +65,13 @@ async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?:
   }
 
   // Fallback to Lovable API key from environment
-  if (envKey) {
+  if (envLovableKey) {
     try {
       const res = await fetch(GATEWAY, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${envKey}`,
+          Authorization: `Bearer ${envLovableKey}`,
         },
         body: JSON.stringify({
           model: MODEL,

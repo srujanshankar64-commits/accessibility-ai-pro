@@ -18,6 +18,7 @@ export default defineConfig({
       'process.env.DODO_PAYMENTS_API_KEY': JSON.stringify(process.env.DODO_PAYMENTS_API_KEY),
       'process.env.VITE_LOVABLE_API_KEY': JSON.stringify(process.env.VITE_LOVABLE_API_KEY),
       'process.env.LOVABLE_API_KEY': JSON.stringify(process.env.LOVABLE_API_KEY),
+      'process.env.GEMINI_API_KEY': JSON.stringify(process.env.GEMINI_API_KEY),
     },
   },
 });

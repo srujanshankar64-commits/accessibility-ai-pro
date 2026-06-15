@@ -139,12 +139,15 @@ function NewAuditPage() {
     let competitorAuditId = null;
     if (canCompetitorBenchmark && competitorUrl) {
       try {
+        toast.info("Running competitor benchmark audit...");
         const compResult = await auditFn({ data: { url: competitorUrl } });
         if (compResult?.data?.id) {
           competitorAuditId = compResult.data.id;
+          toast.success("Competitor benchmark complete!");
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error("Competitor audit failed:", err);
+        toast.error(`Competitor audit failed: ${err.message || 'Unable to audit competitor URL'}`);
       }
     }
 
@@ -156,24 +159,33 @@ function NewAuditPage() {
         if (!user?.id) throw new Error("User not authenticated");
         
         const { crawlSite, createParentAudit, linkChildAudit, updateParentAudit } = await import("@/lib/crawler");
+        toast.info("Starting multi-page crawl...");
         const crawledPages = await crawlSite(url, 1);
         if (crawledPages.length > 1) {
           parentAuditId = await createParentAudit(user.id, url);
+          toast.info(`Found ${crawledPages.length} pages. Auditing up to 10 pages...`);
           // Child audits will be created for each crawled page
-          for (const page of crawledPages.slice(1, 10)) { // Limit to 10 pages for now
+          for (let i = 0; i < Math.min(crawledPages.length - 1, 10); i++) {
+            const page = crawledPages[i + 1];
             try {
+              toast.info(`Auditing page ${i + 1}/${Math.min(crawledPages.length - 1, 10)}: ${page.url}`);
               const childResult = await auditFn({ data: { url: page.url } });
               if (childResult?.data?.id) {
                 await linkChildAudit(parentAuditId, childResult.data.id);
               }
             } catch (err) {
               console.error("Child audit failed for", page.url, err);
+              toast.error(`Failed to audit ${page.url}`);
             }
           }
           await updateParentAudit(parentAuditId);
+          toast.success("Multi-page crawl complete!");
+        } else {
+          toast.info("Only 1 page found, running single-page audit");
         }
       } catch (err) {
         console.error("Multi-page crawl failed:", err);
+        toast.error("Multi-page crawl failed, falling back to single-page audit");
       }
     }
     
