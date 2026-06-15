@@ -56,7 +56,7 @@ export function extractLinks(html: string, baseUrl: string): string[] {
 /**
  * Server-side crawl function to bypass CORS
  */
-export const crawlSiteServer = createServerFn()
+export const crawlSiteServer = createServerFn({ method: "POST" })
   .validator(z.object({
     url: z.string().url(),
     depth: z.number().default(2),

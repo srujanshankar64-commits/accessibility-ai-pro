@@ -8,14 +8,15 @@ const MODEL = "google/gemini-2.5-flash";
 
 async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?: string): Promise<string> {
   // Priority: GOOGLE_GEMINI_API_KEY (default for all users) → User's settings key → Lovable API key
-  const defaultGeminiKey = typeof process !== 'undefined' ? process.env?.GOOGLE_GEMINI_API_KEY : null;
-  const envLovableKey = (typeof process !== 'undefined' && process.env?.VITE_LOVABLE_API_KEY) || 
-                        (typeof process !== 'undefined' && process.env?.LOVABLE_API_KEY);
+  const defaultGeminiKey = process.env?.GOOGLE_GEMINI_API_KEY || 
+                          (typeof window !== 'undefined' ? (window as any).GOOGLE_GEMINI_API_KEY : null);
+  const envLovableKey = process.env?.VITE_LOVABLE_API_KEY || process.env?.LOVABLE_API_KEY;
   
   console.log("AI API Key Status:", {
     hasDefaultGeminiKey: !!defaultGeminiKey,
     hasUserApiKey: !!userApiKey,
-    hasLovableKey: !!envLovableKey
+    hasLovableKey: !!envLovableKey,
+    processEnvKeys: Object.keys(process.env || {}).filter(k => k.includes('GEMINI') || k.includes('LOVABLE'))
   });
   
   // Try default Gemini API key first (highest priority - for all users)
