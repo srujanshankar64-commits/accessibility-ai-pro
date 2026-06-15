@@ -21,11 +21,11 @@ async function testGeminiConnection() {
   try {
     const ai = new GoogleGenAI({ apiKey: apiKey });
 
-    console.log("🤖 Sending ping to gemini-1.5-flash...");
+    console.log("🤖 Sending ping to gemini-2.5-flash...");
     
     // Send a minimal prompt to minimize token usage
     const response = await ai.models.generateContent({
-      model: "gemini-1.5-flash",
+      model: "gemini-2.5-flash",
       contents: "Respond with exactly one word: 'SUCCESS'."
     });
     
