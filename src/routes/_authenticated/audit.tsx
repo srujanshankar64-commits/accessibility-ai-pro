@@ -214,9 +214,9 @@ function NewAuditPage() {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user?.id) throw new Error("User not authenticated");
         
-        const { crawlSite, createParentAudit, linkChildAudit, updateParentAudit } = await import("@/lib/crawler");
+        const { crawlSiteServer, createParentAudit, linkChildAudit, updateParentAudit } = await import("@/lib/crawler");
         toast.info("Starting multi-page crawl (this may take 30-60 seconds)...");
-        const crawledPages = await crawlSite(url, 2);
+        const crawledPages = await crawlSiteServer({ data: { url, depth: 2 } });
         if (crawledPages.length > 1) {
           parentAuditId = await createParentAudit(user.id, url);
           toast.info(`Found ${crawledPages.length} pages. Auditing up to 10 pages...`);

@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { createServerFn } from "@tanstack/react-start";
 
 interface CrawlResult {
   url: string;
@@ -52,7 +53,96 @@ export function extractLinks(html: string, baseUrl: string): string[] {
 }
 
 /**
- * Crawls a website and returns a list of internal URLs
+ * Server-side crawl function to bypass CORS
+ */
+export const crawlSiteServer = createServerFn()
+  .validator((z) => ({
+    url: z.string().url(),
+    depth: z.number().default(2),
+  }))
+  .handler(async ({ data }) => {
+    const { url, depth } = data;
+    const results: CrawlResult[] = [];
+    const visited = new Set<string>();
+    const queue: string[] = [url];
+    
+    // Add the main URL first
+    try {
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+      });
+      if (response.ok) {
+        const html = await response.text();
+        const titleMatch = html.match(/<title>(.*?)<\/title>/i);
+        const title = titleMatch ? titleMatch[1].trim() : undefined;
+        results.push({ url, title });
+        visited.add(url);
+        
+        // Extract links for next level
+        if (depth > 0) {
+          const links = extractLinks(html, url);
+          for (const link of links) {
+            if (!visited.has(link) && results.length < 50) {
+              queue.push(link);
+            }
+          }
+        }
+      } else {
+        results.push({ url, error: `HTTP ${response.status}` });
+        visited.add(url);
+      }
+    } catch (error) {
+      results.push({ url, error: error instanceof Error ? error.message : 'Unknown error' });
+      visited.add(url);
+    }
+    
+    // Crawl additional pages
+    while (queue.length > 0 && results.length < 50) {
+      const currentUrl = queue.shift()!;
+      
+      if (visited.has(currentUrl)) continue;
+      visited.add(currentUrl);
+      
+      try {
+        const response = await fetch(currentUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+          }
+        });
+        if (!response.ok) {
+          results.push({ url: currentUrl, error: `HTTP ${response.status}` });
+          continue;
+        }
+        
+        const html = await response.text();
+        
+        // Extract title
+        const titleMatch = html.match(/<title>(.*?)<\/title>/i);
+        const title = titleMatch ? titleMatch[1].trim() : undefined;
+        
+        results.push({ url: currentUrl, title });
+        
+        // Extract links for next level if depth > 0
+        if (depth > 0) {
+          const links = extractLinks(html, currentUrl);
+          for (const link of links) {
+            if (!visited.has(link) && results.length < 50) {
+              queue.push(link);
+            }
+          }
+        }
+      } catch (error) {
+        results.push({ url: currentUrl, error: error instanceof Error ? error.message : 'Unknown error' });
+      }
+    }
+    
+    return results;
+  });
+
+/**
+ * Crawls a website and returns a list of internal URLs (client-side fallback)
  */
 export async function crawlSite(url: string, depth: number = 2): Promise<CrawlResult[]> {
   const results: CrawlResult[] = [];
