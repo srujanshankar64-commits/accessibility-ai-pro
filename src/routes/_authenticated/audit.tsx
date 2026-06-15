@@ -55,6 +55,7 @@ function NewAuditPage() {
   const [expandedViolationId, setExpandedViolationId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [plan, setPlan] = useState("free");
+  const [showUpsell, setShowUpsell] = useState(false);
   const [used, setUsed] = useState(0);
 
   // No website prospect mode
@@ -359,7 +360,7 @@ function NewAuditPage() {
       </header>
 
       {/* Free tier warning banner */}
-      {currentPlan === "free" && used >= 2 && (
+      {((currentPlan === "free" && used >= 2) || (currentPlan === "starter" && used >= 18)) && (
         <div className="flex items-center gap-3 p-3 rounded-lg border border-amber-500/30 bg-amber-500/10">
           <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0" />
           <p className="text-xs text-amber-300 flex-1">

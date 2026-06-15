@@ -36,6 +36,7 @@ function HistoryPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkProgress, setBulkProgress] = useState(0);
+  const [scheduledIds, setScheduledIds] = useState(new Set());
   const [plan, setPlan] = useState("free");
   const [selectedUrl, setSelectedUrl] = useState<string | null>(null);
   const [scoreHistory, setScoreHistory] = useState<any[]>([]);

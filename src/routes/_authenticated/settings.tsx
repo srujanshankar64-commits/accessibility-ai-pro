@@ -41,6 +41,8 @@ function SettingsPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [logoUrl, setLogoUrl] = useState("");
+  const [logoUploading, setLogoUploading] = useState(false);
 
   const changePassword = async () => {
     if (newPassword !== confirmPassword) { toast.error("Passwords don't match"); return; }
@@ -100,6 +102,7 @@ function SettingsPage() {
       setApiKey(data.gemini_api_key ?? "");
       setPlan((data.plan as any) ?? "free");
       setUsed(data.audits_used ?? 0);
+      setLogoUrl(data.logo_url ?? "");
     });
   }, []);
 
@@ -178,6 +181,23 @@ function SettingsPage() {
   const progressValue = isUnlimited ? 100 : (used / auditLimit) * 100;
   const hasBrandingAccess = currentPlan === "agency" || currentPlan === "business";
 
+  const handleLogoUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) { toast.error("Max 2MB"); return; }
+    setLogoUploading(true);
+    try {
+      const ext = file.name.split(".").pop();
+      const filePath = `logos/${user.id}.${ext}`;
+      const { error: upErr } = await supabase.storage.from("agency-assets").upload(filePath, file, { upsert: true });
+      if (upErr) throw upErr;
+      const { data: urlData } = supabase.storage.from("agency-assets").getPublicUrl(filePath);
+      setLogoUrl(urlData.publicUrl);
+      await supabase.from("settings").upsert({ user_id: user.id, logo_url: urlData.publicUrl });
+      toast.success("Logo uploaded!");
+    } catch (err) { toast.error(err.message ?? "Upload failed"); }
+    setLogoUploading(false);
+  };
   const inputCls = "w-full h-10 px-3 rounded bg-background border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50";
 
   return (

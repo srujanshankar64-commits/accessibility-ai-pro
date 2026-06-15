@@ -84,7 +84,7 @@ function ProposalPage() {
   const [agencyLogo, setAgencyLogo] = useState<string | null>(null);
   const [brandColor, setBrandColor] = useState("#6C63FF");
   const [client, setClient] = useState("");
-  const [industry, setIndustry] = useState("E-commerce");
+  const [industry, setIndustry] = useState("");
   const [tone, setTone] = useState<"professional" | "urgent" | "consultative">("professional");
   const [priceMin, setPriceMin] = useState(2500);
   const [priceMax, setPriceMax] = useState(8000);
