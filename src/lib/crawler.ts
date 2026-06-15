@@ -10,25 +10,41 @@ interface CrawlResult {
  * Extracts internal links from HTML content
  */
 export function extractLinks(html: string, baseUrl: string): string[] {
-  const linkRegex = /<a\s+(?:[^>]*?\s+)?href=(["'])(.*?)\1/gi;
   const links: string[] = [];
   const baseDomain = new URL(baseUrl).hostname;
+  const baseOrigin = new URL(baseUrl).origin;
   
-  let match;
-  while ((match = linkRegex.exec(html)) !== null) {
-    const href = match[2];
-    try {
-      const url = new URL(href, baseUrl);
-      // Only include internal links (same domain)
-      if (url.hostname === baseDomain && url.protocol.startsWith('http')) {
-        // Remove hash and query params for deduplication
-        const cleanUrl = url.origin + url.pathname;
-        if (cleanUrl !== baseUrl && !links.includes(cleanUrl)) {
-          links.push(cleanUrl);
+  // More comprehensive regex patterns for href attributes
+  const patterns = [
+    /<a\s+(?:[^>]*?\s+)?href=(["'])(.*?)\1/gi,
+    /<a\s+href=(["'])(.*?)\1/gi,
+    /href=(["'])(.*?)\1/gi
+  ];
+  
+  for (const pattern of patterns) {
+    let match;
+    while ((match = pattern.exec(html)) !== null) {
+      const href = match[2];
+      try {
+        const url = new URL(href, baseUrl);
+        // Only include internal links (same domain)
+        if (url.hostname === baseDomain && url.protocol.startsWith('http')) {
+          // Remove hash and query params for deduplication
+          const cleanUrl = url.origin + url.pathname;
+          // Normalize trailing slash
+          const normalizedUrl = cleanUrl.endsWith('/') ? cleanUrl.slice(0, -1) : cleanUrl;
+          const normalizedBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+          
+          if (normalizedUrl !== normalizedBaseUrl && !links.includes(normalizedUrl)) {
+            // Filter out common non-page URLs
+            if (!normalizedUrl.match(/\.(pdf|jpg|jpeg|png|gif|svg|css|js|xml|json|zip|tar|gz)$/i)) {
+              links.push(normalizedUrl);
+            }
+          }
         }
+      } catch {
+        // Skip invalid URLs
       }
-    } catch {
-      // Skip invalid URLs
     }
   }
   
@@ -38,11 +54,44 @@ export function extractLinks(html: string, baseUrl: string): string[] {
 /**
  * Crawls a website and returns a list of internal URLs
  */
-export async function crawlSite(url: string, depth: number = 1): Promise<CrawlResult[]> {
+export async function crawlSite(url: string, depth: number = 2): Promise<CrawlResult[]> {
   const results: CrawlResult[] = [];
   const visited = new Set<string>();
   const queue: string[] = [url];
   
+  // Add the main URL first
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      }
+    });
+    if (response.ok) {
+      const html = await response.text();
+      const titleMatch = html.match(/<title>(.*?)<\/title>/i);
+      const title = titleMatch ? titleMatch[1].trim() : undefined;
+      results.push({ url, title });
+      visited.add(url);
+      
+      // Extract links for next level
+      if (depth > 0) {
+        const links = extractLinks(html, url);
+        for (const link of links) {
+          if (!visited.has(link) && results.length < 50) {
+            queue.push(link);
+          }
+        }
+      }
+    } else {
+      results.push({ url, error: `HTTP ${response.status}` });
+      visited.add(url);
+    }
+  } catch (error) {
+    results.push({ url, error: error instanceof Error ? error.message : 'Unknown error' });
+    visited.add(url);
+  }
+  
+  // Crawl additional pages
   while (queue.length > 0 && results.length < 50) {
     const currentUrl = queue.shift()!;
     
@@ -50,7 +99,11 @@ export async function crawlSite(url: string, depth: number = 1): Promise<CrawlRe
     visited.add(currentUrl);
     
     try {
-      const response = await fetch(currentUrl);
+      const response = await fetch(currentUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+      });
       if (!response.ok) {
         results.push({ url: currentUrl, error: `HTTP ${response.status}` });
         continue;
