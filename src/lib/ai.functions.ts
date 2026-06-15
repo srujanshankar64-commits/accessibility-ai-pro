@@ -7,136 +7,71 @@ const GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
 const MODEL = "google/gemini-2.5-flash";
 
 async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?: string): Promise<string> {
-  // Priority: User's settings key → GOOGLE_GEMINI_API_KEY → Lovable API key
-  // Use Deno.env.get() for Lovable Cloud compatibility
-  let defaultGeminiKey = null;
-  let envLovableKey = null;
-  
-  // Try Deno.env.get() first (Lovable Cloud)
-  if (typeof Deno !== 'undefined') {
-    defaultGeminiKey = Deno.env.get('GOOGLE_GEMINI_API_KEY');
-    envLovableKey = Deno.env.get('VITE_LOVABLE_API_KEY') || Deno.env.get('LOVABLE_API_KEY');
-  }
-  
-  // Fallback to process.env (local development)
-  if (!defaultGeminiKey) {
-    defaultGeminiKey = process.env?.GOOGLE_GEMINI_API_KEY;
-  }
-  if (!envLovableKey) {
-    envLovableKey = process.env?.VITE_LOVABLE_API_KEY || process.env?.LOVABLE_API_KEY;
-  }
-  
-  // Fallback to window object (client-side)
-  if (!defaultGeminiKey && typeof window !== 'undefined') {
-    defaultGeminiKey = (window as any).GOOGLE_GEMINI_API_KEY;
-  }
-  
-  console.log("AI API Key Status:", {
-    hasDefaultGeminiKey: !!defaultGeminiKey,
-    hasUserApiKey: !!userApiKey,
-    hasLovableKey: !!envLovableKey,
-    defaultGeminiKeyPrefix: defaultGeminiKey ? defaultGeminiKey.substring(0, 10) + '...' : 'none',
-    envLovableKeyPrefix: envLovableKey ? envLovableKey.substring(0, 10) + '...' : 'none',
-    denoEnvKeys: typeof Deno !== 'undefined' ? Object.keys(Deno.env || {}).filter(k => k.includes('GEMINI') || k.includes('LOVABLE')) : [],
-    processEnvKeys: Object.keys(process.env || {}).filter(k => k.includes('GEMINI') || k.includes('LOVABLE'))
+  // Server runtime is Cloudflare Workers (TanStack Start) — use process.env.
+  // Reads happen at request time (inside handlers), which is required for env injection.
+  const defaultGeminiKey = process.env.GOOGLE_GEMINI_API_KEY;
+  const envLovableKey = process.env.LOVABLE_API_KEY;
+
+  console.log("AI key status:", {
+    hasUserKey: !!userApiKey,
+    hasDefaultGemini: !!defaultGeminiKey,
+    hasLovable: !!envLovableKey,
   });
-  
-  // Try user's Gemini API key from settings first (highest priority)
-  if (userApiKey) {
+
+  // Priority: user's settings key → GOOGLE_GEMINI_API_KEY env → Lovable AI Gateway
+  const geminiKey = userApiKey || defaultGeminiKey;
+
+  if (geminiKey) {
     try {
-      console.log("Attempting to use user API key...");
-      const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + userApiKey, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          contents: [
-            { role: "user", parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }
-          ],
-          generationConfig: {
-            response_mime_type: "application/json",
-          },
-        }),
-      });
-      console.log("User API response status:", res.status);
+      const res = await fetch(
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + geminiKey,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ role: "user", parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
+            generationConfig: { response_mime_type: "application/json" },
+          }),
+        }
+      );
       if (res.ok) {
         const json = await res.json();
         return json?.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
-      } else {
-        console.error("User API error:", await res.text());
       }
+      console.error("Gemini direct API error:", res.status, await res.text());
     } catch (error) {
-      console.error("User API key failed, trying default Gemini key:", error);
-    }
-  }
-  
-  // Try default Gemini API key from environment (Deno.env.get() for Lovable Cloud)
-  if (defaultGeminiKey) {
-    try {
-      console.log("Attempting to use default Gemini API key from environment...");
-      const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + defaultGeminiKey, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          contents: [
-            { role: "user", parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }
-          ],
-          generationConfig: {
-            response_mime_type: "application/json",
-          },
-        }),
-      });
-      console.log("Gemini API response status:", res.status);
-      if (res.ok) {
-        const json = await res.json();
-        return json?.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
-      } else {
-        console.error("Gemini API error:", await res.text());
-      }
-    } catch (error) {
-      console.error("Default Gemini API key failed, trying Lovable API:", error);
+      console.error("Gemini direct API call failed:", error);
     }
   }
 
-  // Fallback to Lovable API key from environment
   if (envLovableKey) {
-    try {
-      console.log("Attempting to use Lovable API key...");
-      const res = await fetch(GATEWAY, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${envLovableKey}`,
-        },
-        body: JSON.stringify({
-          model: MODEL,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userPrompt },
-          ],
-          response_format: { type: "json_object" },
-        }),
-      });
-      console.log("Lovable API response status:", res.status);
-      if (res.status === 429) throw new Error("AI rate limit reached. Please retry shortly.");
-      if (res.status === 402) throw new Error("AI credits exhausted. Add credits in workspace settings.");
-      if (res.ok) {
-        const json = await res.json();
-        return json?.choices?.[0]?.message?.content ?? "{}";
-      } else {
-        console.error("Lovable API error:", await res.text());
-      }
-    } catch (error) {
-      console.error("Lovable API failed:", error);
+    const res = await fetch(GATEWAY, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${envLovableKey}`,
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        response_format: { type: "json_object" },
+      }),
+    });
+    if (res.status === 429) throw new Error("AI rate limit reached. Please retry shortly.");
+    if (res.status === 402) throw new Error("AI credits exhausted. Add credits in workspace settings.");
+    if (res.ok) {
+      const json = await res.json();
+      return json?.choices?.[0]?.message?.content ?? "{}";
     }
+    console.error("Lovable AI Gateway error:", res.status, await res.text());
   }
 
-  console.error("All AI API keys failed or not configured");
-  throw new Error("AI service temporarily unavailable. Please add your Gemini API key in Settings or configure GOOGLE_GEMINI_API_KEY environment variable.");
+  throw new Error("AI service temporarily unavailable. Add your Gemini API key in Settings, or contact support.");
 }
+
 
 function parseJSON(s: string) {
   try { return JSON.parse(s); }
