@@ -9,18 +9,34 @@ const MODEL = "google/gemini-2.5-flash";
 async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?: string): Promise<string> {
   // Priority: User's settings key → GOOGLE_GEMINI_API_KEY → Lovable API key
   // Use Deno.env.get() for Lovable Cloud compatibility
-  const defaultGeminiKey = (typeof Deno !== 'undefined' ? Deno.env.get('GOOGLE_GEMINI_API_KEY') : null) ||
-                          process.env?.GOOGLE_GEMINI_API_KEY ||
-                          (typeof window !== 'undefined' ? (window as any).GOOGLE_GEMINI_API_KEY : null);
-  const envLovableKey = (typeof Deno !== 'undefined' ? Deno.env.get('VITE_LOVABLE_API_KEY') : null) ||
-                        (typeof Deno !== 'undefined' ? Deno.env.get('LOVABLE_API_KEY') : null) ||
-                        process.env?.VITE_LOVABLE_API_KEY ||
-                        process.env?.LOVABLE_API_KEY;
+  let defaultGeminiKey = null;
+  let envLovableKey = null;
+  
+  // Try Deno.env.get() first (Lovable Cloud)
+  if (typeof Deno !== 'undefined') {
+    defaultGeminiKey = Deno.env.get('GOOGLE_GEMINI_API_KEY');
+    envLovableKey = Deno.env.get('VITE_LOVABLE_API_KEY') || Deno.env.get('LOVABLE_API_KEY');
+  }
+  
+  // Fallback to process.env (local development)
+  if (!defaultGeminiKey) {
+    defaultGeminiKey = process.env?.GOOGLE_GEMINI_API_KEY;
+  }
+  if (!envLovableKey) {
+    envLovableKey = process.env?.VITE_LOVABLE_API_KEY || process.env?.LOVABLE_API_KEY;
+  }
+  
+  // Fallback to window object (client-side)
+  if (!defaultGeminiKey && typeof window !== 'undefined') {
+    defaultGeminiKey = (window as any).GOOGLE_GEMINI_API_KEY;
+  }
   
   console.log("AI API Key Status:", {
     hasDefaultGeminiKey: !!defaultGeminiKey,
     hasUserApiKey: !!userApiKey,
     hasLovableKey: !!envLovableKey,
+    defaultGeminiKeyPrefix: defaultGeminiKey ? defaultGeminiKey.substring(0, 10) + '...' : 'none',
+    envLovableKeyPrefix: envLovableKey ? envLovableKey.substring(0, 10) + '...' : 'none',
     denoEnvKeys: typeof Deno !== 'undefined' ? Object.keys(Deno.env || {}).filter(k => k.includes('GEMINI') || k.includes('LOVABLE')) : [],
     processEnvKeys: Object.keys(process.env || {}).filter(k => k.includes('GEMINI') || k.includes('LOVABLE'))
   });
