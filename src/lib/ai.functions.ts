@@ -15,16 +15,29 @@ async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?:
 
   try {
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({ 
+      model: "gemini-1.5-flash",
+      generationConfig: { responseMimeType: "application/json" }
+    });
     
     const result = await model.generateContent(`${systemPrompt}\n\n${userPrompt}`);
     const response = await result.response;
     const text = response.text();
     
     return text;
-  } catch (error) {
-    console.error("Google AI API error:", error);
-    throw new Error("AI service temporarily unavailable. Please try again in a few moments.");
+  } catch (error: any) {
+    // Explicitly logging the full error response object, status, and message
+    console.error("[Diagnostics] Google AI API error:", {
+      message: error?.message,
+      status: error?.status,
+      statusText: error?.statusText,
+      name: error?.name,
+      stack: error?.stack,
+      rawError: error
+    });
+    
+    // Throwing an error with the actual message to help debug in the network tab
+    throw new Error(`AI service temporarily unavailable. Internal details: ${error?.message || "Unknown error"}`);
   }
 }
 
