@@ -21,17 +21,35 @@ async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?:
   }
 
   try {
-    const ai = new GoogleGenAI({ apiKey: apiKey });
-    
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: `${systemPrompt}\n\n${userPrompt}`,
-      config: {
-        responseMimeType: "application/json"
-      }
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }]
+          }
+        ],
+        generationConfig: {
+          responseMimeType: "application/json"
+        }
+      })
     });
-    
-    return response.text || "{}";
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw {
+        message: JSON.stringify(data),
+        status: response.status,
+        statusText: response.statusText,
+      };
+    }
+
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    return text || "{}";
   } catch (error: any) {
     // Explicitly logging the full error response object, status, and message
     console.error("[Diagnostics] Google AI API error:", {
