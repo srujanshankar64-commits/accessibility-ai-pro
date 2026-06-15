@@ -353,7 +353,7 @@ function SettingsPage() {
                   )}
                 </div>
                 <p className="text-[10px] text-[#aeaeb2]">
-                  {config.proposals ? "✅ Proposals" : "❌ Proposals"} · {config.coldEmail ? "✅ Cold email" : "❌ Cold email"} · {config.codeFixes ? "✅ Code fixes" : "❌ Code fixes"} · {config.teamSeats} seat(s)
+                  {config.proposals ? "✅ Proposals" : "❌ Proposals"} · {config.coldEmail ? "✅ Cold email" : "❌ Cold email"} · {config.codeFixes ? "✅ Code fixes" : "❌ Code fixes"}
                 </p>
               </div>
             </div>

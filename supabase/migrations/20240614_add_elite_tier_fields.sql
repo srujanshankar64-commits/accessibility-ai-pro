@@ -11,6 +11,7 @@ ADD COLUMN IF NOT EXISTS has_competitor_benchmark BOOLEAN DEFAULT FALSE;
 -- Create indexes for lookups
 CREATE INDEX IF NOT EXISTS idx_audits_parent_audit_id ON audits(parent_audit_id);
 CREATE INDEX IF NOT EXISTS idx_audits_competitor_audit_id ON audits(competitor_audit_id);
+CREATE INDEX IF NOT EXISTS idx_audits_user_id_created_at ON audits(user_id, created_at DESC);
 
 -- Add comments
 COMMENT ON COLUMN audits.parent_audit_id IS 'Links child audits to a parent multi-page audit';
