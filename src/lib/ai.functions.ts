@@ -12,9 +12,16 @@ async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?:
   const envLovableKey = (typeof process !== 'undefined' && process.env?.VITE_LOVABLE_API_KEY) || 
                         (typeof process !== 'undefined' && process.env?.LOVABLE_API_KEY);
   
+  console.log("AI API Key Status:", {
+    hasDefaultGeminiKey: !!defaultGeminiKey,
+    hasUserApiKey: !!userApiKey,
+    hasLovableKey: !!envLovableKey
+  });
+  
   // Try default Gemini API key first (highest priority - for all users)
   if (defaultGeminiKey) {
     try {
+      console.log("Attempting to use default Gemini API key...");
       const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + defaultGeminiKey, {
         method: "POST",
         headers: {
@@ -29,18 +36,24 @@ async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?:
           },
         }),
       });
+      console.log("Gemini API response status:", res.status);
       if (res.ok) {
         const json = await res.json();
         return json?.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
+      } else {
+        console.error("Gemini API error:", await res.text());
       }
     } catch (error) {
       console.error("Default Gemini API key failed, trying user settings key:", error);
     }
+  } else {
+    console.warn("No default Gemini API key found in environment");
   }
   
   // Try user's Gemini API key from settings (if they set their own)
   if (userApiKey) {
     try {
+      console.log("Attempting to use user API key...");
       const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + userApiKey, {
         method: "POST",
         headers: {
@@ -55,9 +68,12 @@ async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?:
           },
         }),
       });
+      console.log("User API response status:", res.status);
       if (res.ok) {
         const json = await res.json();
         return json?.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
+      } else {
+        console.error("User API error:", await res.text());
       }
     } catch (error) {
       console.error("User API key failed, trying Lovable API:", error);
@@ -67,6 +83,7 @@ async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?:
   // Fallback to Lovable API key from environment (if default key fails)
   if (envLovableKey) {
     try {
+      console.log("Attempting to use Lovable API key...");
       const res = await fetch(GATEWAY, {
         method: "POST",
         headers: {
@@ -82,17 +99,23 @@ async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?:
           response_format: { type: "json_object" },
         }),
       });
+      console.log("Lovable API response status:", res.status);
       if (res.status === 429) throw new Error("AI rate limit reached. Please retry shortly.");
       if (res.status === 402) throw new Error("AI credits exhausted. Add credits in workspace settings.");
       if (res.ok) {
         const json = await res.json();
         return json?.choices?.[0]?.message?.content ?? "{}";
+      } else {
+        console.error("Lovable API error:", await res.text());
       }
     } catch (error) {
       console.error("Lovable API failed:", error);
     }
+  } else {
+    console.warn("No Lovable API key found in environment");
   }
 
+  console.error("All AI API keys failed or not configured");
   throw new Error("AI service temporarily unavailable. Please try again in a few moments.");
 }
 

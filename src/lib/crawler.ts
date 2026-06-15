@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { createServerFn } from "@tanstack/react-start";
+import { z } from "zod";
 
 interface CrawlResult {
   url: string;
@@ -56,7 +57,7 @@ export function extractLinks(html: string, baseUrl: string): string[] {
  * Server-side crawl function to bypass CORS
  */
 export const crawlSiteServer = createServerFn()
-  .validator((z) => ({
+  .validator(z.object({
     url: z.string().url(),
     depth: z.number().default(2),
   }))
