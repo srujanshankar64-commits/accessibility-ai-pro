@@ -8,7 +8,9 @@ const MODEL = "google/gemini-2.5-flash";
 
 async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?: string): Promise<string> {
   // Priority: User's Gemini API key (if set) → Lovable API key from environment
-  const envKey = process.env.VITE_LOVABLE_API_KEY || process.env.LOVABLE_API_KEY;
+  // Server-side access to environment variables
+  const envKey = (typeof process !== 'undefined' && process.env?.VITE_LOVABLE_API_KEY) || 
+                  (typeof process !== 'undefined' && process.env?.LOVABLE_API_KEY);
   
   // Try user's Gemini API key first if provided
   if (userApiKey) {

@@ -371,8 +371,13 @@ function HistoryPage() {
                         </button>
                         <button
                           className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                          title="Schedule re-audit"
-                          onClick={() => toast.info("Audit scheduling coming soon")}
+                          title="Re-audit this website"
+                          onClick={async () => {
+                            sessionStorage.setItem("proposal_seed", JSON.stringify({
+                              auditId: r.id, url: r.url, score: r.overall_score, violations: r.violations,
+                            }));
+                            navigate({ to: "/audit" });
+                          }}
                         >
                           <RefreshCw className="h-3 w-3" />
                         </button>
