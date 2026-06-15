@@ -7,19 +7,21 @@ const GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
 const MODEL = "google/gemini-2.5-flash";
 
 async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?: string): Promise<string> {
-  // Priority: User's settings key → GOOGLE_GEMINI_API_KEY → Lovable API key → Hardcoded fallback
-  const defaultGeminiKey = process.env?.GOOGLE_GEMINI_API_KEY || 
+  // Priority: User's settings key → GOOGLE_GEMINI_API_KEY → Lovable API key
+  // Use Deno.env.get() for Lovable Cloud compatibility
+  const defaultGeminiKey = (typeof Deno !== 'undefined' ? Deno.env.get('GOOGLE_GEMINI_API_KEY') : null) ||
+                          process.env?.GOOGLE_GEMINI_API_KEY ||
                           (typeof window !== 'undefined' ? (window as any).GOOGLE_GEMINI_API_KEY : null);
-  const envLovableKey = process.env?.VITE_LOVABLE_API_KEY || process.env?.LOVABLE_API_KEY;
-  
-  // Hardcoded fallback for immediate functionality (replace with actual key)
-  const hardcodedKey = "AIzaSyDummyKeyForTestingReplaceWithRealKey";
+  const envLovableKey = (typeof Deno !== 'undefined' ? Deno.env.get('VITE_LOVABLE_API_KEY') : null) ||
+                        (typeof Deno !== 'undefined' ? Deno.env.get('LOVABLE_API_KEY') : null) ||
+                        process.env?.VITE_LOVABLE_API_KEY ||
+                        process.env?.LOVABLE_API_KEY;
   
   console.log("AI API Key Status:", {
     hasDefaultGeminiKey: !!defaultGeminiKey,
     hasUserApiKey: !!userApiKey,
     hasLovableKey: !!envLovableKey,
-    hasHardcodedKey: !!hardcodedKey,
+    denoEnvKeys: typeof Deno !== 'undefined' ? Object.keys(Deno.env || {}).filter(k => k.includes('GEMINI') || k.includes('LOVABLE')) : [],
     processEnvKeys: Object.keys(process.env || {}).filter(k => k.includes('GEMINI') || k.includes('LOVABLE'))
   });
   
@@ -53,10 +55,10 @@ async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?:
     }
   }
   
-  // Try default Gemini API key from environment
+  // Try default Gemini API key from environment (Deno.env.get() for Lovable Cloud)
   if (defaultGeminiKey) {
     try {
-      console.log("Attempting to use default Gemini API key...");
+      console.log("Attempting to use default Gemini API key from environment...");
       const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + defaultGeminiKey, {
         method: "POST",
         headers: {
@@ -113,34 +115,6 @@ async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?:
       }
     } catch (error) {
       console.error("Lovable API failed:", error);
-    }
-  }
-
-  // Last resort: Try hardcoded key (for immediate functionality)
-  if (hardcodedKey && hardcodedKey !== "AIzaSyDummyKeyForTestingReplaceWithRealKey") {
-    try {
-      console.log("Attempting to use hardcoded API key...");
-      const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + hardcodedKey, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          contents: [
-            { role: "user", parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }
-          ],
-          generationConfig: {
-            response_mime_type: "application/json",
-          },
-        }),
-      });
-      console.log("Hardcoded API response status:", res.status);
-      if (res.ok) {
-        const json = await res.json();
-        return json?.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
-      }
-    } catch (error) {
-      console.error("Hardcoded API key failed:", error);
     }
   }
 
