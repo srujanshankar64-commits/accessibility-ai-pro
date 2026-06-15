@@ -93,7 +93,7 @@ async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?:
     }
   }
 
-  throw new Error("AI gateway not configured. Please add your Gemini API key in Settings to use AI features.");
+  throw new Error("AI service temporarily unavailable. Please try again in a few moments.");
 }
 
 function parseJSON(s: string) {
