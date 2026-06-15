@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { runAudit } from "@/lib/ai.functions";
+import { runAudit, generateWebsitePitch } from "@/lib/ai.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -45,6 +45,7 @@ function severityColor(s: string) {
 function NewAuditPage() {
   const navigate = useNavigate();
   const auditFn = useServerFn(runAudit);
+  const pitchFn = useServerFn(generateWebsitePitch);
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [auditState, setAuditState] = useState<AuditState>("IDLE");
@@ -79,62 +80,25 @@ function NewAuditPage() {
     setPitchLoading(true);
     setPitchResult(null);
     try {
-      const cityContext = businessCity ? ` based in ${businessCity}` : "";
-      
-      // Use the same API key priority logic as callGemini
-      const defaultGeminiKey = typeof process !== 'undefined' ? process.env?.GOOGLE_GEMINI_API_KEY : null;
-      const envLovableKey = (typeof process !== 'undefined' && process.env?.VITE_LOVABLE_API_KEY) || 
-                          (typeof process !== 'undefined' && process.env?.LOVABLE_API_KEY);
-      
-      let res;
-      let json;
-      
-      // Try default Gemini API key first (highest priority)
-      if (defaultGeminiKey) {
-        try {
-          res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + defaultGeminiKey, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              contents: [
-                { role: "user", parts: [{ text: `You are an expert digital agency consultant writing a website creation pitch email. Be specific, data-driven, and persuasive. Under 200 words.\n\nWrite a cold email pitch for a business called '${businessName}'${cityContext} in the '${businessIndustry}' industry that has NO website. Include: 80%+ of local consumers research online before buying, how missing a website hands market share to competitors, and offer a free 1-page homepage mockup concept. End with a call to action for a 15-minute call.` }] }
-              ],
-            }),
-          });
-          if (res.ok) {
-            json = await res.json();
-            setPitchResult(json?.candidates?.[0]?.content?.parts?.[0]?.text ?? "Failed to generate pitch");
-            setPitchLoading(false);
-            return;
-          }
-        } catch (error) {
-          console.error("Default Gemini API key failed for pitch:", error);
-        }
-      }
-      
-      // Fallback to Lovable API
-      if (envLovableKey) {
-        res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${envLovableKey}` },
-          body: JSON.stringify({
-            model: "google/gemini-2.5-flash",
-            messages: [
-              { role: "system", content: "You are an expert digital agency consultant writing a website creation pitch email. Be specific, data-driven, and persuasive. Under 200 words." },
-              { role: "user", content: `Write a cold email pitch for a business called '${businessName}'${cityContext} in the '${businessIndustry}' industry that has NO website. Include: 80%+ of local consumers research online before buying, how missing a website hands market share to competitors, and offer a free 1-page homepage mockup concept. End with a call to action for a 15-minute call.` }
-            ]
-          })
-        });
-        json = await res.json();
-        setPitchResult(json?.choices?.[0]?.message?.content ?? "Failed to generate pitch");
-      } else {
-        setPitchResult("AI gateway not configured. Please contact support.");
-      }
-    } catch {
-      toast.error("Failed to generate pitch");
+      const result: any = await pitchFn({
+        data: {
+          businessName,
+          industry: businessIndustry,
+          city: businessCity || "",
+        },
+      });
+      const text =
+        typeof result?.pitch_email === "string"
+          ? result.pitch_email
+          : result?.executive_summary || JSON.stringify(result);
+      setPitchResult(text);
+    } catch (err) {
+      console.error("Pitch generation failed:", err);
+      toast.error(err instanceof Error ? err.message : "Failed to generate pitch");
     }
     setPitchLoading(false);
   };
+
 
   // Bulk CSV state
   const [bulkUrls, setBulkUrls] = useState<string[]>([]);
