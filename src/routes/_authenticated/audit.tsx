@@ -147,6 +147,35 @@ function NewAuditPage() {
         console.error("Competitor audit failed:", err);
       }
     }
+
+    // Run multi-page crawl if enabled (Business Elite)
+    let parentAuditId = null;
+    if (canMultiPageCrawl && multiPageCrawlEnabled) {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user?.id) throw new Error("User not authenticated");
+        
+        const { crawlSite, createParentAudit, linkChildAudit, updateParentAudit } = await import("@/lib/crawler");
+        const crawledPages = await crawlSite(url, 1);
+        if (crawledPages.length > 1) {
+          parentAuditId = await createParentAudit(user.id, url);
+          // Child audits will be created for each crawled page
+          for (const page of crawledPages.slice(1, 10)) { // Limit to 10 pages for now
+            try {
+              const childResult = await auditFn({ data: { url: page.url } });
+              if (childResult?.data?.id) {
+                await linkChildAudit(parentAuditId, childResult.data.id);
+              }
+            } catch (err) {
+              console.error("Child audit failed for", page.url, err);
+            }
+          }
+          await updateParentAudit(parentAuditId);
+        }
+      } catch (err) {
+        console.error("Multi-page crawl failed:", err);
+      }
+    }
     
     let currentProgress = 0;
     const stepInterval = setInterval(() => {

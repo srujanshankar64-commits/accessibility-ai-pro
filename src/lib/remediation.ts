@@ -180,11 +180,15 @@ export async function generateRemediationRoadmap(violations: Violation[]): Promi
  * Saves remediation roadmap to database
  */
 export async function saveRemediationRoadmap(auditId: string, roadmap: RemediationRoadmap): Promise<void> {
-  // Store in violations metadata until migration is run
-  const { error } = await supabase
-    .from('audits')
-    .update({ violations: [{ remediation_roadmap: roadmap }] as any })
-    .eq('id', auditId);
-  
-  if (error) throw error;
+  try {
+    const { error } = await supabase
+      .from('audits')
+      .update({ remediation_roadmap: roadmap } as any)
+      .eq('id', auditId);
+    
+    if (error) throw error;
+  } catch (err) {
+    console.error("Failed to save remediation roadmap:", err);
+    throw err;
+  }
 }
