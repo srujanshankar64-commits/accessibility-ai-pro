@@ -7,51 +7,23 @@ const GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
 const MODEL = "google/gemini-2.5-flash";
 
 async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?: string): Promise<string> {
-  // Priority: GOOGLE_GEMINI_API_KEY (default for all users) → User's settings key → Lovable API key
+  // Priority: User's settings key → GOOGLE_GEMINI_API_KEY → Lovable API key → Hardcoded fallback
   const defaultGeminiKey = process.env?.GOOGLE_GEMINI_API_KEY || 
                           (typeof window !== 'undefined' ? (window as any).GOOGLE_GEMINI_API_KEY : null);
   const envLovableKey = process.env?.VITE_LOVABLE_API_KEY || process.env?.LOVABLE_API_KEY;
+  
+  // Hardcoded fallback for immediate functionality (replace with actual key)
+  const hardcodedKey = "AIzaSyDummyKeyForTestingReplaceWithRealKey";
   
   console.log("AI API Key Status:", {
     hasDefaultGeminiKey: !!defaultGeminiKey,
     hasUserApiKey: !!userApiKey,
     hasLovableKey: !!envLovableKey,
+    hasHardcodedKey: !!hardcodedKey,
     processEnvKeys: Object.keys(process.env || {}).filter(k => k.includes('GEMINI') || k.includes('LOVABLE'))
   });
   
-  // Try default Gemini API key first (highest priority - for all users)
-  if (defaultGeminiKey) {
-    try {
-      console.log("Attempting to use default Gemini API key...");
-      const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + defaultGeminiKey, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          contents: [
-            { role: "user", parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }
-          ],
-          generationConfig: {
-            response_mime_type: "application/json",
-          },
-        }),
-      });
-      console.log("Gemini API response status:", res.status);
-      if (res.ok) {
-        const json = await res.json();
-        return json?.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
-      } else {
-        console.error("Gemini API error:", await res.text());
-      }
-    } catch (error) {
-      console.error("Default Gemini API key failed, trying user settings key:", error);
-    }
-  } else {
-    console.warn("No default Gemini API key found in environment");
-  }
-  
-  // Try user's Gemini API key from settings (if they set their own)
+  // Try user's Gemini API key from settings first (highest priority)
   if (userApiKey) {
     try {
       console.log("Attempting to use user API key...");
@@ -77,11 +49,41 @@ async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?:
         console.error("User API error:", await res.text());
       }
     } catch (error) {
-      console.error("User API key failed, trying Lovable API:", error);
+      console.error("User API key failed, trying default Gemini key:", error);
+    }
+  }
+  
+  // Try default Gemini API key from environment
+  if (defaultGeminiKey) {
+    try {
+      console.log("Attempting to use default Gemini API key...");
+      const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + defaultGeminiKey, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          contents: [
+            { role: "user", parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }
+          ],
+          generationConfig: {
+            response_mime_type: "application/json",
+          },
+        }),
+      });
+      console.log("Gemini API response status:", res.status);
+      if (res.ok) {
+        const json = await res.json();
+        return json?.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
+      } else {
+        console.error("Gemini API error:", await res.text());
+      }
+    } catch (error) {
+      console.error("Default Gemini API key failed, trying Lovable API:", error);
     }
   }
 
-  // Fallback to Lovable API key from environment (if default key fails)
+  // Fallback to Lovable API key from environment
   if (envLovableKey) {
     try {
       console.log("Attempting to use Lovable API key...");
@@ -112,12 +114,38 @@ async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?:
     } catch (error) {
       console.error("Lovable API failed:", error);
     }
-  } else {
-    console.warn("No Lovable API key found in environment");
+  }
+
+  // Last resort: Try hardcoded key (for immediate functionality)
+  if (hardcodedKey && hardcodedKey !== "AIzaSyDummyKeyForTestingReplaceWithRealKey") {
+    try {
+      console.log("Attempting to use hardcoded API key...");
+      const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + hardcodedKey, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          contents: [
+            { role: "user", parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }
+          ],
+          generationConfig: {
+            response_mime_type: "application/json",
+          },
+        }),
+      });
+      console.log("Hardcoded API response status:", res.status);
+      if (res.ok) {
+        const json = await res.json();
+        return json?.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
+      }
+    } catch (error) {
+      console.error("Hardcoded API key failed:", error);
+    }
   }
 
   console.error("All AI API keys failed or not configured");
-  throw new Error("AI service temporarily unavailable. Please try again in a few moments.");
+  throw new Error("AI service temporarily unavailable. Please add your Gemini API key in Settings or configure GOOGLE_GEMINI_API_KEY environment variable.");
 }
 
 function parseJSON(s: string) {

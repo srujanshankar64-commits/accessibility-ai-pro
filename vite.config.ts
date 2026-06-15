@@ -22,6 +22,7 @@ export default defineConfig({
       'process.env.SUPABASE_URL': JSON.stringify(process.env.SUPABASE_URL),
       'process.env.SUPABASE_PUBLISHABLE_KEY': JSON.stringify(process.env.SUPABASE_PUBLISHABLE_KEY),
       'import.meta.env.GOOGLE_GEMINI_API_KEY': JSON.stringify(process.env.GOOGLE_GEMINI_API_KEY),
+      'import.meta.env.VITE_GOOGLE_GEMINI_API_KEY': JSON.stringify(process.env.GOOGLE_GEMINI_API_KEY),
     },
   },
 });
