@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { getPlan, TIER, PLAN_PRICES } from "@/lib/tier.utils";
 import { createCheckoutSession } from "../-api.checkout";
+import { getReferralStats, generateReferralCode } from "@/lib/referral";
 
 export const Route = createFileRoute("/_authenticated/settings")({
   component: SettingsPage,
@@ -32,6 +33,7 @@ function SettingsPage() {
   const [settingPlan, setSettingPlan] = useState(false);
   const [settings, setSettings] = useState<any>(null);
   const [referralCopied, setReferralCopied] = useState(false);
+  const [referralStats, setReferralStats] = useState({ clicks: 0, signups: 0, earned: 0 });
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -72,9 +74,7 @@ function SettingsPage() {
     setDeleteLoading(false);
   };
 
-  const referralStats = { clicks: 0, signups: 0, earned: 0 };
-
-  const referralCode = user.email ? btoa(user.email).slice(0, 8).toUpperCase() : "XXXXXXXX";
+  const referralCode = user.email ? generateReferralCode(user.email) : "XXXXXXXX";
   const referralLink = `https://accessibility-ai-pro.lovable.app?ref=${referralCode}`;
 
   const copyReferral = async () => {
@@ -82,6 +82,13 @@ function SettingsPage() {
     setReferralCopied(true);
     setTimeout(() => setReferralCopied(false), 2000);
   };
+
+  useEffect(() => {
+    // Load referral stats
+    if (user.id) {
+      getReferralStats(user.id).then(setReferralStats).catch(console.error);
+    }
+  }, [user.id]);
 
   useEffect(() => {
     (supabase as any).from("settings").select("*").maybeSingle().then(({ data }: { data: any }) => {
