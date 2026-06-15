@@ -5,7 +5,8 @@ import { getPlan, TIER, canRunAudit, PLAN_PRICES } from "@/lib/tier.utils";
 import { GoogleGenAI } from "@google/genai";
 
 async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?: string): Promise<string> {
-  const rawKey = userApiKey || process.env.GOOGLE_GEMINI_API_KEY;
+  // Priority: .env (Owner's global key) -> Database (User's personal key)
+  const rawKey = process.env.GOOGLE_GEMINI_API_KEY || userApiKey;
   const apiKey = rawKey?.trim();
   
   if (!apiKey) {
