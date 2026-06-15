@@ -9,6 +9,13 @@ async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?:
   const rawKey = process.env.GOOGLE_GEMINI_API_KEY || userApiKey;
   const apiKey = rawKey?.trim();
   
+  console.log("=== EXTREME DEBUG: callGemini KEY RESOLUTION ===");
+  console.log("process.env.GOOGLE_GEMINI_API_KEY length:", process.env.GOOGLE_GEMINI_API_KEY?.length || "undefined");
+  console.log("userApiKey length:", userApiKey?.length || "undefined");
+  console.log("rawKey length:", rawKey?.length || "undefined");
+  console.log("apiKey prefix:", apiKey?.substring(0, 8));
+  console.log("===============================================");
+  
   if (!apiKey) {
     throw new Error("AI service temporarily unavailable. Please add your Gemini API key in Settings or configure GOOGLE_GEMINI_API_KEY environment variable.");
   }
