@@ -7,7 +7,7 @@ dotenv.config();
 async function testGeminiConnection() {
   console.log("🔍 Starting Gemini API Connectivity Test...");
   
-  const apiKey = process.env.GOOGLE_GEMINI_API_KEY;
+  const apiKey = process.env.GOOGLE_GEMINI_API_KEY?.trim();
   
   if (!apiKey) {
     console.error("❌ ERROR: GOOGLE_GEMINI_API_KEY is not set in the environment!");

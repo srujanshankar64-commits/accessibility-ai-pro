@@ -5,7 +5,8 @@ import { getPlan, TIER, canRunAudit, PLAN_PRICES } from "@/lib/tier.utils";
 import { GoogleGenAI } from "@google/genai";
 
 async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?: string): Promise<string> {
-  const apiKey = userApiKey || process.env.GOOGLE_GEMINI_API_KEY;
+  const rawKey = userApiKey || process.env.GOOGLE_GEMINI_API_KEY;
+  const apiKey = rawKey?.trim();
   
   if (!apiKey) {
     throw new Error("AI service temporarily unavailable. Please add your Gemini API key in Settings or configure GOOGLE_GEMINI_API_KEY environment variable.");
