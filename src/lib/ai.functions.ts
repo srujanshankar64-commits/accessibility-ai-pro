@@ -89,7 +89,7 @@ async function getUserSettings(supabase: any, userId: string) {
 
 export const runAudit = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((data: unknown) => z.object({ url: z.string().url() }).parse(data))
+  .validator(z.object({ url: z.string().url() }))
   .handler(async ({ data, context }) => {
     const { url } = data;
     const settings = await getUserSettings(context.supabase, context.userId);
@@ -333,7 +333,7 @@ Return ONLY valid JSON with EXACTLY this schema:
 
 export const generateProposal = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((data: unknown) =>
+  .validator(
     z.object({
       auditId: z.string().uuid().optional(),
       url: z.string().optional(),
@@ -347,7 +347,7 @@ export const generateProposal = createServerFn({ method: "POST" })
       competitorUrl: z.string().optional(),
       competitorScore: z.number().optional(),
       competitorViolations: z.number().optional(),
-    }).parse(data),
+    }),
   )
   .handler(async ({ data, context }) => {
     const settings = await getUserSettings(context.supabase, context.userId);
@@ -472,14 +472,14 @@ ${data.violations.map((v: any, i: number) => `${i + 1}. [${v.severity?.toUpperCa
 
 export const generateColdEmail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((data: unknown) =>
+  .validator(
     z.object({
       agencyName: z.string().default(""),
       clientName: z.string().default(""),
       url: z.string().default(""),
       violations: z.array(z.any()).default([]),
       score: z.number().default(0),
-    }).parse(data),
+    }),
   )
   .handler(async ({ data, context }) => {
     const settings = await getUserSettings(context.supabase, context.userId);
@@ -522,14 +522,14 @@ ${topCritical.map((v: any) => `- ${v.name}: ${v.description} (${v.wcag_criterion
 
 export const generateCertificate = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((data: unknown) =>
+  .validator(
     z.object({
       auditId: z.string().uuid(),
       url: z.string(),
       score: z.number(),
       agencyName: z.string().default(""),
       clientName: z.string().default(""),
-    }).parse(data),
+    }),
   )
   .handler(async ({ data, context }) => {
     const settings = await getUserSettings(context.supabase, context.userId);
@@ -554,7 +554,7 @@ export const generateCertificate = createServerFn({ method: "POST" })
 
 export const generateWebsitePitch = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((data: unknown) =>
+  .validator(
     z.object({
       businessName: z.string().min(1),
       industry: z.string().min(1),
@@ -565,7 +565,7 @@ export const generateWebsitePitch = createServerFn({ method: "POST" })
       agencyName: z.string().default("Your Agency"),
       priceMin: z.number().default(2000),
       priceMax: z.number().default(8000),
-    }).parse(data),
+    }),
   )
   .handler(async ({ data, context }) => {
     const settings = await getUserSettings(context.supabase, context.userId);
@@ -623,8 +623,8 @@ export const getPlanStatus = createServerFn({ method: "GET" })
   });
 export const searchLeads = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((data: unknown) =>
-    z.object({ industry: z.string(), location: z.string() }).parse(data),
+  .validator(
+    z.object({ industry: z.string(), location: z.string() }),
   )
   .handler(async ({ data }) => {
     const { industry, location } = data;

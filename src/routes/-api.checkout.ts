@@ -3,10 +3,12 @@ import { z } from "zod";
 import DodoPayments from "dodopayments";
 
 export const createCheckoutSession = createServerFn({ method: "POST" })
-  .inputValidator(z.object({
-    priceId: z.string().min(1),
-    tier: z.string().optional(),
-  }))
+  .validator(
+    z.object({
+      priceId: z.string().min(1),
+      tier: z.string().optional(),
+    }),
+  )
   .handler(async ({ data }) => {
     try {
       const { priceId, tier } = data;
