@@ -21,32 +21,54 @@ async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?:
   }
 
   try {
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }]
-          }
-        ],
-        generationConfig: {
-          responseMimeType: "application/json"
+    const postData = JSON.stringify({
+      contents: [
+        {
+          parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }]
         }
-      })
+      ],
+      generationConfig: {
+        responseMimeType: "application/json"
+      }
     });
 
-    const data = await response.json();
+    const data = await new Promise<any>((resolve, reject) => {
+      const https = require('https');
+      const req = https.request(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(postData)
+          }
+        },
+        (res: any) => {
+          let body = '';
+          res.on('data', (chunk: any) => { body += chunk; });
+          res.on('end', () => {
+            try {
+              const parsed = JSON.parse(body);
+              if (res.statusCode && res.statusCode >= 400) {
+                reject({
+                  message: JSON.stringify(parsed),
+                  status: res.statusCode,
+                  statusText: res.statusMessage
+                });
+              } else {
+                resolve(parsed);
+              }
+            } catch (e) {
+              reject({ message: "Failed to parse JSON response", status: res.statusCode });
+            }
+          });
+        }
+      );
 
-    if (!response.ok) {
-      throw {
-        message: JSON.stringify(data),
-        status: response.status,
-        statusText: response.statusText,
-      };
-    }
+      req.on('error', (e: any) => reject(e));
+      req.write(postData);
+      req.end();
+    });
 
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
     return text || "{}";
