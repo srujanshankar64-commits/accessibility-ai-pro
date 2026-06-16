@@ -3,35 +3,58 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { getPlan, TIER, canRunAudit, PLAN_PRICES } from "@/lib/tier.utils";
 import { GoogleGenAI } from "@google/genai";
-
 async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?: string, model: string = "gemini-2.5-flash"): Promise<string> {
   const apiKey = (process.env.GOOGLE_GEMINI_API_KEY || userApiKey)?.trim();
   if (!apiKey) {
     throw new Error("AI service unavailable. Please add your Gemini API key in Settings or configure GOOGLE_GEMINI_API_KEY.");
   }
-  try {
-    const ai = new GoogleGenAI({ apiKey });
-    const response = await ai.models.generateContent({
-      model,
-      contents: `${systemPrompt}\n\n${userPrompt}`,
-      config: {
-        responseMimeType: "application/json",
-        temperature: 0.3,
-        maxOutputTokens: 8192,
-      },
-    });
-    return response.text ?? "{}";
-  } catch (error: any) {
-    console.error("[Gemini] API error:", error?.message);
-    throw new Error(`AI service temporarily unavailable. ${error?.message || "Unknown error"}`);
+  const ai = new GoogleGenAI({ apiKey });
+  const maxRetries = 3;
+  let lastError: any = null;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const response = await ai.models.generateContent({
+        model,
+        contents: `${systemPrompt}\n\n${userPrompt}`,
+        config: {
+          responseMimeType: "application/json",
+          temperature: 0.3,
+          maxOutputTokens: 8192,
+        },
+      });
+      return response.text ?? "{}";
+    } catch (error: any) {
+      lastError = error;
+      const msg = error?.message || "";
+      const is503 = msg.includes("503") || msg.includes("UNAVAILABLE") || msg.includes("overloaded");
+      console.error(`[Gemini] API error (attempt ${attempt + 1}/${maxRetries}):`, msg);
+      if (is503 && attempt < maxRetries - 1) {
+        const delay = 1000 * Math.pow(2, attempt);
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+      break;
+    }
   }
+  const lastMsg = lastError?.message || "";
+  if (lastMsg.includes("503") || lastMsg.includes("UNAVAILABLE") || lastMsg.includes("overloaded")) {
+    throw new Error("Google AI is experiencing high demand right now. We retried 3 times automatically — please wait 30 seconds and try again.");
+  }
+  throw new Error(`AI service temporarily unavailable. ${lastMsg || "Unknown error"}`);
 }
 
 function parseJSON(s: string) {
   try { return JSON.parse(s); }
   catch {
-    const m = s.match(/\{[\s\S]*\}/);
-    return m ? JSON.parse(m[0]) : {};
+    try {
+      const m = s.match(/\{[\s\S]*\}/);
+      if (m) return JSON.parse(m[0]);
+    } catch {}
+    try {
+      const clean = s.replace(/,\s*([}\]])/g, '$1').replace(/([{,]\s*)([a-zA-Z_][\w]*)\s*:/g, '$1"$2":');
+      return JSON.parse(clean);
+    } catch {}
+    return {};
   }
 }
 
