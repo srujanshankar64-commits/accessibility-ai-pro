@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { getPlan, TIER, canRunAudit, PLAN_PRICES } from "@/lib/tier.utils";
+import { Worker } from "worker_threads";
 
 async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?: string): Promise<string> {
   // Priority: .env (Owner's global key) -> Database (User's personal key)
@@ -33,8 +34,6 @@ async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?:
 
     const data = await new Promise<any>((resolve, reject) => {
       try {
-        const { Worker } = require('worker_threads');
-        
         // CRITICAL FIX: Run the request in a completely isolated Worker Thread!
         // Vite/Nitro's network interceptors and polyfills cannot reach into a separate V8 isolate.
         // This guarantees a 100% clean, native HTTPS request with absolutely zero leaked headers.
