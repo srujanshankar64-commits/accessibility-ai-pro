@@ -212,35 +212,48 @@ function NewAuditPage() {
     
     const ALL_LOG_STEPS = [
       { text: "Resolving DNS and establishing secure connection...", threshold: 0 },
-      { text: "Fetching page HTML (targeting 15,000 chars)...", threshold: 4 },
-      { text: "Page HTML captured \u2014 parsing DOM tree...", threshold: 8 },
-      { text: `DOM parsed \u2014 scanning ${Math.floor(Math.random()*400+600)} elements...`, threshold: 13 },
-      { text: "Checking images and icons for missing alt text (WCAG 1.1.1)...", threshold: 18 },
-      { text: "Testing color contrast ratios against 4.5:1 AA threshold (WCAG 1.4.3)...", threshold: 23 },
-      { text: "Scanning keyboard navigation paths and tab order (WCAG 2.1.1)...", threshold: 28 },
-      { text: "Checking for visible focus indicators on interactive elements (WCAG 2.4.7)...", threshold: 33 },
-      { text: "Inspecting ARIA roles, labels and landmark regions (WCAG 4.1.2)...", threshold: 38 },
-      { text: "Verifying skip navigation links and bypass blocks (WCAG 2.4.1)...", threshold: 43 },
-      { text: "Checking heading hierarchy and document outline (WCAG 1.3.1)...", threshold: 48 },
-      { text: "Auditing form labels and error identification (WCAG 3.3.1, 3.3.2)...", threshold: 53 },
-      { text: "Checking lang attribute and language declarations (WCAG 3.1.1)...", threshold: 57 },
-      { text: "Testing touch target sizes \u2014 minimum 44x44px (WCAG 2.5.5)...", threshold: 61 },
-      { text: "Scanning for auto-playing media and motion (WCAG 2.2.2, 2.3.3)...", threshold: 65 },
-      { text: "Checking text resize support up to 200% (WCAG 1.4.4)...", threshold: 69 },
-      { text: "Validating HTML structure and duplicate IDs (WCAG 4.1.1)...", threshold: 73 },
-      { text: "Cross-referencing findings against ADA Title II, EU EAA, UK Equality Act...", threshold: 78 },
-      { text: "Calculating compliance score across all 4 WCAG principles...", threshold: 82 },
-      { text: "Prioritising violations by severity...", threshold: 86 },
-      { text: "Generating fix instructions and estimated remediation times...", threshold: 89 },
-      { text: "Compiling AI code fix suggestions for each violation...", threshold: 92 },
-      { text: "Assembling legal exposure report and jurisdiction deadlines...", threshold: 95 },
-      { text: "Finalising compliance report \u2014 almost done...", threshold: 98 },
+      { text: "Fetching page HTML (targeting 15,000 chars)...", threshold: 3 },
+      { text: "Page HTML captured \u2014 parsing DOM tree...", threshold: 6 },
+      { text: `DOM parsed \u2014 scanning ${Math.floor(Math.random()*400+600)} elements...`, threshold: 9 },
+      { text: "Checking images and icons for missing alt text (WCAG 1.1.1)...", threshold: 12 },
+      { text: "Testing color contrast ratios against 4.5:1 AA threshold (WCAG 1.4.3)...", threshold: 15 },
+      { text: "Scanning keyboard navigation paths and tab order (WCAG 2.1.1)...", threshold: 18 },
+      { text: "Checking for visible focus indicators on interactive elements (WCAG 2.4.7)...", threshold: 21 },
+      { text: "Inspecting ARIA roles, labels and landmark regions (WCAG 4.1.2)...", threshold: 24 },
+      { text: "Verifying skip navigation links and bypass blocks (WCAG 2.4.1)...", threshold: 27 },
+      { text: "Checking heading hierarchy and document outline (WCAG 1.3.1)...", threshold: 30 },
+      { text: "Auditing form labels and error identification (WCAG 3.3.1, 3.3.2)...", threshold: 33 },
+      { text: "Checking lang attribute and language declarations (WCAG 3.1.1)...", threshold: 36 },
+      { text: "Testing touch target sizes \u2014 minimum 44x44px (WCAG 2.5.5)...", threshold: 39 },
+      { text: "Scanning for auto-playing media and motion (WCAG 2.2.2, 2.3.3)...", threshold: 42 },
+      { text: "Checking text resize support up to 200% (WCAG 1.4.4)...", threshold: 45 },
+      { text: "Validating HTML structure and duplicate IDs (WCAG 4.1.1)...", threshold: 48 },
+      { text: "Checking link purpose and context (WCAG 2.4.4)...", threshold: 51 },
+      { text: "Verifying error suggestion and prevention (WCAG 3.3.3, 3.3.4)...", threshold: 54 },
+      { text: "Testing page title and document language (WCAG 2.4.2, 3.1.1)...", threshold: 57 },
+      { text: "Checking for content that flashes more than 3 times (WCAG 2.3.1)...", threshold: 60 },
+      { text: "Verifying consistent navigation and identification (WCAG 3.2.3, 3.2.4)...", threshold: 63 },
+      { text: "Testing re-authentication timeout preservation (WCAG 2.2.1)...", threshold: 66 },
+      { text: "Checking help and documentation availability (WCAG 3.3.5)...", threshold: 69 },
+      { text: "Verifying focus order and logical sequence (WCAG 2.4.3)...", threshold: 72 },
+      { text: "Testing link destination and purpose clarity (WCAG 2.4.4)...", threshold: 75 },
+      { text: "Checking for status messages and dynamic content (WCAG 4.1.3)...", threshold: 78 },
+      { text: "Verifying character encoding and parsing (WCAG 3.1.2)...", threshold: 81 },
+      { text: "Testing orientation and input modalities (WCAG 1.3.4, 1.3.5)...", threshold: 84 },
+      { text: "Checking for redundant entry and auto-complete (WCAG 1.3.6)...", threshold: 87 },
+      { text: "Cross-referencing findings against ADA Title II, EU EAA, UK Equality Act...", threshold: 90 },
+      { text: "Calculating compliance score across all 4 WCAG principles...", threshold: 92 },
+      { text: "Prioritising violations by severity and legal exposure...", threshold: 94 },
+      { text: "Generating fix instructions and estimated remediation times...", threshold: 96 },
+      { text: "Compiling AI code fix suggestions for each violation...", threshold: 97 },
+      { text: "Assembling legal exposure report and jurisdiction deadlines...", threshold: 98 },
+      { text: "Finalising compliance report \u2014 almost done...", threshold: 99 },
     ];
     setLogMessages([]);
     let currentProgress = 0;
     let lastLogIndex = -1;
     const stepInterval = setInterval(() => {
-      currentProgress += (Math.random() * 3.5 + 1.5);
+      currentProgress += (Math.random() * 2.0 + 1.0);
       if (currentProgress > 99) currentProgress = 99;
       const rounded = Math.min(Math.round(currentProgress), 99);
       setProgress(rounded);
@@ -262,9 +275,9 @@ function NewAuditPage() {
           setLogMessages(prev => prev.map((m, i) =>
             i === prev.length - 1 ? m : { ...m, done: true, active: false }
           ));
-        }, 1200);
+        }, 1500);
       }
-    }, 700);
+    }, 900);
     
     try {
       const result = await auditFn({ data: { url } });
@@ -584,10 +597,10 @@ function NewAuditPage() {
           </div>
           <div className="grid grid-cols-4 gap-2">
             {[
-              { label: "Perceivable", pct: Math.min(100, Math.max(0, (progress - 5) * 2.5)), color: "bg-blue-500" },
-              { label: "Operable", pct: Math.min(100, Math.max(0, (progress - 25) * 2.5)), color: "bg-violet-500" },
-              { label: "Understandable", pct: Math.min(100, Math.max(0, (progress - 50) * 2.5)), color: "bg-amber-500" },
-              { label: "Robust", pct: Math.min(100, Math.max(0, (progress - 72) * 2.5)), color: "bg-emerald-500" },
+              { label: "Perceivable", pct: Math.min(100, Math.max(0, (progress - 0) * 0.96)), color: "bg-blue-500" },
+              { label: "Operable", pct: Math.min(100, Math.max(0, (progress - 10) * 1.07)), color: "bg-violet-500" },
+              { label: "Understandable", pct: Math.min(100, Math.max(0, (progress - 25) * 1.27)), color: "bg-amber-500" },
+              { label: "Robust", pct: Math.min(100, Math.max(0, (progress - 40) * 1.59)), color: "bg-emerald-500" },
             ].map(({ label, pct, color }) => (
               <div key={label} className="space-y-1">
                 <div className="flex items-center justify-between">
