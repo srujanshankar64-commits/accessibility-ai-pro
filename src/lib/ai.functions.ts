@@ -31,49 +31,63 @@ async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?:
       }
     });
 
-    const data = await new Promise<any>(async (resolve, reject) => {
+    const data = await new Promise<any>((resolve, reject) => {
       try {
-        // CRITICAL FIX: Vite/Nitro's bundler forcefully polyfills "https" to map to its own 
-        // internal fetch, which intercepts the request and leaks the Supabase Authorization header.
-        // By using `new Function`, we completely blind the Vite bundler. At runtime, Node.js will
-        // natively import the real `node:https` module, guaranteeing absolutely zero header leakage.
-        const httpsModule = await new Function("return import('node:https')")();
-        const https = httpsModule.default || httpsModule;
-
-        const req = https.request(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Content-Length': Buffer.byteLength(postData)
-            }
-          },
-          (res: any) => {
-            let body = '';
-            res.on('data', (chunk: any) => { body += chunk; });
-            res.on('end', () => {
-              try {
-                const parsed = JSON.parse(body);
-                if (res.statusCode && res.statusCode >= 400) {
-                  reject({
-                    message: JSON.stringify(parsed),
-                    status: res.statusCode,
-                    statusText: res.statusMessage
-                  });
-                } else {
-                  resolve(parsed);
-                }
-              } catch (e) {
-                reject({ message: "Failed to parse JSON response", status: res.statusCode });
+        const { Worker } = require('worker_threads');
+        
+        // CRITICAL FIX: Run the request in a completely isolated Worker Thread!
+        // Vite/Nitro's network interceptors and polyfills cannot reach into a separate V8 isolate.
+        // This guarantees a 100% clean, native HTTPS request with absolutely zero leaked headers.
+        const workerCode = `
+          const { parentPort, workerData } = require('worker_threads');
+          const https = require('node:https');
+          
+          const req = https.request(
+            'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + workerData.apiKey,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(workerData.postData)
               }
-            });
-          }
-        );
+            },
+            (res) => {
+              let body = '';
+              res.on('data', (c) => body += c);
+              res.on('end', () => parentPort.postMessage({ status: res.statusCode, body }));
+            }
+          );
+          req.on('error', (e) => parentPort.postMessage({ error: e.message }));
+          req.write(workerData.postData);
+          req.end();
+        `;
 
-        req.on('error', (e: any) => reject(e));
-        req.write(postData);
-        req.end();
+        const worker = new Worker(workerCode, { 
+          eval: true,
+          workerData: { apiKey, postData } 
+        });
+
+        worker.on('message', (msg: any) => {
+          if (msg.error) {
+            reject({ message: msg.error });
+            return;
+          }
+          try {
+            const parsed = JSON.parse(msg.body);
+            if (msg.status >= 400) {
+              reject({
+                message: JSON.stringify(parsed),
+                status: msg.status
+              });
+            } else {
+              resolve(parsed);
+            }
+          } catch (e) {
+            reject({ message: "Failed to parse JSON response", status: msg.status });
+          }
+        });
+        
+        worker.on('error', reject);
       } catch (err) {
         reject(err);
       }
