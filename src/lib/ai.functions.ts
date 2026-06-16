@@ -21,38 +21,53 @@ async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?:
   }
 
   try {
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        // CRITICAL: TanStack Start SSR's polyfilled fetch automatically forwards the user's Supabase JWT 
-        // in the Authorization header to all outgoing requests. Google API Gateway sees the JWT, 
-        // thinks it's a Google OAuth token, and crashes with ACCESS_TOKEN_TYPE_UNSUPPORTED.
-        // We MUST explicitly overwrite it with a blank value to strip it out!
-        "Authorization": "", 
-        "x-goog-api-key": apiKey
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }]
-          }
-        ],
-        generationConfig: {
-          responseMimeType: "application/json"
+    const postData = JSON.stringify({
+      contents: [
+        {
+          parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }]
         }
-      })
+      ],
+      generationConfig: {
+        responseMimeType: "application/json"
+      }
     });
 
-    const data = await response.json();
+    const data = await new Promise<any>((resolve, reject) => {
+      const req = https.request(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(postData)
+          }
+        },
+        (res: any) => {
+          let body = '';
+          res.on('data', (chunk: any) => { body += chunk; });
+          res.on('end', () => {
+            try {
+              const parsed = JSON.parse(body);
+              if (res.statusCode && res.statusCode >= 400) {
+                reject({
+                  message: JSON.stringify(parsed),
+                  status: res.statusCode,
+                  statusText: res.statusMessage
+                });
+              } else {
+                resolve(parsed);
+              }
+            } catch (e) {
+              reject({ message: "Failed to parse JSON response", status: res.statusCode });
+            }
+          });
+        }
+      );
 
-    if (!response.ok) {
-      throw {
-        message: JSON.stringify(data),
-        status: response.status,
-        statusText: response.statusText,
-      };
-    }
+      req.on('error', (e: any) => reject(e));
+      req.write(postData);
+      req.end();
+    });
 
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
     return text || "{}";
