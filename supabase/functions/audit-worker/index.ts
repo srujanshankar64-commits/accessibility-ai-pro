@@ -35,35 +35,84 @@ function parseJSON(s: string) {
   return {};
 }
 
-async function callGemini(systemPrompt: string, userPrompt: string, apiKey: string) {
+// Helper: Throttle requests to stay under 20 RPM (one every 3.5 seconds)
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Elite rate-limiter: Track last call time to enforce RPM limit
+let lastGeminiCall = 0;
+const MIN_CALL_INTERVAL = 3500; // 3.5 seconds = ~17 RPM max
+
+async function callGeminiWithRetry(systemPrompt: string, userPrompt: string, apiKey: string, retries = 5) {
   const key = (apiKey || GEMINI_KEY).trim();
   if (!key) throw new Error("Gemini API key not configured");
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const r = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
-        generationConfig: {
-          responseMimeType: "application/json",
-          temperature: 0.3,
-          maxOutputTokens: 32768,
-        },
-      }),
-    });
-    if (r.ok) {
-      const j = await r.json();
-      return j?.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
+  
+  for (let i = 0; i < retries; i++) {
+    try {
+      // Rate limit: Enforce minimum time between calls
+      const now = Date.now();
+      const timeSinceLastCall = now - lastGeminiCall;
+      if (timeSinceLastCall < MIN_CALL_INTERVAL) {
+        const waitTime = MIN_CALL_INTERVAL - timeSinceLastCall;
+        console.log(`[RateLimiter] Waiting ${waitTime}ms to respect RPM limit`);
+        await delay(waitTime);
+      }
+      
+      // Update last call time
+      lastGeminiCall = Date.now();
+      
+      const r = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
+          generationConfig: {
+            responseMimeType: "application/json",
+            temperature: 0.2,
+            maxOutputTokens: 81920,
+          },
+        }),
+      });
+      
+      if (r.ok) {
+        const j = await r.json();
+        const text = j?.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
+        if (!text || text.trim() === "{}") {
+          throw new Error("Empty response from AI");
+        }
+        return text;
+      }
+      
+      if (r.status === 429 && i < retries - 1) {
+        // Rate limit hit - exponential backoff
+        const waitTime = Math.pow(2, i + 1) * 1000;
+        console.warn(`[RateLimiter] 429 rate limit hit, retrying in ${waitTime}ms (attempt ${i + 1}/${retries})`);
+        await delay(waitTime);
+        continue;
+      }
+      
+      if (r.status === 503 && i < retries - 1) {
+        const waitTime = 2000 * Math.pow(2, i);
+        console.warn(`[RateLimiter] 503 service unavailable, retrying in ${waitTime}ms (attempt ${i + 1}/${retries})`);
+        await delay(waitTime);
+        continue;
+      }
+      
+      const txt = await r.text();
+      throw new Error(`Gemini ${r.status}: ${txt.slice(0, 200)}`);
+    } catch (error: any) {
+      if (i === retries - 1) {
+        throw error;
+      }
+      console.error(`[RateLimiter] Attempt ${i + 1}/${retries} failed:`, error.message);
     }
-    if (r.status === 503 || r.status === 429) {
-      await new Promise((res) => setTimeout(res, 1500 * (attempt + 1)));
-      continue;
-    }
-    const txt = await r.text();
-    throw new Error(`Gemini ${r.status}: ${txt.slice(0, 200)}`);
   }
-  throw new Error("Gemini overloaded after 3 retries");
+  throw new Error("Gemini API failed after all retries");
+}
+
+// Backwards compatibility wrapper
+async function callGemini(systemPrompt: string, userPrompt: string, apiKey: string) {
+  return callGeminiWithRetry(systemPrompt, userPrompt, apiKey);
 }
 
 async function updateJob(jobId: string, patch: Record<string, unknown>) {

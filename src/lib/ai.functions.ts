@@ -11,6 +11,13 @@ let failureCount = 0;
 const CIRCUIT_BREAKER_THRESHOLD = 5;
 const CIRCUIT_BREAKER_TIMEOUT = 60000; // 1 minute
 
+// Elite rate-limiter: Track last call time to enforce RPM limit
+let lastGeminiCall = 0;
+const MIN_CALL_INTERVAL = 3500; // 3.5 seconds = ~17 RPM max
+
+// Helper: Throttle requests to stay under 20 RPM
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 function resetCircuitBreaker() {
   circuitBreakerOpen = false;
   failureCount = 0;
@@ -63,6 +70,18 @@ async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?:
   
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
+      // Rate limit: Enforce minimum time between calls
+      const now = Date.now();
+      const timeSinceLastCall = now - lastGeminiCall;
+      if (timeSinceLastCall < MIN_CALL_INTERVAL) {
+        const waitTime = MIN_CALL_INTERVAL - timeSinceLastCall;
+        console.log(`[RateLimiter] Waiting ${waitTime}ms to respect RPM limit`);
+        await delay(waitTime);
+      }
+      
+      // Update last call time
+      lastGeminiCall = Date.now();
+      
       const response = await ai.models.generateContent({
         model,
         contents: `${systemPrompt}\n\n${userPrompt}`,
@@ -81,13 +100,22 @@ async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?:
     } catch (error: any) {
       lastError = error;
       const msg = error?.message || "";
-      const is503 = msg.includes("503") || msg.includes("UNAVAILABLE") || msg.includes("overloaded") || msg.includes("quota") || msg.includes("rate limit");
+      const is503 = msg.includes("503") || msg.includes("UNAVAILABLE") || msg.includes("overloaded");
+      const is429 = msg.includes("429") || msg.includes("quota") || msg.includes("rate limit");
       console.error(`[Gemini] API error (attempt ${attempt + 1}/${maxRetries}):`, msg);
       
+      if (is429 && attempt < maxRetries - 1) {
+        // Rate limit hit - exponential backoff
+        const waitTime = Math.pow(2, attempt + 1) * 1000;
+        console.warn(`[RateLimiter] 429 rate limit hit, retrying in ${waitTime}ms`);
+        await delay(waitTime);
+        continue;
+      }
+      
       if (is503 && attempt < maxRetries - 1) {
-        const delay = 2000 * Math.pow(2, attempt);
-        console.log(`[Gemini] Retrying in ${delay}ms...`);
-        await new Promise((r) => setTimeout(r, delay));
+        const waitTime = 2000 * Math.pow(2, attempt);
+        console.log(`[Gemini] Retrying in ${waitTime}ms...`);
+        await delay(waitTime);
         continue;
       }
       
@@ -102,6 +130,9 @@ async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?:
   const lastMsg = lastError?.message || "";
   if (lastMsg.includes("503") || lastMsg.includes("UNAVAILABLE") || lastMsg.includes("overloaded")) {
     throw new Error("Google AI is experiencing high demand right now. We retried 5 times automatically — please wait 30 seconds and try again.");
+  }
+  if (lastMsg.includes("429") || lastMsg.includes("quota") || lastMsg.includes("rate limit")) {
+    throw new Error("Google AI rate limit reached. We retried 5 times automatically — please wait 1 minute and try again.");
   }
   throw new Error(`AI service temporarily unavailable. ${lastMsg || "Unknown error"}`);
 }
