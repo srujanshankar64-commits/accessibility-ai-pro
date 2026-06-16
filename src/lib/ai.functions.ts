@@ -70,6 +70,44 @@ async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?:
     // Fall back to API key authentication
     if (apiKey) {
       console.log("=== USING API KEY AUTHENTICATION ===");
+      
+      // Try Vertex AI endpoint first (might work with AQ keys)
+      try {
+        const vertexResponse = await fetch(
+          `https://us-central1-aiplatform.googleapis.com/v1/projects/YOUR_PROJECT_ID/locations/us-central1/publishers/google/models/gemini-2.5-flash:predict`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+              instances: [
+                {
+                  content: `${systemPrompt}\n\n${userPrompt}`
+                }
+              ],
+              parameters: {
+                temperature: 0.3,
+                maxOutputTokens: 8192
+              }
+            }),
+          }
+        );
+        
+        if (vertexResponse.ok) {
+          const data = await vertexResponse.json();
+          const text = data?.predictions?.[0]?.content || "{}";
+          console.log("=== VERTEX AI SUCCESS ===");
+          console.log("Response text length:", text.length);
+          console.log("==========================");
+          return text;
+        }
+      } catch (vertexError) {
+        console.log("Vertex AI failed, trying standard Gemini API");
+      }
+      
+      // Try standard Gemini API with SDK
       const genAI = new GoogleGenerativeAI(apiKey);
       const generativeModel = genAI.getGenerativeModel({ 
         model: model,
@@ -105,7 +143,7 @@ async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?:
     
     // Check if error is due to AQ auth key ACCESS_TOKEN_TYPE_UNSUPPORTED
     if (error?.message?.includes("ACCESS_TOKEN_TYPE_UNSUPPORTED") || error?.status === 401) {
-      throw new Error("Your Google Gemini API key (AQ prefix) requires OAuth 2.0 authentication. Please set up GOOGLE_APPLICATION_CREDENTIALS in your .env file with the path to your service account JSON key. See: https://ai.google.dev/gemini-api/docs/oauth");
+      throw new Error("Your Google Gemini API key (AQ prefix) requires OAuth 2.0 authentication. Since Google Cloud permissions are insufficient, please: 1) Wait for forum hold to be lifted and request AIza key, or 2) Use a different Google account with proper permissions, or 3) Contact Google support directly.");
     }
     
     // Throwing an error with the actual message to help debug in the network tab
