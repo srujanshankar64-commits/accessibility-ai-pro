@@ -19,7 +19,7 @@ async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?:
         config: {
           responseMimeType: "application/json",
           temperature: 0.3,
-          maxOutputTokens: 8192,
+          maxOutputTokens: 65536,
         },
       });
       return response.text ?? "{}";
@@ -106,12 +106,15 @@ const plan = getPlan(settings?.plan, 'srujanshankar64@gmail.com');
 
 Your job is to produce an EXHAUSTIVE and REALISTIC audit. You MUST find and report every violation present. Do NOT be conservative.
 
-MANDATORY VOLUME RULES:
-- You MUST return a MINIMUM of 20 violations. If you find fewer, dig deeper into each WCAG category until you reach 20+.
-- Report EVERY INSTANCE separately. If 5 images are missing alt text, that is 5 separate violation entries, not 1. If 8 buttons have contrast issues, list all 8 individually with their specific element details.
-- If the HTML fetch is limited or incomplete, you MUST still generate realistic violations based on the website type, URL structure, and typical patterns. Never return fewer than 20 violations due to limited HTML access.
-- Check EVERY category exhaustively. Most sites have violations in ALL 4 WCAG categories. If you only find issues in 1-2 categories, you are not looking hard enough.
-- Be specific in element_affected — name the exact element, CSS class, id, or location on the page.
+MANDATORY VOLUME RULES — NON-NEGOTIABLE:
+- You MUST return a MINIMUM of 50 violations. This is a hard floor. If you find fewer than 50, you are not looking hard enough. Keep digging.
+- EVERY INSTANCE is a separate violation. 10 images missing alt text = 10 violations. 15 buttons with contrast issues = 15 violations. 8 links with vague text = 8 violations. Never group them.
+- Be EXTREMELY specific in element_affected. Name the exact HTML element, CSS class, ID, aria attribute, or page location. Example: "button.nav-cta#hero-signup" not just "button".
+- Check ALL 4 WCAG categories exhaustively. Enterprise sites like this ALWAYS have 50-100+ violations across Perceivable, Operable, Understandable, and Robust.
+- If you reach 50 violations and there are more, KEEP GOING. There is no upper limit. Report everything you find.
+- NEVER stop at 20-30 violations. That is a failure. The minimum is 50.
+- For every interactive element (buttons, links, inputs, forms, modals, dropdowns, carousels, tabs, accordions) — check EVERY WCAG criterion against it.
+- Mobile violations are SEPARATE from desktop violations. List each mobile issue individually.
 
 SEVERITY ESCALATION RULES:
 - Any violation with direct legal exposure (missing alt text, missing labels, contrast failures on CTAs) MUST be rated critical or serious. Never rate legally-exposed violations as moderate or minor.
