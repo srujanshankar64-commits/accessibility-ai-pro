@@ -20,6 +20,7 @@ export type Database = {
           current_step: string | null
           error_message: string | null
           id: string
+          progress_log: Json
           progress_percent: number
           result: Json | null
           status: string
@@ -32,6 +33,7 @@ export type Database = {
           current_step?: string | null
           error_message?: string | null
           id?: string
+          progress_log?: Json
           progress_percent?: number
           result?: Json | null
           status?: string
@@ -44,6 +46,7 @@ export type Database = {
           current_step?: string | null
           error_message?: string | null
           id?: string
+          progress_log?: Json
           progress_percent?: number
           result?: Json | null
           status?: string
