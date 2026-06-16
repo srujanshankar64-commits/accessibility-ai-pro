@@ -113,8 +113,11 @@ const plan = getPlan(settings?.plan, 'srujanshankar64@gmail.com');
 
     let pageSnippet = "";
     try {
+      const fetchController = new AbortController();
+      setTimeout(() => fetchController.abort(), 8000);
       const r = await fetch(url, {
         headers: { "User-Agent": "AccessAuditAI/1.0 (WCAG Compliance Scanner)" },
+        signal: fetchController.signal,
       });
       const html = await r.text();
       pageSnippet = html.slice(0, 15000);
