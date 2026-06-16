@@ -3,7 +3,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { getPlan, TIER, canRunAudit, PLAN_PRICES } from "@/lib/tier.utils";
 
-async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?: string): Promise<string> {
+async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?: string, model: string = "gemini-2.5-flash"): Promise<string> {
   // Priority: .env (Owner's global key) -> Database (User's personal key)
   const rawKey = process.env.GOOGLE_GEMINI_API_KEY || userApiKey;
   const apiKey = rawKey?.trim();
@@ -22,7 +22,7 @@ async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?:
   try {
     // Use REST API with x-goog-api-key header for AQ prefix auth keys
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
       {
         method: "POST",
         headers: {
