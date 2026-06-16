@@ -2,7 +2,6 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { getPlan, TIER, canRunAudit, PLAN_PRICES } from "@/lib/tier.utils";
-import * as https from "https";
 
 async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?: string): Promise<string> {
   // Priority: .env (Owner's global key) -> Database (User's personal key)
@@ -32,41 +31,52 @@ async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?:
       }
     });
 
-    const data = await new Promise<any>((resolve, reject) => {
-      const req = https.request(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Content-Length': Buffer.byteLength(postData)
-          }
-        },
-        (res: any) => {
-          let body = '';
-          res.on('data', (chunk: any) => { body += chunk; });
-          res.on('end', () => {
-            try {
-              const parsed = JSON.parse(body);
-              if (res.statusCode && res.statusCode >= 400) {
-                reject({
-                  message: JSON.stringify(parsed),
-                  status: res.statusCode,
-                  statusText: res.statusMessage
-                });
-              } else {
-                resolve(parsed);
-              }
-            } catch (e) {
-              reject({ message: "Failed to parse JSON response", status: res.statusCode });
-            }
-          });
-        }
-      );
+    const data = await new Promise<any>(async (resolve, reject) => {
+      try {
+        // CRITICAL FIX: Vite/Nitro's bundler forcefully polyfills "https" to map to its own 
+        // internal fetch, which intercepts the request and leaks the Supabase Authorization header.
+        // By using `new Function`, we completely blind the Vite bundler. At runtime, Node.js will
+        // natively import the real `node:https` module, guaranteeing absolutely zero header leakage.
+        const httpsModule = await new Function("return import('node:https')")();
+        const https = httpsModule.default || httpsModule;
 
-      req.on('error', (e: any) => reject(e));
-      req.write(postData);
-      req.end();
+        const req = https.request(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Content-Length': Buffer.byteLength(postData)
+            }
+          },
+          (res: any) => {
+            let body = '';
+            res.on('data', (chunk: any) => { body += chunk; });
+            res.on('end', () => {
+              try {
+                const parsed = JSON.parse(body);
+                if (res.statusCode && res.statusCode >= 400) {
+                  reject({
+                    message: JSON.stringify(parsed),
+                    status: res.statusCode,
+                    statusText: res.statusMessage
+                  });
+                } else {
+                  resolve(parsed);
+                }
+              } catch (e) {
+                reject({ message: "Failed to parse JSON response", status: res.statusCode });
+              }
+            });
+          }
+        );
+
+        req.on('error', (e: any) => reject(e));
+        req.write(postData);
+        req.end();
+      } catch (err) {
+        reject(err);
+      }
     });
 
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
