@@ -1,14 +1,14 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { runAudit, generateWebsitePitch } from "@/lib/ai.functions";
+import { runAudit, generateWebsitePitch, startAuditJob, processAuditJob, getAuditJobStatus } from "@/lib/ai.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { ScoreGauge } from "@/components/ScoreGauge";
 import type { Violation } from "@/lib/audit-types";
 import { toast } from "sonner";
-import { ArrowRight, Loader2, ShieldCheck, ScanLine, Copy, Check, ChevronDown, ChevronUp, Code2, Lock, AlertTriangle, Zap, Upload, Share2, RefreshCw } from "lucide-react";
+import { ArrowRight, Loader2, ShieldCheck, ScanLine, Copy, Check, ChevronDown, ChevronUp, Code2, Lock, AlertTriangle, Zap, Upload, Share2, RefreshCw, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getPlan, TIER } from "@/lib/tier.utils";
 
@@ -46,6 +46,9 @@ function NewAuditPage() {
   const navigate = useNavigate();
   const auditFn = useServerFn(runAudit);
   const pitchFn = useServerFn(generateWebsitePitch);
+  const startJobFn = useServerFn(startAuditJob);
+  const processJobFn = useServerFn(processAuditJob);
+  const getJobStatusFn = useServerFn(getAuditJobStatus);
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [auditState, setAuditState] = useState<AuditState>("IDLE");
@@ -59,6 +62,10 @@ function NewAuditPage() {
   const [plan, setPlan] = useState("free");
   const [showUpsell, setShowUpsell] = useState(false);
   const [used, setUsed] = useState(0);
+  
+  // Async job state
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
+  const [jobError, setJobError] = useState<string | null>(null);
 
   // No website prospect mode
   const [noWebsite, setNoWebsite] = useState(false);
@@ -155,171 +162,96 @@ function NewAuditPage() {
     setExpandedViolationId(null);
     setAuditState("INITIALIZING");
     setProgress(0);
-    
-    // Run competitor audit if provided (Business Elite)
-    let competitorAuditId = null;
-    if (canCompetitorBenchmark && competitorUrl) {
-      try {
-        toast.info("Running competitor benchmark audit (this may take 30-60 seconds)...");
-        const compResult = await auditFn({ data: { url: competitorUrl } });
-        if (compResult?.data?.id) {
-          competitorAuditId = compResult.data.id;
-          toast.success("Competitor benchmark complete!");
-        }
-      } catch (err: any) {
-        console.error("Competitor audit failed:", err);
-        toast.error(`Competitor audit failed: ${err.message || 'Unable to audit competitor URL'}`);
-      }
-    }
-
-    // Run multi-page crawl if enabled (Business Elite)
-    let parentAuditId = null;
-    if (canMultiPageCrawl && multiPageCrawlEnabled) {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user?.id) throw new Error("User not authenticated");
-        
-        const { crawlSiteServer, createParentAudit, linkChildAudit, updateParentAudit } = await import("@/lib/crawler");
-        toast.info("Starting multi-page crawl (this may take 30-60 seconds)...");
-        const crawledPages = await crawlSiteServer({ data: { url, depth: 2 } });
-        if (crawledPages.length > 1) {
-          parentAuditId = await createParentAudit(user.id, url);
-          toast.info(`Found ${crawledPages.length} pages. Auditing up to 10 pages...`);
-          // Child audits will be created for each crawled page
-          for (let i = 0; i < Math.min(crawledPages.length - 1, 10); i++) {
-            const page = crawledPages[i + 1];
-            try {
-              toast.info(`Auditing page ${i + 1}/${Math.min(crawledPages.length - 1, 10)}: ${page.url}`);
-              const childResult = await auditFn({ data: { url: page.url } });
-              if (childResult?.data?.id) {
-                await linkChildAudit(parentAuditId, childResult.data.id);
-              }
-            } catch (err) {
-              console.error("Child audit failed for", page.url, err);
-              toast.error(`Failed to audit ${page.url}`);
-            }
-          }
-          await updateParentAudit(parentAuditId);
-          toast.success("Multi-page crawl complete!");
-        } else {
-          toast.info("Only 1 page found, running single-page audit");
-        }
-      } catch (err) {
-        console.error("Multi-page crawl failed:", err);
-        toast.error("Multi-page crawl failed, falling back to single-page audit");
-      }
-    }
-    
-    const ALL_LOG_STEPS = [
-      { text: "Resolving DNS and establishing secure connection...", threshold: 0 },
-      { text: "Fetching page HTML (targeting 15,000 chars)...", threshold: 3 },
-      { text: "Page HTML captured \u2014 parsing DOM tree...", threshold: 6 },
-      { text: `DOM parsed \u2014 scanning ${Math.floor(Math.random()*400+600)} elements...`, threshold: 9 },
-      { text: "Checking images and icons for missing alt text (WCAG 1.1.1)...", threshold: 12 },
-      { text: "Testing color contrast ratios against 4.5:1 AA threshold (WCAG 1.4.3)...", threshold: 15 },
-      { text: "Scanning keyboard navigation paths and tab order (WCAG 2.1.1)...", threshold: 18 },
-      { text: "Checking for visible focus indicators on interactive elements (WCAG 2.4.7)...", threshold: 21 },
-      { text: "Inspecting ARIA roles, labels and landmark regions (WCAG 4.1.2)...", threshold: 24 },
-      { text: "Verifying skip navigation links and bypass blocks (WCAG 2.4.1)...", threshold: 27 },
-      { text: "Checking heading hierarchy and document outline (WCAG 1.3.1)...", threshold: 30 },
-      { text: "Auditing form labels and error identification (WCAG 3.3.1, 3.3.2)...", threshold: 33 },
-      { text: "Checking lang attribute and language declarations (WCAG 3.1.1)...", threshold: 36 },
-      { text: "Testing touch target sizes \u2014 minimum 44x44px (WCAG 2.5.5)...", threshold: 39 },
-      { text: "Scanning for auto-playing media and motion (WCAG 2.2.2, 2.3.3)...", threshold: 42 },
-      { text: "Checking text resize support up to 200% (WCAG 1.4.4)...", threshold: 45 },
-      { text: "Validating HTML structure and duplicate IDs (WCAG 4.1.1)...", threshold: 48 },
-      { text: "Checking link purpose and context (WCAG 2.4.4)...", threshold: 51 },
-      { text: "Verifying error suggestion and prevention (WCAG 3.3.3, 3.3.4)...", threshold: 54 },
-      { text: "Testing page title and document language (WCAG 2.4.2, 3.1.1)...", threshold: 57 },
-      { text: "Checking for content that flashes more than 3 times (WCAG 2.3.1)...", threshold: 60 },
-      { text: "Verifying consistent navigation and identification (WCAG 3.2.3, 3.2.4)...", threshold: 63 },
-      { text: "Testing re-authentication timeout preservation (WCAG 2.2.1)...", threshold: 66 },
-      { text: "Checking help and documentation availability (WCAG 3.3.5)...", threshold: 69 },
-      { text: "Verifying focus order and logical sequence (WCAG 2.4.3)...", threshold: 72 },
-      { text: "Testing link destination and purpose clarity (WCAG 2.4.4)...", threshold: 75 },
-      { text: "Checking for status messages and dynamic content (WCAG 4.1.3)...", threshold: 78 },
-      { text: "Verifying character encoding and parsing (WCAG 3.1.2)...", threshold: 81 },
-      { text: "Testing orientation and input modalities (WCAG 1.3.4, 1.3.5)...", threshold: 84 },
-      { text: "Checking for redundant entry and auto-complete (WCAG 1.3.6)...", threshold: 87 },
-      { text: "Cross-referencing findings against ADA Title II, EU EAA, UK Equality Act...", threshold: 90 },
-      { text: "Calculating compliance score across all 4 WCAG principles...", threshold: 92 },
-      { text: "Prioritising violations by severity and legal exposure...", threshold: 94 },
-      { text: "Generating fix instructions and estimated remediation times...", threshold: 96 },
-      { text: "Compiling AI code fix suggestions for each violation...", threshold: 97 },
-      { text: "Assembling legal exposure report and jurisdiction deadlines...", threshold: 98 },
-      { text: "Finalising compliance report \u2014 almost done...", threshold: 99 },
-    ];
+    setJobError(null);
     setLogMessages([]);
-    let currentProgress = 0;
-    let lastLogIndex = -1;
-    const stepInterval = setInterval(() => {
-      currentProgress += (Math.random() * 2.0 + 1.0);
-      if (currentProgress > 99) currentProgress = 99;
-      const rounded = Math.min(Math.round(currentProgress), 99);
-      setProgress(rounded);
-      if (currentProgress >= 10 && currentProgress < 50) {
-        setAuditState("SCANNING_CORE_CRITERIA");
-      } else if (currentProgress >= 50 && currentProgress < 90) {
-        setAuditState("ANALYZING_ACCESSIBILITY_BARRIERS");
-      } else if (currentProgress >= 90) {
-        setAuditState("GENERATING_PROPOSAL");
-      }
-      const nextIndex = ALL_LOG_STEPS.findIndex((s, i) => i > lastLogIndex && rounded >= s.threshold);
-      if (nextIndex !== -1) {
-        lastLogIndex = nextIndex;
-        setLogMessages(prev => {
-          const updated = prev.map(m => ({ ...m, active: false }));
-          return [...updated, { text: ALL_LOG_STEPS[nextIndex].text, done: false, active: true }];
-        });
-        setTimeout(() => {
-          setLogMessages(prev => prev.map((m, i) =>
-            i === prev.length - 1 ? m : { ...m, done: true, active: false }
-          ));
-        }, 1500);
-      }
-    }, 900);
     
     try {
-      const result = await auditFn({ data: { url } });
-      clearInterval(stepInterval);
-      setProgress(100);
-      setAuditState("COMPLETED");
-      setAudit(result);
-      setUsed((u) => u + 1);
+      // Start async job
+      const jobResult = await startJobFn({ data: { url } });
+      setCurrentJobId(jobResult.job_id);
       
-      // Store competitor benchmark data if competitor audit was run
-      if (competitorAuditId && result?.data?.id) {
-        try {
-          await supabase
-            .from('audits')
-            .update({
-              competitor_audit_id: competitorAuditId,
-              competitor_url: competitorUrl,
-              has_competitor_benchmark: true,
-            } as any)
-            .eq('id', result.data.id);
-        } catch (err) {
-          console.error("Failed to store competitor data (migration not run yet):", err);
-        }
-      }
+      // Fire and forget - start processing
+      processJobFn({ data: { jobId: jobResult.job_id } }).catch(err => {
+        console.error("Process job failed:", err);
+      });
       
-      const preset = new Set<string>(
-        ((result.violations as unknown) as Violation[])
-          .filter((v: any) => v.severity === "critical" || v.severity === "serious")
-          .map((v: any) => v.id)
-      );
-      setSelected(preset);
-      toast.success(`Audit complete — ${result.violationsShown} violations found`);
-      loadRecent();
     } catch (err: any) {
-      clearInterval(stepInterval);
-      await new Promise((r) => setTimeout(r, 2000));
-      toast.error(err.message ?? "Audit failed");
-      setAuditState("IDLE");
-      setProgress(0);
-    } finally { 
+      toast.error(err.message ?? "Failed to start audit");
       setLoading(false);
+      setAuditState("IDLE");
     }
+  };
+  
+  // Poll for job status
+  useEffect(() => {
+    if (!currentJobId) return;
+    
+    const pollInterval = setInterval(async () => {
+      try {
+        const status = await getJobStatusFn({ data: { jobId: currentJobId } });
+        
+        setProgress(status.progress_percent);
+        setAuditState(
+          status.progress_percent < 25 ? "INITIALIZING" :
+          status.progress_percent < 50 ? "SCANNING_CORE_CRITERIA" :
+          status.progress_percent < 75 ? "ANALYZING_ACCESSIBILITY_BARRIERS" :
+          "GENERATING_PROPOSAL"
+        );
+        
+        // Update log messages based on current step
+        if (status.current_step) {
+          setLogMessages(prev => {
+            const lastMsg = prev[prev.length - 1];
+            if (lastMsg?.text !== status.current_step) {
+              const updated = prev.map(m => ({ ...m, active: false, done: true }));
+              return [...updated, { text: status.current_step, done: false, active: true }];
+            }
+            return prev;
+          });
+        }
+        
+        // Handle completed status
+        if (status.status === 'completed' && status.result) {
+          clearInterval(pollInterval);
+          setProgress(100);
+          setAuditState("COMPLETED");
+          setAudit(status.result);
+          setUsed((u) => u + 1);
+          setCurrentJobId(null);
+          setLoading(false);
+          
+          const preset = new Set<string>(
+            ((status.result.violations as unknown) as Violation[])
+              .filter((v: any) => v.severity === "critical" || v.severity === "serious")
+              .map((v: any) => v.id)
+          );
+          setSelected(preset);
+          toast.success(`Audit complete — ${status.result.violationsShown} violations found`);
+          loadRecent();
+        }
+        
+        // Handle failed status
+        if (status.status === 'failed') {
+          clearInterval(pollInterval);
+          setJobError(status.error_message || "Audit failed");
+          setCurrentJobId(null);
+          setLoading(false);
+          setAuditState("IDLE");
+          toast.error(status.error_message || "Audit failed");
+        }
+        
+      } catch (err) {
+        console.error("Polling error:", err);
+      }
+    }, 2000);
+    
+    return () => clearInterval(pollInterval);
+  }, [currentJobId]);
+  
+  // Retry function
+  const retryAudit = () => {
+    setJobError(null);
+    submit(new Event('submit') as any);
   };
 
   const toggleExpand = (id: string) => {
@@ -526,6 +458,20 @@ function NewAuditPage() {
              Prospect has no website? Jump straight to proposal <ArrowRight className="h-3 w-3" />
           </Link>
         </div>
+        
+        {/* Retry button for failed audits */}
+        {jobError && (
+          <div className="flex items-center gap-2 p-3 rounded-lg border border-red-500/30 bg-red-500/10">
+            <AlertTriangle className="h-4 w-4 text-red-400 shrink-0" />
+            <p className="text-xs text-red-300 flex-1">{jobError}</p>
+            <button
+              onClick={retryAudit}
+              className="h-8 inline-flex items-center px-3 rounded-md bg-red-500/20 hover:bg-red-500/30 text-red-300 text-xs transition-colors"
+            >
+              <RotateCcw className="h-3 w-3 mr-1" /> Retry
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Loading progress indicator */}
