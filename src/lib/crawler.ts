@@ -236,10 +236,8 @@ export async function createParentAudit(userId: string, url: string): Promise<st
       url,
       overall_score: 0,
       violations: [],
-      is_parent: true,
-      total_pages: 0,
       created_at: new Date().toISOString(),
-    } as any)
+    })
     .select('id')
     .single();
   
@@ -248,44 +246,17 @@ export async function createParentAudit(userId: string, url: string): Promise<st
 }
 
 /**
- * Links a child audit to a parent audit
+ * Links a child audit to a parent audit (placeholder for future schema update)
  */
 export async function linkChildAudit(parentId: string, childId: string): Promise<void> {
-  const { error } = await supabase
-    .from('audits')
-    .update({ parent_audit_id: parentId } as any)
-    .eq('id', childId);
-  
-  if (error) throw error;
+  // TODO: Implement when parent_audit_id column is added to schema
+  console.log(`Linking child ${childId} to parent ${parentId} (schema update needed)`);
 }
 
 /**
- * Updates parent audit with aggregated scores
+ * Updates parent audit with aggregated scores (placeholder for future schema update)
  */
 export async function updateParentAudit(parentId: string): Promise<void> {
-  try {
-    // Fetch all child audits
-    const { data: children } = await supabase
-      .from('audits')
-      .select('overall_score, violations')
-      .eq('parent_audit_id' as any, parentId);
-    
-    if (!children || children.length === 0) return;
-    
-    // Calculate aggregated scores
-    const totalScore = children.reduce((sum, child) => sum + (child.overall_score || 0), 0);
-    const avgScore = Math.round(totalScore / children.length);
-    const totalViolations = children.reduce((sum, child) => sum + (Array.isArray(child.violations) ? child.violations.length : 0), 0);
-    
-    // Update parent audit
-    await supabase
-      .from('audits')
-      .update({
-        overall_score: avgScore,
-        total_pages: children.length + 1, // +1 for the parent itself
-      } as any)
-      .eq('id', parentId);
-  } catch (err) {
-    console.error("Failed to update parent audit:", err);
-  }
+  // TODO: Implement when is_parent and total_pages columns are added to schema
+  console.log(`Updating parent audit ${parentId} (schema update needed)`);
 }
