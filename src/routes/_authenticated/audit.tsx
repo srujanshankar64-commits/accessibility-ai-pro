@@ -47,7 +47,6 @@ function NewAuditPage() {
   const auditFn = useServerFn(runAudit);
   const pitchFn = useServerFn(generateWebsitePitch);
   const startJobFn = useServerFn(startAuditJob);
-  const processJobFn = useServerFn(processAuditJob);
   const getJobStatusFn = useServerFn(getAuditJobStatus);
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
