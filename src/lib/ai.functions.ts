@@ -3,6 +3,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { getPlan, TIER, canRunAudit, PLAN_PRICES } from "@/lib/tier.utils";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import OpenAI from "openai";
 
 async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?: string, model: string = "gemini-2.5-flash"): Promise<string> {
   // Priority: .env (Owner's global key) -> Database (User's personal key)
@@ -52,8 +53,52 @@ async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?:
       rawError: error
     });
     
+    // Check if error is due to AQ auth key ACCESS_TOKEN_TYPE_UNSUPPORTED
+    // Fall back to OpenAI if Google AQ auth fails
+    if (error?.message?.includes("ACCESS_TOKEN_TYPE_UNSUPPORTED") || error?.status === 401) {
+      console.log("=== FALLING BACK TO OPENAI ===");
+      return await callOpenAI(systemPrompt, userPrompt);
+    }
+    
     // Throwing an error with the actual message to help debug in the network tab
     throw new Error(`AI service temporarily unavailable. Internal details: ${error?.message || "Unknown error"}`);
+  }
+}
+
+async function callOpenAI(systemPrompt: string, userPrompt: string): Promise<string> {
+  const openaiKey = process.env.OPENAI_API_KEY;
+  
+  if (!openaiKey) {
+    throw new Error("Google AQ auth failed and OpenAI fallback unavailable. Please configure OPENAI_API_KEY environment variable.");
+  }
+
+  try {
+    const openai = new OpenAI({ apiKey: openaiKey });
+    
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt }
+      ],
+      temperature: 0.3,
+      max_tokens: 8192,
+      response_format: { type: "json_object" }
+    });
+    
+    const text = response.choices[0]?.message?.content || "{}";
+    console.log("=== OPENAI FALLBACK SUCCESS ===");
+    console.log("Response text length:", text.length);
+    console.log("==============================");
+    
+    return text;
+  } catch (error: any) {
+    console.error("[Diagnostics] OpenAI API error:", {
+      message: error?.message,
+      status: error?.status,
+      rawError: error
+    });
+    throw new Error(`Both Google and OpenAI AI services unavailable. Internal details: ${error?.message || "Unknown error"}`);
   }
 }
 
