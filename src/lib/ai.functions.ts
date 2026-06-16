@@ -18,6 +18,14 @@ const MIN_CALL_INTERVAL = 3500; // 3.5 seconds = ~17 RPM max
 // Helper: Throttle requests to stay under 20 RPM
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+// Helper: Exponential backoff with jitter to prevent thundering herd
+function getBackoffWithJitter(attempt: number): number {
+  const baseDelay = 2000; // 2 seconds initial
+  const multiplier = Math.pow(2, attempt); // 2x multiplier: 2s, 4s, 8s, 16s, 32s
+  const jitter = Math.random() * 1000; // 0-1 seconds random jitter
+  return baseDelay * multiplier + jitter;
+}
+
 function resetCircuitBreaker() {
   circuitBreakerOpen = false;
   failureCount = 0;
@@ -67,6 +75,7 @@ async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?:
   const ai = new GoogleGenAI({ apiKey });
   const maxRetries = 5;
   let lastError: any = null;
+  let currentModel = model;
   
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
@@ -83,7 +92,7 @@ async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?:
       lastGeminiCall = Date.now();
       
       const response = await ai.models.generateContent({
-        model,
+        model: currentModel,
         contents: `${systemPrompt}\n\n${userPrompt}`,
         config: {
           responseMimeType: "application/json",
@@ -102,19 +111,27 @@ async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?:
       const msg = error?.message || "";
       const is503 = msg.includes("503") || msg.includes("UNAVAILABLE") || msg.includes("overloaded");
       const is429 = msg.includes("429") || msg.includes("quota") || msg.includes("rate limit");
-      console.error(`[Gemini] API error (attempt ${attempt + 1}/${maxRetries}):`, msg);
+      console.error(`[Gemini] API error (attempt ${attempt + 1}/${maxRetries}) with model ${currentModel}:`, msg);
       
       if (is429 && attempt < maxRetries - 1) {
-        // Rate limit hit - exponential backoff
-        const waitTime = Math.pow(2, attempt + 1) * 1000;
-        console.warn(`[RateLimiter] 429 rate limit hit, retrying in ${waitTime}ms`);
+        // Rate limit hit - exponential backoff with jitter
+        const waitTime = getBackoffWithJitter(attempt);
+        console.warn(`[RateLimiter] 429 rate limit hit, retrying in ${Math.round(waitTime)}ms with jitter`);
         await delay(waitTime);
         continue;
       }
       
       if (is503 && attempt < maxRetries - 1) {
-        const waitTime = 2000 * Math.pow(2, attempt);
-        console.log(`[Gemini] Retrying in ${waitTime}ms...`);
+        // Model fallback: if using pro model and getting 503, switch to flash
+        if (currentModel === "gemini-2.5-pro" && attempt === 2) {
+          console.warn(`[ModelFallback] Switching from gemini-2.5-pro to gemini-2.5-flash due to 503 errors`);
+          currentModel = "gemini-2.5-flash";
+          continue;
+        }
+        
+        // Exponential backoff with jitter
+        const waitTime = getBackoffWithJitter(attempt);
+        console.warn(`[Retry] 503 service unavailable, retrying in ${Math.round(waitTime)}ms with jitter`);
         await delay(waitTime);
         continue;
       }

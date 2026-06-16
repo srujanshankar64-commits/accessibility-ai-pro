@@ -38,6 +38,14 @@ function parseJSON(s: string) {
 // Helper: Throttle requests to stay under 20 RPM (one every 3.5 seconds)
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+// Helper: Exponential backoff with jitter to prevent thundering herd
+function getBackoffWithJitter(attempt: number): number {
+  const baseDelay = 2000; // 2 seconds initial
+  const multiplier = Math.pow(2, attempt); // 2x multiplier: 2s, 4s, 8s, 16s, 32s
+  const jitter = Math.random() * 1000; // 0-1 seconds random jitter
+  return baseDelay * multiplier + jitter;
+}
+
 // Elite rate-limiter: Track last call time to enforce RPM limit
 let lastGeminiCall = 0;
 const MIN_CALL_INTERVAL = 3500; // 3.5 seconds = ~17 RPM max
@@ -45,7 +53,7 @@ const MIN_CALL_INTERVAL = 3500; // 3.5 seconds = ~17 RPM max
 async function callGeminiWithRetry(systemPrompt: string, userPrompt: string, apiKey: string, retries = 5) {
   const key = (apiKey || GEMINI_KEY).trim();
   if (!key) throw new Error("Gemini API key not configured");
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
+  let currentModel = "gemini-2.5-flash";
   
   for (let i = 0; i < retries; i++) {
     try {
@@ -61,6 +69,7 @@ async function callGeminiWithRetry(systemPrompt: string, userPrompt: string, api
       // Update last call time
       lastGeminiCall = Date.now();
       
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${key}`;
       const r = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -84,16 +93,24 @@ async function callGeminiWithRetry(systemPrompt: string, userPrompt: string, api
       }
       
       if (r.status === 429 && i < retries - 1) {
-        // Rate limit hit - exponential backoff
-        const waitTime = Math.pow(2, i + 1) * 1000;
-        console.warn(`[RateLimiter] 429 rate limit hit, retrying in ${waitTime}ms (attempt ${i + 1}/${retries})`);
+        // Rate limit hit - exponential backoff with jitter
+        const waitTime = getBackoffWithJitter(i);
+        console.warn(`[RateLimiter] 429 rate limit hit, retrying in ${Math.round(waitTime)}ms with jitter (attempt ${i + 1}/${retries})`);
         await delay(waitTime);
         continue;
       }
       
       if (r.status === 503 && i < retries - 1) {
-        const waitTime = 2000 * Math.pow(2, i);
-        console.warn(`[RateLimiter] 503 service unavailable, retrying in ${waitTime}ms (attempt ${i + 1}/${retries})`);
+        // Model fallback: if using pro model and getting 503, switch to flash
+        if (currentModel === "gemini-2.5-pro" && i === 2) {
+          console.warn(`[ModelFallback] Switching from gemini-2.5-pro to gemini-2.5-flash due to 503 errors`);
+          currentModel = "gemini-2.5-flash";
+          continue;
+        }
+        
+        // Exponential backoff with jitter
+        const waitTime = getBackoffWithJitter(i);
+        console.warn(`[Retry] 503 service unavailable, retrying in ${Math.round(waitTime)}ms with jitter (attempt ${i + 1}/${retries})`);
         await delay(waitTime);
         continue;
       }
@@ -222,50 +239,49 @@ async function runAuditWork(jobId: string) {
     await pushLog(jobId, "Fetching page HTML", 10, "Fetching website content...");
     try {
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 12000);
+      const timer = setTimeout(() => ctrl.abort(), 15000);
       const r = await fetch(url, {
-        headers: { "User-Agent": "AccessAuditAI/1.0 (WCAG Compliance Scanner)" },
+        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 AccessAuditAI/2.0" },
         signal: ctrl.signal,
       });
       clearTimeout(timer);
       const html = await r.text();
-      pageSnippet = cleanHtml(html).slice(0, 18000);
+      pageSnippet = cleanHtml(html).slice(0, 12000); // Reduced from 18000 to avoid timeouts
       await pushLog(jobId, `Fetched ${pageSnippet.length} chars of cleaned HTML`, 18, "Parsing HTML structure...");
     } catch (e) {
       pageSnippet = `(Could not fetch ${url}. Perform a thorough theoretical WCAG 2.1 AA audit based on the URL.)`;
       await pushLog(jobId, `Could not fetch site, falling back to theoretical audit`, 18, "Fallback: theoretical audit");
     }
 
-    // Run 4 categories in parallel, streaming progress as each completes
-    await pushLog(jobId, "Running 4 parallel WCAG category scans", 25, "Scanning WCAG categories...");
+    // Run 4 categories sequentially to avoid rate limits and capacity bottlenecks
+    await pushLog(jobId, "Running 4 sequential WCAG category scans (rate-limited)", 25, "Scanning WCAG categories...");
 
     const baseProgress = 25;
     const span = 60; // 25 -> 85
     let completed = 0;
     const userPrompt = `URL: ${url}\n\nHTML content:\n${pageSnippet}`;
+    const categoryResults: any[] = [];
 
-    const categoryResults = await Promise.all(
-      CATEGORIES.map(async (cat) => {
-        try {
-          const raw = await callGemini(buildCategoryPrompt(cat, includeCodeFixes), userPrompt, userApiKey);
-          const parsed = parseJSON(raw);
-          completed++;
-          const pct = baseProgress + Math.round((completed / CATEGORIES.length) * span);
-          await pushLog(
-            jobId,
-            `✓ ${cat.label}: found ${(parsed.violations ?? []).length} violations (score ${parsed.category_score ?? "?"}/25)`,
-            pct,
-            `Completed ${completed}/${CATEGORIES.length} category scans`,
-          );
-          return { key: cat.key, score: parsed.category_score ?? 15, violations: parsed.violations ?? [] };
-        } catch (err: any) {
-          completed++;
-          const pct = baseProgress + Math.round((completed / CATEGORIES.length) * span);
-          await pushLog(jobId, `⚠ ${cat.label} failed: ${err?.message ?? "error"}`, pct, `Category ${cat.key} skipped`);
-          return { key: cat.key, score: 15, violations: [] };
-        }
-      }),
-    );
+    for (const cat of CATEGORIES) {
+      try {
+        const raw = await callGemini(buildCategoryPrompt(cat, includeCodeFixes), userPrompt, userApiKey);
+        const parsed = parseJSON(raw);
+        completed++;
+        const pct = baseProgress + Math.round((completed / CATEGORIES.length) * span);
+        await pushLog(
+          jobId,
+          `✓ ${cat.label}: found ${(parsed.violations ?? []).length} violations (score ${parsed.category_score ?? "?"}/25)`,
+          pct,
+          `Completed ${completed}/${CATEGORIES.length} category scans`,
+        );
+        categoryResults.push({ key: cat.key, score: parsed.category_score ?? 15, violations: parsed.violations ?? [] });
+      } catch (err: any) {
+        completed++;
+        const pct = baseProgress + Math.round((completed / CATEGORIES.length) * span);
+        await pushLog(jobId, `⚠ ${cat.label} failed: ${err?.message ?? "error"}`, pct, `Category ${cat.key} skipped`);
+        categoryResults.push({ key: cat.key, score: 15, violations: [] });
+      }
+    }
 
     await pushLog(jobId, "Aggregating findings and computing scores", 88, "Processing results...");
 
