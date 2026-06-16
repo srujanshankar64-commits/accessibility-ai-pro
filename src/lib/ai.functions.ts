@@ -2,152 +2,28 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { getPlan, TIER, canRunAudit, PLAN_PRICES } from "@/lib/tier.utils";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 
 async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?: string, model: string = "gemini-2.5-flash"): Promise<string> {
-  // Priority: OAuth 2.0 service account -> .env API key -> Database (User's personal key)
-  const serviceAccountPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
-  const rawKey = process.env.GOOGLE_GEMINI_API_KEY || userApiKey;
-  const apiKey = rawKey?.trim();
-  
-  console.log("=== EXTREME DEBUG: callGemini AUTHENTICATION ===");
-  console.log("Service account path:", serviceAccountPath ? "SET" : "NOT SET");
-  console.log("process.env.GOOGLE_GEMINI_API_KEY length:", process.env.GOOGLE_GEMINI_API_KEY?.length || "undefined");
-  console.log("userApiKey length:", userApiKey?.length || "undefined");
-  console.log("rawKey length:", rawKey?.length || "undefined");
-  console.log("apiKey prefix:", apiKey?.substring(0, 8));
-  console.log("===============================================");
-  
-  if (!serviceAccountPath && !apiKey) {
-    throw new Error("AI service temporarily unavailable. Please set up GOOGLE_APPLICATION_CREDENTIALS for OAuth 2.0, or add your Gemini API key in Settings or configure GOOGLE_GEMINI_API_KEY environment variable.");
+  const apiKey = (process.env.GOOGLE_GEMINI_API_KEY || userApiKey)?.trim();
+  if (!apiKey) {
+    throw new Error("AI service unavailable. Please add your Gemini API key in Settings or configure GOOGLE_GEMINI_API_KEY.");
   }
-
   try {
-    // Try OAuth 2.0 first if service account is configured
-    if (serviceAccountPath) {
-      console.log("=== USING OAUTH 2.0 AUTHENTICATION ===");
-      const { GoogleAuth } = await import("@google-cloud/aiplatform");
-      const auth = new GoogleAuth({ keyFilename: serviceAccountPath });
-      const client = await auth.getClient();
-      const accessToken = await client.getAccessToken();
-      
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${accessToken.token}`,
-          },
-          body: JSON.stringify({
-            contents: [
-              {
-                parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }]
-              }
-            ],
-            generationConfig: {
-              responseMimeType: "application/json",
-              temperature: 0.3,
-              maxOutputTokens: 8192
-            }
-          }),
-        }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-        console.log("=== OAUTH 2.0 SUCCESS ===");
-        console.log("Response text length:", text?.length || 0);
-        console.log("==========================");
-        return text || "{}";
-      }
-      
-      // If OAuth fails, fall back to API key
-      console.log("OAuth 2.0 failed, falling back to API key");
-    }
-    
-    // Fall back to API key authentication
-    if (apiKey) {
-      console.log("=== USING API KEY AUTHENTICATION ===");
-      
-      // Try Vertex AI endpoint first (might work with AQ keys)
-      try {
-        const vertexResponse = await fetch(
-          `https://us-central1-aiplatform.googleapis.com/v1/projects/YOUR_PROJECT_ID/locations/us-central1/publishers/google/models/gemini-2.5-flash:predict`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${apiKey}`,
-            },
-            body: JSON.stringify({
-              instances: [
-                {
-                  content: `${systemPrompt}\n\n${userPrompt}`
-                }
-              ],
-              parameters: {
-                temperature: 0.3,
-                maxOutputTokens: 8192
-              }
-            }),
-          }
-        );
-        
-        if (vertexResponse.ok) {
-          const data = await vertexResponse.json();
-          const text = data?.predictions?.[0]?.content || "{}";
-          console.log("=== VERTEX AI SUCCESS ===");
-          console.log("Response text length:", text.length);
-          console.log("==========================");
-          return text;
-        }
-      } catch (vertexError) {
-        console.log("Vertex AI failed, trying standard Gemini API");
-      }
-      
-      // Try standard Gemini API with SDK
-      const genAI = new GoogleGenerativeAI(apiKey);
-      const generativeModel = genAI.getGenerativeModel({ 
-        model: model,
-        generationConfig: {
-          responseMimeType: "application/json",
-          temperature: 0.3,
-          maxOutputTokens: 8192
-        }
-      });
-      
-      const result = await generativeModel.generateContent(`${systemPrompt}\n\n${userPrompt}`);
-      const response = await result.response;
-      const text = response.text();
-      
-      console.log("=== API KEY SUCCESS ===");
-      console.log("Response text length:", text.length);
-      console.log("==========================");
-      
-      return text;
-    }
-    
-    throw new Error("No authentication method available");
-  } catch (error: any) {
-    // Explicitly logging the full error response object, status, and message
-    console.error("[Diagnostics] Google AI API error:", {
-      message: error?.message,
-      status: error?.status,
-      statusText: error?.statusText,
-      name: error?.name,
-      stack: error?.stack,
-      rawError: error
+    const ai = new GoogleGenAI({ apiKey });
+    const response = await ai.models.generateContent({
+      model,
+      contents: `${systemPrompt}\n\n${userPrompt}`,
+      config: {
+        responseMimeType: "application/json",
+        temperature: 0.3,
+        maxOutputTokens: 8192,
+      },
     });
-    
-    // Check if error is due to AQ auth key ACCESS_TOKEN_TYPE_UNSUPPORTED
-    if (error?.message?.includes("ACCESS_TOKEN_TYPE_UNSUPPORTED") || error?.status === 401) {
-      throw new Error("Your Google Gemini API key (AQ prefix) requires OAuth 2.0 authentication. Since Google Cloud permissions are insufficient, please: 1) Wait for forum hold to be lifted and request AIza key, or 2) Use a different Google account with proper permissions, or 3) Contact Google support directly.");
-    }
-    
-    // Throwing an error with the actual message to help debug in the network tab
-    throw new Error(`AI service temporarily unavailable. Internal details: ${error?.message || "Unknown error"}`);
+    return response.text ?? "{}";
+  } catch (error: any) {
+    console.error("[Gemini] API error:", error?.message);
+    throw new Error(`AI service temporarily unavailable. ${error?.message || "Unknown error"}`);
   }
 }
 
