@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { runAudit, generateWebsitePitch, startAuditJob, processAuditJob, getAuditJobStatus } from "@/lib/ai.functions";
+import { runAudit, generateWebsitePitch, startAuditJob, getAuditJobStatus } from "@/lib/ai.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -47,7 +47,6 @@ function NewAuditPage() {
   const auditFn = useServerFn(runAudit);
   const pitchFn = useServerFn(generateWebsitePitch);
   const startJobFn = useServerFn(startAuditJob);
-  const processJobFn = useServerFn(processAuditJob);
   const getJobStatusFn = useServerFn(getAuditJobStatus);
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
@@ -155,6 +154,66 @@ function NewAuditPage() {
   const auditLimit = TIER[currentPlan].audits;
   const isUnlimited = auditLimit >= 999999;
 
+  // Apply incoming job state (from realtime or polling) to UI
+  const applyJobState = (status: any) => {
+    if (!status) return;
+    setProgress(status.progress_percent ?? 0);
+    const pct = status.progress_percent ?? 0;
+    setAuditState(
+      pct >= 100 ? "COMPLETED" :
+      pct < 25 ? "INITIALIZING" :
+      pct < 50 ? "SCANNING_CORE_CRITERIA" :
+      pct < 85 ? "ANALYZING_ACCESSIBILITY_BARRIERS" :
+      "GENERATING_PROPOSAL"
+    );
+
+    const log: Array<{ message: string; ts?: string }> = Array.isArray(status.progress_log)
+      ? status.progress_log
+      : [];
+    if (log.length > 0) {
+      setLogMessages(
+        log.map((entry, idx) => ({
+          text: entry.message,
+          done: idx < log.length - 1,
+          active: idx === log.length - 1 && status.status !== "completed" && status.status !== "failed",
+        }))
+      );
+    } else if (status.current_step) {
+      setLogMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (last?.text === status.current_step) return prev;
+        const updated = prev.map((m) => ({ ...m, active: false, done: true }));
+        return [...updated, { text: status.current_step, done: false, active: true }];
+      });
+    }
+
+    if (status.status === "completed" && status.result) {
+      setProgress(100);
+      setAuditState("COMPLETED");
+      setAudit(status.result);
+      setUsed((u) => u + 1);
+      setLoading(false);
+      setCurrentJobId(null);
+      const preset = new Set<string>(
+        ((status.result.violations as unknown) as Violation[])
+          .filter((v: any) => v.severity === "critical" || v.severity === "serious")
+          .map((v: any) => v.id)
+      );
+      setSelected(preset);
+      toast.success(`Audit complete — ${status.result.violationsShown ?? (status.result.violations?.length ?? 0)} violations found`);
+      loadRecent();
+    }
+
+    if (status.status === "failed") {
+      const msg = status.error_message || "Audit failed";
+      setJobError(msg);
+      setCurrentJobId(null);
+      setLoading(false);
+      setAuditState("IDLE");
+      toast.error(msg);
+    }
+  };
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!url) return;
@@ -164,130 +223,72 @@ function NewAuditPage() {
     setProgress(0);
     setJobError(null);
     setLogMessages([]);
-    
+
     try {
-      // Start async job
+      // 1) Create the job row (immediate). Returns a job_id.
       const jobResult = await startJobFn({ data: { url } });
       setCurrentJobId(jobResult.job_id);
-      
-      // Fire and forget - start processing
-      processJobFn({ data: { jobId: jobResult.job_id } }).catch(err => {
-        console.error("Process job failed:", err);
-        const errorMsg = err?.message || "Unknown error";
-        if (errorMsg.includes("circuit breaker") || errorMsg.includes("repeated failures")) {
-          setJobError("AI service is temporarily unavailable due to high demand. Please wait 1 minute and try again.");
-        } else {
-          setJobError(errorMsg);
-        }
-      });
-      
+
+      // 2) Fire-and-forget the background worker (runs via EdgeRuntime.waitUntil).
+      supabase.functions
+        .invoke("audit-worker", { body: { jobId: jobResult.job_id } })
+        .catch((err: any) => console.error("Edge worker invoke failed:", err));
     } catch (err: any) {
-      const errorMsg = err?.message || "Failed to start audit";
-      if (errorMsg.includes("circuit breaker") || errorMsg.includes("repeated failures")) {
-        toast.error("AI service is temporarily unavailable due to high demand. Please wait 1 minute and try again.");
-        setJobError("AI service is temporarily unavailable due to high demand. Please wait 1 minute and try again.");
-      } else if (errorMsg.includes("audit limit")) {
-        toast.error(errorMsg);
-        setJobError(errorMsg);
-      } else {
-        toast.error("Failed to start audit. Please try again.");
-        setJobError("Failed to start audit. Please try again.");
-      }
+      toast.error(err?.message ?? "Failed to start audit");
       setLoading(false);
       setAuditState("IDLE");
     }
   };
-  
-  // Poll for job status
+
+  // Realtime subscription + 3s polling fallback for the active job
   useEffect(() => {
     if (!currentJobId) return;
-    
-    let pollCount = 0;
-    const MAX_POLLS = 150; // 5 minutes max (150 * 2s)
-    
+    const jobId = currentJobId;
+    let cancelled = false;
+    let realtimeConnected = false;
+
+    // Realtime channel: listen to row updates for this specific job
+    const channel = supabase
+      .channel(`audit_job:${jobId}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "audit_jobs", filter: `id=eq.${jobId}` },
+        (payload) => {
+          if (cancelled) return;
+          applyJobState(payload.new);
+        }
+      )
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") realtimeConnected = true;
+        else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+          realtimeConnected = false;
+        }
+      });
+
+    // Polling fallback (always on at 3s — cheap row read, covers realtime drops)
     const pollInterval = setInterval(async () => {
-      pollCount++;
-      
-      // Timeout check
-      if (pollCount > MAX_POLLS) {
-        clearInterval(pollInterval);
-        setJobError("Audit timed out. Please try again.");
-        setCurrentJobId(null);
-        setLoading(false);
-        setAuditState("IDLE");
-        toast.error("Audit timed out. Please try again.");
-        return;
-      }
-      
+      if (cancelled) return;
       try {
-        const status = await getJobStatusFn({ data: { jobId: currentJobId } });
-        
-        setProgress(status.progress_percent);
-        setAuditState(
-          status.progress_percent < 25 ? "INITIALIZING" :
-          status.progress_percent < 50 ? "SCANNING_CORE_CRITERIA" :
-          status.progress_percent < 75 ? "ANALYZING_ACCESSIBILITY_BARRIERS" :
-          "GENERATING_PROPOSAL"
-        );
-        
-        // Update log messages based on current step
-        if (status.current_step) {
-          setLogMessages(prev => {
-            const lastMsg = prev[prev.length - 1];
-            if (lastMsg?.text !== status.current_step) {
-              const updated = prev.map(m => ({ ...m, active: false, done: true }));
-              return [...updated, { text: status.current_step, done: false, active: true }];
-            }
-            return prev;
-          });
-        }
-        
-        // Handle completed status
-        if (status.status === 'completed' && status.result) {
-          clearInterval(pollInterval);
-          setProgress(100);
-          setAuditState("COMPLETED");
-          setAudit(status.result);
-          setUsed((u) => u + 1);
-          setCurrentJobId(null);
-          setLoading(false);
-          
-          const preset = new Set<string>(
-            ((status.result.violations as unknown) as Violation[])
-              .filter((v: any) => v.severity === "critical" || v.severity === "serious")
-              .map((v: any) => v.id)
-          );
-          setSelected(preset);
-          toast.success(`Audit complete — ${status.result.violationsShown} violations found`);
-          loadRecent();
-        }
-        
-        // Handle failed status
-        if (status.status === 'failed') {
-          clearInterval(pollInterval);
-          const errorMsg = status.error_message || "Audit failed";
-          setJobError(errorMsg);
-          setCurrentJobId(null);
-          setLoading(false);
-          setAuditState("IDLE");
-          toast.error(errorMsg);
-        }
-        
+        const status = await getJobStatusFn({ data: { jobId } });
+        applyJobState(status);
       } catch (err) {
         console.error("Polling error:", err);
-        // Don't fail on single polling error, continue polling
-        // Only fail after multiple consecutive errors could be added here
       }
-    }, 2000);
-    
-    return () => clearInterval(pollInterval);
+    }, 3000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(pollInterval);
+      supabase.removeChannel(channel);
+    };
   }, [currentJobId]);
-  
+
   // Retry function
   const retryAudit = () => {
     setJobError(null);
-    submit(new Event('submit') as any);
+    submit(new Event("submit") as any);
   };
+
 
   const toggleExpand = (id: string) => {
     setExpandedViolationId(expandedViolationId === id ? null : id);

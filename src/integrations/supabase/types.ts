@@ -14,6 +14,48 @@ export type Database = {
   }
   public: {
     Tables: {
+      audit_jobs: {
+        Row: {
+          created_at: string
+          current_step: string | null
+          error_message: string | null
+          id: string
+          progress_log: Json
+          progress_percent: number
+          result: Json | null
+          status: string
+          updated_at: string
+          url: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          current_step?: string | null
+          error_message?: string | null
+          id?: string
+          progress_log?: Json
+          progress_percent?: number
+          result?: Json | null
+          status?: string
+          updated_at?: string
+          url: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          current_step?: string | null
+          error_message?: string | null
+          id?: string
+          progress_log?: Json
+          progress_percent?: number
+          result?: Json | null
+          status?: string
+          updated_at?: string
+          url?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       audits: {
         Row: {
           category_scores: Json

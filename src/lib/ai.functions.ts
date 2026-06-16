@@ -1069,7 +1069,7 @@ Return ONLY valid JSON with EXACTLY this schema:
       // Update audit count
       await (context.supabase as any)
         .from("settings")
-        .update({ audits_used: usedThisMonth + 1 })
+        .update({ audits_used: (settings?.audits_used ?? 0) + 1 })
         .eq("user_id", context.userId);
       
       // Insert audit record
