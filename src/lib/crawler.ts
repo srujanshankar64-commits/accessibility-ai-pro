@@ -67,23 +67,39 @@ export const crawlSiteServer = createServerFn({ method: "POST" })
     const visited = new Set<string>();
     const queue: string[] = [url];
     
+    const fetchWithTimeout = async (fetchUrl: string, timeoutMs: number = 15000) => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const response = await fetch(fetchUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 AccessAuditAI/2.0'
+          },
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        return response;
+      } catch (error) {
+        clearTimeout(timeoutId);
+        throw error;
+      }
+    };
+    
     // Add the main URL first
     try {
-      const response = await fetch(url, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
-      });
+      const response = await fetchWithTimeout(url, 15000);
       if (response.ok) {
         const html = await response.text();
         const titleMatch = html.match(/<title>(.*?)<\/title>/i);
         const title = titleMatch ? titleMatch[1].trim() : undefined;
         results.push({ url, title });
         visited.add(url);
+        console.log(`[crawlSiteServer] Successfully fetched main page: ${url}`);
         
         // Extract links for next level
         if (depth > 0) {
           const links = extractLinks(html, url);
+          console.log(`[crawlSiteServer] Extracted ${links.length} links from main page`);
           for (const link of links) {
             if (!visited.has(link) && results.length < 50) {
               queue.push(link);
@@ -93,28 +109,30 @@ export const crawlSiteServer = createServerFn({ method: "POST" })
       } else {
         results.push({ url, error: `HTTP ${response.status}` });
         visited.add(url);
+        console.error(`[crawlSiteServer] Failed to fetch main page: HTTP ${response.status}`);
       }
     } catch (error) {
-      results.push({ url, error: error instanceof Error ? error.message : 'Unknown error' });
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      results.push({ url, error: errorMsg });
       visited.add(url);
+      console.error(`[crawlSiteServer] Error fetching main page:`, errorMsg);
     }
     
-    // Crawl additional pages
-    while (queue.length > 0 && results.length < 50) {
-      const currentUrl = queue.shift()!;
-      
-      if (visited.has(currentUrl)) continue;
+    // Crawl additional pages with concurrency limit
+    const maxConcurrent = 3;
+    let activeRequests = 0;
+    
+    const processUrl = async (currentUrl: string): Promise<void> => {
+      if (visited.has(currentUrl) || results.length >= 50) return;
       visited.add(currentUrl);
+      activeRequests++;
       
       try {
-        const response = await fetch(currentUrl, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-          }
-        });
+        const response = await fetchWithTimeout(currentUrl, 12000);
         if (!response.ok) {
           results.push({ url: currentUrl, error: `HTTP ${response.status}` });
-          continue;
+          console.error(`[crawlSiteServer] Failed to fetch ${currentUrl}: HTTP ${response.status}`);
+          return;
         }
         
         const html = await response.text();
@@ -124,6 +142,7 @@ export const crawlSiteServer = createServerFn({ method: "POST" })
         const title = titleMatch ? titleMatch[1].trim() : undefined;
         
         results.push({ url: currentUrl, title });
+        console.log(`[crawlSiteServer] Successfully crawled: ${currentUrl} (${results.length}/50)`);
         
         // Extract links for next level if depth > 0
         if (depth > 0) {
@@ -135,10 +154,26 @@ export const crawlSiteServer = createServerFn({ method: "POST" })
           }
         }
       } catch (error) {
-        results.push({ url: currentUrl, error: error instanceof Error ? error.message : 'Unknown error' });
+        const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+        results.push({ url: currentUrl, error: errorMsg });
+        console.error(`[crawlSiteServer] Error crawling ${currentUrl}:`, errorMsg);
+      } finally {
+        activeRequests--;
+      }
+    };
+    
+    // Process queue with concurrency control
+    while (queue.length > 0 && results.length < 50) {
+      const batch = queue.splice(0, Math.min(maxConcurrent - activeRequests, queue.length));
+      await Promise.all(batch.map(processUrl));
+      
+      // Small delay between batches to be respectful
+      if (queue.length > 0 && results.length < 50) {
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
     }
     
+    console.log(`[crawlSiteServer] Crawl complete. Found ${results.length} pages.`);
     return results;
   });
 
@@ -150,13 +185,27 @@ export async function crawlSite(url: string, depth: number = 2): Promise<CrawlRe
   const visited = new Set<string>();
   const queue: string[] = [url];
   
+  const fetchWithTimeout = async (fetchUrl: string, timeoutMs: number = 12000) => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(fetchUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 AccessAuditAI/2.0'
+        },
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      return response;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      throw error;
+    }
+  };
+  
   // Add the main URL first
   try {
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-      }
-    });
+    const response = await fetchWithTimeout(url, 12000);
     if (response.ok) {
       const html = await response.text();
       const titleMatch = html.match(/<title>(.*?)<\/title>/i);
@@ -178,26 +227,25 @@ export async function crawlSite(url: string, depth: number = 2): Promise<CrawlRe
       visited.add(url);
     }
   } catch (error) {
-    results.push({ url, error: error instanceof Error ? error.message : 'Unknown error' });
+    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+    results.push({ url, error: errorMsg });
     visited.add(url);
   }
   
-  // Crawl additional pages
-  while (queue.length > 0 && results.length < 50) {
-    const currentUrl = queue.shift()!;
-    
-    if (visited.has(currentUrl)) continue;
+  // Crawl additional pages with concurrency limit
+  const maxConcurrent = 2;
+  let activeRequests = 0;
+  
+  const processUrl = async (currentUrl: string): Promise<void> => {
+    if (visited.has(currentUrl) || results.length >= 50) return;
     visited.add(currentUrl);
+    activeRequests++;
     
     try {
-      const response = await fetch(currentUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
-      });
+      const response = await fetchWithTimeout(currentUrl, 10000);
       if (!response.ok) {
         results.push({ url: currentUrl, error: `HTTP ${response.status}` });
-        continue;
+        return;
       }
       
       const html = await response.text();
@@ -218,7 +266,20 @@ export async function crawlSite(url: string, depth: number = 2): Promise<CrawlRe
         }
       }
     } catch (error) {
-      results.push({ url: currentUrl, error: error instanceof Error ? error.message : 'Unknown error' });
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      results.push({ url: currentUrl, error: errorMsg });
+    } finally {
+      activeRequests--;
+    }
+  };
+  
+  // Process queue with concurrency control
+  while (queue.length > 0 && results.length < 50) {
+    const batch = queue.splice(0, Math.min(maxConcurrent - activeRequests, queue.length));
+    await Promise.all(batch.map(processUrl));
+    
+    if (queue.length > 0 && results.length < 50) {
+      await new Promise(resolve => setTimeout(resolve, 100));
     }
   }
   

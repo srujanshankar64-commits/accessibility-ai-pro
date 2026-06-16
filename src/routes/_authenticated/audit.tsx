@@ -173,10 +173,26 @@ function NewAuditPage() {
       // Fire and forget - start processing
       processJobFn({ data: { jobId: jobResult.job_id } }).catch(err => {
         console.error("Process job failed:", err);
+        const errorMsg = err?.message || "Unknown error";
+        if (errorMsg.includes("circuit breaker") || errorMsg.includes("repeated failures")) {
+          setJobError("AI service is temporarily unavailable due to high demand. Please wait 1 minute and try again.");
+        } else {
+          setJobError(errorMsg);
+        }
       });
       
     } catch (err: any) {
-      toast.error(err.message ?? "Failed to start audit");
+      const errorMsg = err?.message || "Failed to start audit";
+      if (errorMsg.includes("circuit breaker") || errorMsg.includes("repeated failures")) {
+        toast.error("AI service is temporarily unavailable due to high demand. Please wait 1 minute and try again.");
+        setJobError("AI service is temporarily unavailable due to high demand. Please wait 1 minute and try again.");
+      } else if (errorMsg.includes("audit limit")) {
+        toast.error(errorMsg);
+        setJobError(errorMsg);
+      } else {
+        toast.error("Failed to start audit. Please try again.");
+        setJobError("Failed to start audit. Please try again.");
+      }
       setLoading(false);
       setAuditState("IDLE");
     }
@@ -186,7 +202,23 @@ function NewAuditPage() {
   useEffect(() => {
     if (!currentJobId) return;
     
+    let pollCount = 0;
+    const MAX_POLLS = 150; // 5 minutes max (150 * 2s)
+    
     const pollInterval = setInterval(async () => {
+      pollCount++;
+      
+      // Timeout check
+      if (pollCount > MAX_POLLS) {
+        clearInterval(pollInterval);
+        setJobError("Audit timed out. Please try again.");
+        setCurrentJobId(null);
+        setLoading(false);
+        setAuditState("IDLE");
+        toast.error("Audit timed out. Please try again.");
+        return;
+      }
+      
       try {
         const status = await getJobStatusFn({ data: { jobId: currentJobId } });
         
@@ -233,15 +265,18 @@ function NewAuditPage() {
         // Handle failed status
         if (status.status === 'failed') {
           clearInterval(pollInterval);
-          setJobError(status.error_message || "Audit failed");
+          const errorMsg = status.error_message || "Audit failed";
+          setJobError(errorMsg);
           setCurrentJobId(null);
           setLoading(false);
           setAuditState("IDLE");
-          toast.error(status.error_message || "Audit failed");
+          toast.error(errorMsg);
         }
         
       } catch (err) {
         console.error("Polling error:", err);
+        // Don't fail on single polling error, continue polling
+        // Only fail after multiple consecutive errors could be added here
       }
     }, 2000);
     

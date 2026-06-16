@@ -3,14 +3,64 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { getPlan, TIER, canRunAudit, PLAN_PRICES } from "@/lib/tier.utils";
 import { GoogleGenAI } from "@google/genai";
+
+// Circuit breaker state
+let circuitBreakerOpen = false;
+let circuitBreakerOpenTime = 0;
+let failureCount = 0;
+const CIRCUIT_BREAKER_THRESHOLD = 5;
+const CIRCUIT_BREAKER_TIMEOUT = 60000; // 1 minute
+
+function resetCircuitBreaker() {
+  circuitBreakerOpen = false;
+  failureCount = 0;
+  circuitBreakerOpenTime = 0;
+  console.log('[CircuitBreaker] Reset');
+}
+
+function checkCircuitBreaker(): boolean {
+  if (circuitBreakerOpen) {
+    const timeSinceOpen = Date.now() - circuitBreakerOpenTime;
+    if (timeSinceOpen > CIRCUIT_BREAKER_TIMEOUT) {
+      resetCircuitBreaker();
+      return false;
+    }
+    console.warn('[CircuitBreaker] Circuit is open, blocking request');
+    return true;
+  }
+  return false;
+}
+
+function recordFailure() {
+  failureCount++;
+  if (failureCount >= CIRCUIT_BREAKER_THRESHOLD) {
+    circuitBreakerOpen = true;
+    circuitBreakerOpenTime = Date.now();
+    console.error('[CircuitBreaker] Circuit opened due to repeated failures');
+  }
+}
+
+function recordSuccess() {
+  failureCount = 0;
+  if (circuitBreakerOpen) {
+    resetCircuitBreaker();
+  }
+}
+
 async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?: string, model: string = "gemini-2.5-flash"): Promise<string> {
+  // Check circuit breaker before making request
+  if (checkCircuitBreaker()) {
+    throw new Error("AI service is temporarily unavailable due to repeated failures. Please wait 1 minute and try again.");
+  }
+
   const apiKey = (process.env.GOOGLE_GEMINI_API_KEY || userApiKey)?.trim();
   if (!apiKey) {
     throw new Error("AI service unavailable. Please add your Gemini API key in Settings or configure GOOGLE_GEMINI_API_KEY.");
   }
   const ai = new GoogleGenAI({ apiKey });
-  const maxRetries = 3;
+  const maxRetries = 5;
   let lastError: any = null;
+  
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
       const response = await ai.models.generateContent({
@@ -18,42 +68,90 @@ async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?:
         contents: `${systemPrompt}\n\n${userPrompt}`,
         config: {
           responseMimeType: "application/json",
-          temperature: 0.3,
-          maxOutputTokens: 65536,
+          temperature: 0.2,
+          maxOutputTokens: 81920,
         },
       });
-      return response.text ?? "{}";
+      const text = response.text ?? "{}";
+      if (!text || text.trim() === "{}") {
+        throw new Error("Empty response from AI");
+      }
+      recordSuccess();
+      return text;
     } catch (error: any) {
       lastError = error;
       const msg = error?.message || "";
-      const is503 = msg.includes("503") || msg.includes("UNAVAILABLE") || msg.includes("overloaded");
+      const is503 = msg.includes("503") || msg.includes("UNAVAILABLE") || msg.includes("overloaded") || msg.includes("quota") || msg.includes("rate limit");
       console.error(`[Gemini] API error (attempt ${attempt + 1}/${maxRetries}):`, msg);
+      
       if (is503 && attempt < maxRetries - 1) {
-        const delay = 1000 * Math.pow(2, attempt);
+        const delay = 2000 * Math.pow(2, attempt);
+        console.log(`[Gemini] Retrying in ${delay}ms...`);
         await new Promise((r) => setTimeout(r, delay));
         continue;
+      }
+      
+      // Record failure for circuit breaker
+      if (attempt === maxRetries - 1) {
+        recordFailure();
       }
       break;
     }
   }
+  
   const lastMsg = lastError?.message || "";
   if (lastMsg.includes("503") || lastMsg.includes("UNAVAILABLE") || lastMsg.includes("overloaded")) {
-    throw new Error("Google AI is experiencing high demand right now. We retried 3 times automatically — please wait 30 seconds and try again.");
+    throw new Error("Google AI is experiencing high demand right now. We retried 5 times automatically — please wait 30 seconds and try again.");
   }
   throw new Error(`AI service temporarily unavailable. ${lastMsg || "Unknown error"}`);
 }
 
-function parseJSON(s: string) {
+function parseJSON(s: string): any {
+  if (!s || typeof s !== 'string') {
+    console.error('[parseJSON] Invalid input:', typeof s);
+    return {};
+  }
+  
+  s = s.trim();
+  if (!s) {
+    console.error('[parseJSON] Empty string');
+    return {};
+  }
+  
   try { return JSON.parse(s); }
-  catch {
+  catch (e) {
+    console.error('[parseJSON] Primary parse failed:', (e as Error).message);
     try {
       const m = s.match(/\{[\s\S]*\}/);
-      if (m) return JSON.parse(m[0]);
-    } catch {}
+      if (m) {
+        const parsed = JSON.parse(m[0]);
+        console.log('[parseJSON] Extracted JSON from markdown');
+        return parsed;
+      }
+    } catch (e2) {
+      console.error('[parseJSON] Regex extraction failed:', (e2 as Error).message);
+    }
     try {
       const clean = s.replace(/,\s*([}\]])/g, '$1').replace(/([{,]\s*)([a-zA-Z_][\w]*)\s*:/g, '$1"$2":');
-      return JSON.parse(clean);
-    } catch {}
+      const parsed = JSON.parse(clean);
+      console.log('[parseJSON] Fixed JSON syntax');
+      return parsed;
+    } catch (e3) {
+      console.error('[parseJSON] Syntax fix failed:', (e3 as Error).message);
+    }
+    try {
+      const jsonStart = s.indexOf('{');
+      const jsonEnd = s.lastIndexOf('}');
+      if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
+        const extracted = s.substring(jsonStart, jsonEnd + 1);
+        const parsed = JSON.parse(extracted);
+        console.log('[parseJSON] Extracted JSON by position');
+        return parsed;
+      }
+    } catch (e4) {
+      console.error('[parseJSON] Position extraction failed:', (e4 as Error).message);
+    }
+    console.error('[parseJSON] All parse methods failed, returning empty object');
     return {};
   }
 }
@@ -101,16 +199,18 @@ const plan = getPlan(settings?.plan, 'srujanshankar64@gmail.com');
     let pageSnippet = "";
     try {
       const fetchController = new AbortController();
-      setTimeout(() => fetchController.abort(), 8000);
+      setTimeout(() => fetchController.abort(), 20000);
       const r = await fetch(url, {
-        headers: { "User-Agent": "AccessAuditAI/1.0 (WCAG Compliance Scanner)" },
+        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 AccessAuditAI/2.0 (WCAG Compliance Scanner)" },
         signal: fetchController.signal,
       });
       const html = await r.text();
       const cleanedHtml = cleanHtml(html);
-      pageSnippet = cleanedHtml.slice(0, 15000);
-    } catch {
-      pageSnippet = `(Could not fetch ${url} directly. Perform a thorough theoretical WCAG 2.1 AA audit based on the URL structure and typical patterns for this type of website.)`;
+      pageSnippet = cleanedHtml.slice(0, 35000);
+      console.log(`[runAudit] Fetched ${html.length} chars, cleaned to ${cleanedHtml.length}, using ${pageSnippet.length}`);
+    } catch (fetchError) {
+      console.error(`[runAudit] Fetch failed for ${url}:`, fetchError);
+      pageSnippet = `(Could not fetch ${url} directly. Perform a thorough theoretical WCAG 2.1 AA audit based on the URL structure and typical patterns for this type of website. URL indicates: ${new URL(url).hostname} - analyze typical accessibility issues for this domain type.)`;
     }
 
     const includeCodeFixes = TIER[plan].codeFixes;
@@ -128,6 +228,9 @@ MANDATORY VOLUME RULES — NON-NEGOTIABLE:
 - NEVER stop at 20-30 violations. That is a failure. The minimum is 50.
 - For every interactive element (buttons, links, inputs, forms, modals, dropdowns, carousels, tabs, accordions) — check EVERY WCAG criterion against it.
 - Mobile violations are SEPARATE from desktop violations. List each mobile issue individually.
+- ELITE MODE: You are in elite audit mode. Be hyper-detailed. Check meta tags, favicon, robots.txt, sitemap.xml, structured data, Open Graph, Twitter Cards, canonical tags, hreflang, viewport settings, and ALL accessibility attributes.
+- Check for: missing skip links, missing breadcrumbs, missing breadcrumbs ARIA, missing search functionality accessibility, missing pagination accessibility, missing table headers, missing table captions, missing form labels, missing fieldset/legend, missing button labels, missing link context, missing image alt text, missing video captions, missing audio transcripts, missing color contrast, missing focus indicators, missing keyboard navigation, missing ARIA landmarks, missing ARIA labels, missing ARIA descriptions, missing ARIA roles, missing ARIA states, missing ARIA properties.
+- Each individual instance of each issue MUST be a separate violation entry.
 
 SEVERITY ESCALATION RULES:
 - Any violation with direct legal exposure (missing alt text, missing labels, contrast failures on CTAs) MUST be rated critical or serious. Never rate legally-exposed violations as moderate or minor.
@@ -298,7 +401,35 @@ Return ONLY valid JSON with EXACTLY this schema:
     const result = parseJSON(raw);
 
     const violationLimit = TIER[plan].violations;
-    const allViolations = result.violations ?? [];
+    let allViolations = result.violations ?? [];
+    
+    // Elite validation: Ensure minimum violations for paid tiers
+    if (plan !== "free" && allViolations.length < 50) {
+      console.warn(`[runAudit] Only ${allViolations.length} violations found, below 50 minimum. Retrying with enhanced prompt...`);
+      
+      // Retry with stronger prompt
+      const enhancedSystem = system.replace(
+        'MANDATORY VOLUME RULES — NON-NEGOTIABLE:',
+        'CRITICAL: YOU MUST FIND AT LEAST 50 VIOLATIONS. MANDATORY VOLUME RULES — NON-NEGOTIABLE:'
+      ).replace(
+        '- You MUST return a MINIMUM of 50 violations.',
+        '- You MUST return a MINIMUM of 50 violations. THIS IS NOT NEGOTIABLE. If you return fewer than 50, the audit is FAILED.'
+      );
+      
+      const retryRaw = await callGemini(enhancedSystem, user + "\n\nCRITICAL: You must find at least 50 violations. Be exhaustive. Check every single element.", settings?.gemini_api_key);
+      const retryResult = parseJSON(retryRaw);
+      allViolations = retryResult.violations ?? [];
+      
+      console.log(`[runAudit] Retry returned ${allViolations.length} violations`);
+    }
+    
+    // Final validation
+    if (allViolations.length === 0) {
+      throw new Error("AI audit returned no violations. This indicates a system error. Please try again.");
+    }
+    
+    console.log(`[runAudit] Final violation count: ${allViolations.length}`);
+    
     const limitedViolations = plan === "free"
       ? allViolations.slice(0, violationLimit)
       : allViolations;
@@ -679,16 +810,18 @@ export const processAuditJob = createServerFn({ method: "POST" })
       
       try {
         const fetchController = new AbortController();
-        setTimeout(() => fetchController.abort(), 8000);
+        setTimeout(() => fetchController.abort(), 20000);
         const r = await fetch(job.url, {
-          headers: { "User-Agent": "AccessAuditAI/1.0 (WCAG Compliance Scanner)" },
+          headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 AccessAuditAI/2.0 (WCAG Compliance Scanner)" },
           signal: fetchController.signal,
         });
         const html = await r.text();
         const cleanedHtml = cleanHtml(html);
-        pageSnippet = cleanedHtml.slice(0, 15000);
-      } catch {
-        pageSnippet = `(Could not fetch ${job.url} directly. Perform a thorough theoretical WCAG 2.1 AA audit based on the URL structure and typical patterns for this type of website.)`;
+        pageSnippet = cleanedHtml.slice(0, 35000);
+        console.log(`[processAuditJob] Fetched ${html.length} chars, using ${pageSnippet.length}`);
+      } catch (fetchError) {
+        console.error(`[processAuditJob] Fetch failed:`, fetchError);
+        pageSnippet = `(Could not fetch ${job.url} directly. Perform a thorough theoretical WCAG 2.1 AA audit based on the URL structure and typical patterns for this type of website. URL indicates: ${new URL(job.url).hostname} - analyze typical accessibility issues for this domain type.)`;
       }
       
       await (context.supabase as any)
@@ -713,6 +846,9 @@ MANDATORY VOLUME RULES — NON-NEGOTIABLE:
 - NEVER stop at 20-30 violations. That is a failure. The minimum is 50.
 - For every interactive element (buttons, links, inputs, forms, modals, dropdowns, carousels, tabs, accordions) — check EVERY WCAG criterion against it.
 - Mobile violations are SEPARATE from desktop violations. List each mobile issue individually.
+- ELITE MODE: You are in elite audit mode. Be hyper-detailed. Check meta tags, favicon, robots.txt, sitemap.xml, structured data, Open Graph, Twitter Cards, canonical tags, hreflang, viewport settings, and ALL accessibility attributes.
+- Check for: missing skip links, missing breadcrumbs, missing breadcrumbs ARIA, missing search functionality accessibility, missing pagination accessibility, missing table headers, missing table captions, missing form labels, missing fieldset/legend, missing button labels, missing link context, missing image alt text, missing video captions, missing audio transcripts, missing color contrast, missing focus indicators, missing keyboard navigation, missing ARIA landmarks, missing ARIA labels, missing ARIA descriptions, missing ARIA roles, missing ARIA states, missing ARIA properties.
+- Each individual instance of each issue MUST be a separate violation entry.
 
 SEVERITY ESCALATION RULES:
 - Any violation with direct legal exposure (missing alt text, missing labels, contrast failures on CTAs) MUST be rated critical or serious. Never rate legally-exposed violations as moderate or minor.
@@ -899,7 +1035,33 @@ Return ONLY valid JSON with EXACTLY this schema:
         .eq('id', jobId);
       
       const violationLimit = TIER[plan].violations;
-      const allViolations = result.violations ?? [];
+      let allViolations = result.violations ?? [];
+      
+      // Elite validation: Ensure minimum violations for paid tiers
+      if (plan !== "free" && allViolations.length < 50) {
+        console.warn(`[processAuditJob] Only ${allViolations.length} violations found, below 50 minimum. Retrying...`);
+        
+        const enhancedSystem = system.replace(
+          'MANDATORY VOLUME RULES — NON-NEGOTIABLE:',
+          'CRITICAL: YOU MUST FIND AT LEAST 50 VIOLATIONS. MANDATORY VOLUME RULES — NON-NEGOTIABLE:'
+        ).replace(
+          '- You MUST return a MINIMUM of 50 violations.',
+          '- You MUST return a MINIMUM of 50 violations. THIS IS NOT NEGOTIABLE. If you return fewer than 50, the audit is FAILED.'
+        );
+        
+        const retryRaw = await callGemini(enhancedSystem, user + "\n\nCRITICAL: You must find at least 50 violations. Be exhaustive. Check every single element.", settings?.gemini_api_key);
+        const retryResult = parseJSON(retryRaw);
+        allViolations = retryResult.violations ?? [];
+        
+        console.log(`[processAuditJob] Retry returned ${allViolations.length} violations`);
+      }
+      
+      if (allViolations.length === 0) {
+        throw new Error("AI audit returned no violations. This indicates a system error.");
+      }
+      
+      console.log(`[processAuditJob] Final violation count: ${allViolations.length}`);
+      
       const limitedViolations = plan === "free"
         ? allViolations.slice(0, violationLimit)
         : allViolations;
