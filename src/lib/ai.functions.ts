@@ -41,8 +41,9 @@ async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?:
           const { parentPort, workerData } = require('worker_threads');
           const https = require('node:https');
           
+          const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + workerData.apiKey;
           const req = https.request(
-            'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + workerData.apiKey,
+            url,
             {
               method: 'POST',
               headers: {
@@ -56,7 +57,15 @@ async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?:
               res.on('end', () => parentPort.postMessage({ status: res.statusCode, body }));
             }
           );
+          
           req.on('error', (e) => parentPort.postMessage({ error: e.message }));
+          
+          // EXTREME RAW HTTP DEBUG
+          console.log("=== RAW WORKER HTTP DEBUG ===");
+          console.log("URL:", url.substring(0, 80) + "...");
+          console.log("OUTGOING HEADERS:", req.getHeaders());
+          console.log("===========================");
+
           req.write(workerData.postData);
           req.end();
         `;
