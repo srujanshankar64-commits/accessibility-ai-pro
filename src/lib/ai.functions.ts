@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { getPlan, TIER, canRunAudit, PLAN_PRICES } from "@/lib/tier.utils";
-import { GoogleGenAI } from "@google/genai";
+import * as https from "https";
 
 async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?: string): Promise<string> {
   // Priority: .env (Owner's global key) -> Database (User's personal key)
@@ -33,7 +33,6 @@ async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?:
     });
 
     const data = await new Promise<any>((resolve, reject) => {
-      const https = require('https');
       const req = https.request(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
         {
