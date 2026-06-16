@@ -53,7 +53,8 @@ async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?:
       throw new Error(`API error ${response.status}: ${errorText}`);
     }
 
-    const data = await response.json();
+    clearTimeout(geminiTimeout);
+  const data = await response.json();
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
     return text || "{}";
   } catch (error: any) {
@@ -114,7 +115,7 @@ const plan = getPlan(settings?.plan, 'srujanshankar64@gmail.com');
         headers: { "User-Agent": "AccessAuditAI/1.0 (WCAG Compliance Scanner)" },
       });
       const html = await r.text();
-      pageSnippet = html.slice(0, 30000);
+      pageSnippet = html.slice(0, 15000);
     } catch {
       pageSnippet = `(Could not fetch ${url} directly. Perform a thorough theoretical WCAG 2.1 AA audit based on the URL structure and typical patterns for this type of website.)`;
     }
