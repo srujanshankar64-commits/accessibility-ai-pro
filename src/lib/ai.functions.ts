@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { getPlan, TIER, canRunAudit, PLAN_PRICES } from "@/lib/tier.utils";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?: string, model: string = "gemini-2.5-flash"): Promise<string> {
   // Priority: .env (Owner's global key) -> Database (User's personal key)
@@ -20,45 +21,26 @@ async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?:
   }
 
   try {
-    // Use REST API with x-goog-api-key header for AQ prefix auth keys
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": apiKey,
-        },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }]
-            }
-          ],
-          generationConfig: {
-            responseMimeType: "application/json",
-            temperature: 0.3,
-            maxOutputTokens: 8192
-          }
-        }),
+    // Use official Google SDK which handles AQ auth key authentication properly
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const generativeModel = genAI.getGenerativeModel({ 
+      model: model,
+      generationConfig: {
+        responseMimeType: "application/json",
+        temperature: 0.3,
+        maxOutputTokens: 8192
       }
-    );
-
+    });
+    
+    const result = await generativeModel.generateContent(`${systemPrompt}\n\n${userPrompt}`);
+    const response = await result.response;
+    const text = response.text();
+    
     console.log("=== API RESPONSE DEBUG ===");
-    console.log("Response status:", response.status);
-    console.log("Response headers:", Object.fromEntries(response.headers.entries()));
+    console.log("Response successful, text length:", text.length);
     console.log("==========================");
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("API Error Response:", errorText);
-      throw new Error(`API error ${response.status}: ${errorText}`);
-    }
-
-    clearTimeout(geminiTimeout);
-  const data = await response.json();
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    return text || "{}";
+    
+    return text;
   } catch (error: any) {
     // Explicitly logging the full error response object, status, and message
     console.error("[Diagnostics] Google AI API error:", {
