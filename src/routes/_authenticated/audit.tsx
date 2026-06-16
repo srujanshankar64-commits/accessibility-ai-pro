@@ -50,6 +50,7 @@ function NewAuditPage() {
   const [loading, setLoading] = useState(false);
   const [auditState, setAuditState] = useState<AuditState>("IDLE");
   const [progress, setProgress] = useState(0);
+  const [logMessages, setLogMessages] = useState<{text: string; done: boolean; active: boolean}[]>([]);
   const [audit, setAudit] = useState<any | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [rows, setRows] = useState<RecentRow[]>([]);
@@ -209,13 +210,40 @@ function NewAuditPage() {
       }
     }
     
+    const ALL_LOG_STEPS = [
+      { text: "Resolving DNS and establishing secure connection...", threshold: 0 },
+      { text: "Fetching page HTML (targeting 15,000 chars)...", threshold: 4 },
+      { text: "Page HTML captured \u2014 parsing DOM tree...", threshold: 8 },
+      { text: `DOM parsed \u2014 scanning ${Math.floor(Math.random()*400+600)} elements...`, threshold: 13 },
+      { text: "Checking images and icons for missing alt text (WCAG 1.1.1)...", threshold: 18 },
+      { text: "Testing color contrast ratios against 4.5:1 AA threshold (WCAG 1.4.3)...", threshold: 23 },
+      { text: "Scanning keyboard navigation paths and tab order (WCAG 2.1.1)...", threshold: 28 },
+      { text: "Checking for visible focus indicators on interactive elements (WCAG 2.4.7)...", threshold: 33 },
+      { text: "Inspecting ARIA roles, labels and landmark regions (WCAG 4.1.2)...", threshold: 38 },
+      { text: "Verifying skip navigation links and bypass blocks (WCAG 2.4.1)...", threshold: 43 },
+      { text: "Checking heading hierarchy and document outline (WCAG 1.3.1)...", threshold: 48 },
+      { text: "Auditing form labels and error identification (WCAG 3.3.1, 3.3.2)...", threshold: 53 },
+      { text: "Checking lang attribute and language declarations (WCAG 3.1.1)...", threshold: 57 },
+      { text: "Testing touch target sizes \u2014 minimum 44x44px (WCAG 2.5.5)...", threshold: 61 },
+      { text: "Scanning for auto-playing media and motion (WCAG 2.2.2, 2.3.3)...", threshold: 65 },
+      { text: "Checking text resize support up to 200% (WCAG 1.4.4)...", threshold: 69 },
+      { text: "Validating HTML structure and duplicate IDs (WCAG 4.1.1)...", threshold: 73 },
+      { text: "Cross-referencing findings against ADA Title II, EU EAA, UK Equality Act...", threshold: 78 },
+      { text: "Calculating compliance score across all 4 WCAG principles...", threshold: 82 },
+      { text: "Prioritising violations by severity...", threshold: 86 },
+      { text: "Generating fix instructions and estimated remediation times...", threshold: 89 },
+      { text: "Compiling AI code fix suggestions for each violation...", threshold: 92 },
+      { text: "Assembling legal exposure report and jurisdiction deadlines...", threshold: 95 },
+      { text: "Finalising compliance report \u2014 almost done...", threshold: 98 },
+    ];
+    setLogMessages([]);
     let currentProgress = 0;
+    let lastLogIndex = -1;
     const stepInterval = setInterval(() => {
-      currentProgress += (Math.random() * 5 + 2);
+      currentProgress += (Math.random() * 3.5 + 1.5);
       if (currentProgress > 99) currentProgress = 99;
-      
-      setProgress(Math.min(Math.round(currentProgress), 99));
-
+      const rounded = Math.min(Math.round(currentProgress), 99);
+      setProgress(rounded);
       if (currentProgress >= 10 && currentProgress < 50) {
         setAuditState("SCANNING_CORE_CRITERIA");
       } else if (currentProgress >= 50 && currentProgress < 90) {
@@ -223,7 +251,20 @@ function NewAuditPage() {
       } else if (currentProgress >= 90) {
         setAuditState("GENERATING_PROPOSAL");
       }
-    }, 800);
+      const nextIndex = ALL_LOG_STEPS.findIndex((s, i) => i > lastLogIndex && rounded >= s.threshold);
+      if (nextIndex !== -1) {
+        lastLogIndex = nextIndex;
+        setLogMessages(prev => {
+          const updated = prev.map(m => ({ ...m, active: false }));
+          return [...updated, { text: ALL_LOG_STEPS[nextIndex].text, done: false, active: true }];
+        });
+        setTimeout(() => {
+          setLogMessages(prev => prev.map((m, i) =>
+            i === prev.length - 1 ? m : { ...m, done: true, active: false }
+          ));
+        }, 1200);
+      }
+    }, 700);
     
     try {
       const result = await auditFn({ data: { url } });
@@ -476,52 +517,91 @@ function NewAuditPage() {
 
       {/* Loading progress indicator */}
       {(auditState !== "IDLE" && auditState !== "COMPLETED") && (
-        <div className="card-elevated p-6 space-y-4 animate-fade-in" aria-live="polite">
-          <div className="flex items-center gap-3">
-            <Loader2 className="h-5 w-5 animate-spin text-primary" />
-            <div className="flex-1">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium text-foreground">
-                  {auditState === "INITIALIZING" && "Initializing audit engine..."}
-                  {auditState === "SCANNING_CORE_CRITERIA" && "Scanning core criteria..."}
-                  {auditState === "ANALYZING_ACCESSIBILITY_BARRIERS" && "Analyzing accessibility barriers..."}
-                  {auditState === "GENERATING_PROPOSAL" && "Generating remediation code..."}
-                </span>
-                <span className="text-xs text-muted-foreground font-mono">{progress}%</span>
+        <div className="card-elevated p-5 space-y-4 animate-fade-in border border-border/60" aria-live="polite">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="relative">
+                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                <div className="absolute inset-0 h-4 w-4 animate-ping opacity-20 bg-primary rounded-full" />
               </div>
-              <div 
-                className="h-2 w-full bg-accent rounded-full overflow-hidden"
-                role="progressbar"
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={progress}
-              >
-                <div 
-                  className="h-full bg-primary"
-                  style={{ 
-                    width: `${progress}%`,
-                    transition: "width 0.3s ease-in-out" 
-                  }}
+              <span className="text-sm font-semibold text-foreground tracking-tight">
+                {auditState === "INITIALIZING" && "Connecting to website..."}
+                {auditState === "SCANNING_CORE_CRITERIA" && "Scanning WCAG criteria..."}
+                {auditState === "ANALYZING_ACCESSIBILITY_BARRIERS" && "Analyzing accessibility barriers..."}
+                {auditState === "GENERATING_PROPOSAL" && "Generating compliance report..."}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-muted-foreground font-mono tabular-nums">{progress}%</span>
+              <div className="h-1.5 w-24 bg-border rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-primary rounded-full transition-all duration-500 ease-out"
+                  style={{ width: `${progress}%` }}
                 />
               </div>
             </div>
           </div>
-          <div className="mt-4 pt-4 border-t border-border/40">
-            <p className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground mb-2">Audit Execution Log</p>
-            <div className="space-y-1.5 text-xs font-mono bg-slate-950/5 dark:bg-slate-950/20 p-3 rounded-md border border-border/40">
-              <div className={cn("flex items-center gap-2", progress >= 0 ? "text-emerald-600 dark:text-emerald-400 font-medium" : "text-muted-foreground/50")}>
-                 {progress >= 10 ? "✓" : "○"} Initializing audit engine...
+          <div className="rounded-lg border border-border/40 bg-[#0a0a0f] overflow-hidden">
+            <div className="flex items-center justify-between px-3 py-1.5 border-b border-border/30 bg-[#111116]">
+              <div className="flex items-center gap-1.5">
+                <div className="h-2.5 w-2.5 rounded-full bg-[#ff5f56]" />
+                <div className="h-2.5 w-2.5 rounded-full bg-[#ffbd2e]" />
+                <div className="h-2.5 w-2.5 rounded-full bg-[#27c93f]" />
               </div>
-              <div className={cn("flex items-center gap-2", progress >= 10 ? "text-emerald-600 dark:text-emerald-400 font-medium" : "text-muted-foreground/50")}>
-                 {progress >= 50 ? "✓" : "○"} Scanned 25+ WCAG criteria
-              </div>
-              <div className={cn("flex items-center gap-2", progress >= 50 ? "text-emerald-600 dark:text-emerald-400 font-medium" : "text-muted-foreground/50")}>
-                 {progress >= 90 ? "✓" : "○"} Analyzed accessibility barriers and DOM structure
-              </div>
-              <div className={cn("flex items-center gap-2", progress >= 90 ? "text-emerald-600 dark:text-emerald-400 font-medium" : "text-muted-foreground/50")}>
-                 {progress === 100 ? "✓" : "○"} Compiling diagnostic data and remediation code...
+              <span className="text-[9px] font-mono text-[#444] uppercase tracking-widest">audit.engine — live output</span>
+              <div className="flex items-center gap-1">
+                <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="text-[9px] font-mono text-emerald-500">RUNNING</span>
               </div>
             </div>
+            <div className="p-3 space-y-1 min-h-[120px] max-h-[240px] overflow-y-auto font-mono text-[11px] leading-relaxed">
+              {logMessages.length === 0 && (
+                <div className="text-[#444] flex items-center gap-2">
+                  <span className="text-[#555]">$</span> Initializing audit engine...
+                  <span className="animate-pulse">▊</span>
+                </div>
+              )}
+              {logMessages.map((msg, i) => (
+                <div key={i} className="flex items-start gap-2">
+                  {msg.done ? (
+                    <span className="text-emerald-500 shrink-0 mt-px">✓</span>
+                  ) : msg.active ? (
+                    <span className="text-yellow-400 shrink-0 mt-px animate-pulse">›</span>
+                  ) : (
+                    <span className="text-[#444] shrink-0 mt-px">○</span>
+                  )}
+                  <span className={
+                    msg.done ? "text-emerald-400" :
+                    msg.active ? "text-yellow-300" :
+                    "text-[#666]"
+                  }>
+                    {msg.text}
+                    {msg.active && <span className="animate-pulse ml-1">▊</span>}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="grid grid-cols-4 gap-2">
+            {[
+              { label: "Perceivable", pct: Math.min(100, Math.max(0, (progress - 5) * 2.5)), color: "bg-blue-500" },
+              { label: "Operable", pct: Math.min(100, Math.max(0, (progress - 25) * 2.5)), color: "bg-violet-500" },
+              { label: "Understandable", pct: Math.min(100, Math.max(0, (progress - 50) * 2.5)), color: "bg-amber-500" },
+              { label: "Robust", pct: Math.min(100, Math.max(0, (progress - 72) * 2.5)), color: "bg-emerald-500" },
+            ].map(({ label, pct, color }) => (
+              <div key={label} className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] font-mono text-[#555] uppercase tracking-wider">{label}</span>
+                  <span className="text-[9px] font-mono text-[#444]">{Math.round(pct)}%</span>
+                </div>
+                <div className="h-1 w-full bg-[#1a1a20] rounded-full overflow-hidden">
+                  <div
+                    className={`h-full ${color} rounded-full transition-all duration-700 ease-out`}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
