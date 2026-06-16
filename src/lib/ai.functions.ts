@@ -2,7 +2,6 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { getPlan, TIER, canRunAudit, PLAN_PRICES } from "@/lib/tier.utils";
-import { Worker } from "worker_threads";
 
 async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?: string): Promise<string> {
   // Priority: .env (Owner's global key) -> Database (User's personal key)
@@ -21,86 +20,40 @@ async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?:
   }
 
   try {
-    const postData = JSON.stringify({
-      contents: [
-        {
-          parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }]
-        }
-      ],
-      generationConfig: {
-        responseMimeType: "application/json"
-      }
-    });
-
-    const data = await new Promise<any>((resolve, reject) => {
-      try {
-        // CRITICAL FIX: Run the request in a completely isolated Worker Thread!
-        // Vite/Nitro's network interceptors and polyfills cannot reach into a separate V8 isolate.
-        // This guarantees a 100% clean, native HTTPS request with absolutely zero leaked headers.
-        const workerCode = `
-          const { parentPort, workerData } = require('worker_threads');
-          const https = require('node:https');
-          
-          const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + workerData.apiKey;
-          const req = https.request(
-            url,
+    // Use REST API with x-goog-api-key header for AQ prefix auth keys
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey,
+        },
+        body: JSON.stringify({
+          contents: [
             {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Content-Length': Buffer.byteLength(workerData.postData)
-              }
-            },
-            (res) => {
-              let body = '';
-              res.on('data', (c) => body += c);
-              res.on('end', () => parentPort.postMessage({ status: res.statusCode, body }));
+              parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }]
             }
-          );
-          
-          req.on('error', (e) => parentPort.postMessage({ error: e.message }));
-          
-          // EXTREME RAW HTTP DEBUG
-          console.log("=== RAW WORKER HTTP DEBUG ===");
-          console.log("URL:", url.substring(0, 80) + "...");
-          console.log("OUTGOING HEADERS:", req.getHeaders());
-          console.log("===========================");
-
-          req.write(workerData.postData);
-          req.end();
-        `;
-
-        const worker = new Worker(workerCode, { 
-          eval: true,
-          workerData: { apiKey, postData } 
-        });
-
-        worker.on('message', (msg: any) => {
-          if (msg.error) {
-            reject({ message: msg.error });
-            return;
+          ],
+          generationConfig: {
+            responseMimeType: "application/json"
           }
-          try {
-            const parsed = JSON.parse(msg.body);
-            if (msg.status >= 400) {
-              reject({
-                message: JSON.stringify(parsed),
-                status: msg.status
-              });
-            } else {
-              resolve(parsed);
-            }
-          } catch (e) {
-            reject({ message: "Failed to parse JSON response", status: msg.status });
-          }
-        });
-        
-        worker.on('error', reject);
-      } catch (err) {
-        reject(err);
+        }),
       }
-    });
+    );
 
+    console.log("=== API RESPONSE DEBUG ===");
+    console.log("Response status:", response.status);
+    console.log("Response headers:", Object.fromEntries(response.headers.entries()));
+    console.log("==========================");
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("API Error Response:", errorText);
+      throw new Error(`API error ${response.status}: ${errorText}`);
+    }
+
+    const data = await response.json();
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
     return text || "{}";
   } catch (error: any) {
