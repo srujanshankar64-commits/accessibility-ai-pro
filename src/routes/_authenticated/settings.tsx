@@ -6,6 +6,7 @@ import { UploadCloud, Loader2, Eye, EyeOff, Lock, Zap, ShieldCheck, Copy, Check,
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { getPlan, TIER, PLAN_PRICES } from "@/lib/tier.utils";
+import { isAdmin } from "@/lib/admin.utils";
 import { createCheckoutSession } from "../-api.checkout";
 import { getReferralStats, generateReferralCode } from "@/lib/referral";
 
@@ -41,8 +42,6 @@ function SettingsPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
-  const [logoUrl, setLogoUrl] = useState("");
-  const [logoUploading, setLogoUploading] = useState(false);
 
   const changePassword = async () => {
     if (newPassword !== confirmPassword) { toast.error("Passwords don't match"); return; }
@@ -63,15 +62,16 @@ function SettingsPage() {
     if (deleteConfirmText !== "DELETE") { toast.error("Type DELETE to confirm"); return; }
     setDeleteLoading(true);
     try {
-      await (supabase as any).from("settings").delete().eq("user_id", user.id);
-      await (supabase as any).from("audits").delete().eq("user_id", user.id);
-      await (supabase as any).from("proposals").delete().eq("user_id", user.id);
-      const { error } = await supabase.auth.admin?.deleteUser?.(user.id) ?? { error: null };
+      const { error } = await supabase.functions.invoke('delete-account', {
+        body: { userId: user.id }
+      });
+      
+      if (error) throw error;
+      
       await supabase.auth.signOut();
       window.location.href = "/";
     } catch (err: any) {
-      await supabase.auth.signOut();
-      window.location.href = "/";
+      toast.error(err?.message || "Failed to delete account");
     }
     setDeleteLoading(false);
   };
@@ -102,7 +102,6 @@ function SettingsPage() {
       setApiKey(data.gemini_api_key ?? "");
       setPlan((data.plan as any) ?? "free");
       setUsed(data.audits_used ?? 0);
-      setLogoUrl(data.logo_url ?? "");
     });
   }, []);
 
@@ -181,23 +180,6 @@ function SettingsPage() {
   const progressValue = isUnlimited ? 100 : (used / auditLimit) * 100;
   const hasBrandingAccess = currentPlan === "agency" || currentPlan === "business";
 
-  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > 2 * 1024 * 1024) { toast.error("Max 2MB"); return; }
-    setLogoUploading(true);
-    try {
-      const ext = file.name.split(".").pop();
-      const filePath = `logos/${user.id}.${ext}`;
-      const { error: upErr } = await supabase.storage.from("agency-assets").upload(filePath, file, { upsert: true });
-      if (upErr) throw upErr;
-      const { data: urlData } = supabase.storage.from("agency-assets").getPublicUrl(filePath);
-      setLogoUrl(urlData.publicUrl);
-      await supabase.from("settings").upsert({ user_id: user.id, logo_url: urlData.publicUrl } as never);
-      toast.success("Logo uploaded!");
-    } catch (err) { toast.error(err instanceof Error ? err.message : "Upload failed"); }
-    setLogoUploading(false);
-  };
   const inputCls = "w-full h-10 px-3 rounded bg-background border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50";
 
   return (
@@ -208,7 +190,7 @@ function SettingsPage() {
       </header>
 
       {/* DEV TOOL - Admin only */}
-      {user.email === 'srujanshankar64@gmail.com' && (
+      {isAdmin(user.email) && (
         <section className="p-4 border border-dashed border-[#d2d2d7] rounded-xl bg-[#f5f5f7] space-y-3">
           <p className="text-xs font-bold text-[#1d1d1f] uppercase tracking-widest">Dev Tools — Set Plan for Testing</p>
           <div className="flex flex-wrap gap-2">

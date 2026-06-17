@@ -198,25 +198,36 @@ const CATEGORIES = [
   },
 ];
 
-function buildCategoryPrompt(cat: typeof CATEGORIES[number], includeCodeFixes: boolean) {
-  return `You are an expert accessibility audit engine. Your task is to perform high-precision WCAG audits.
+// Helper function to generate audit system prompt (centralized logic)
+function getAuditSystemPrompt(category: string, categoryCriteria: string, includeCodeFixes: boolean, violationLimit: number = 26): string {
+  const codeFixesSection = includeCodeFixes 
+    ? `,
+      "code_fix": "exact code snippet"`
+    : '';
+
+  return `You are an expert accessibility audit engine. Your task is to perform high-precision WCAG 2.1 AA audits.
 
 Format: Output ONLY raw, minified JSON. No Markdown, no prose, no explanations.
 Constraint: Keep input tokens under 8k. If the DOM is too large, prioritize scanning the 'main' content and navigation first.
-Schema: Return {"category": "${cat.key}", "status": "success", "category_score": number, "violations": []}. If no issues exist, return [].
+Schema: Return {"category": "${category}", "status": "success", "category_score": number, "violations": []}. If no issues exist, return [].
 Resilience: If input is truncated, include {"partial_scan": true} in your response.
 
-Audit ONLY the ${cat.key.toUpperCase()} category. Criteria covered: ${cat.criteria}
+Audit ONLY the ${category.toUpperCase()} category. Criteria covered: ${categoryCriteria}
 
 MANDATORY RULES:
-- Return AT LEAST 12 violations for this single category. Every instance is a separate violation.
+- Return exactly ${violationLimit} violations. Every instance is a separate violation.
 - Be extremely specific in "element_affected" (selector, class, id, aria attribute).
 - Escalate severity for transactional elements (CTAs, forms, checkout) by one level.
-- Include mobile-specific issues as [MOBILE] prefixed entries when relevant for this category.
+- Include mobile-specific issues as [MOBILE] prefixed entries when relevant.
+
+ETHICAL GUARDRAILS:
+- When reporting industry benchmarks or SEO impact, use neutral, non-prescriptive language.
+- Example: 'Industry standards suggest compliance can impact SEO; individual results may vary.'
+- Do not invent specific percentages or threaten EU fines; refer to general 'legal accessibility requirements'.
 
 Return ONLY JSON:
 {
-  "category": "${cat.key}",
+  "category": "${category}",
   "status": "success",
   "category_score": number (0-25, start at 25 and subtract: critical 6-8, serious 3-5, moderate 2-3, minor 1),
   "partial_scan": boolean (optional),
@@ -233,8 +244,7 @@ Return ONLY JSON:
       "estimated_fix_time": "X hours",
       "revenue_impact": "How it affects conversions/excludes users",
       "fix_difficulty": "easy"|"medium"|"hard",
-      "screenshot_selector": "CSS selector"${includeCodeFixes ? `,
-      "code_fix": "exact code snippet"` : ""}
+      "screenshot_selector": "CSS selector"${codeFixesSection}
     }
   ]
 }`;
@@ -316,7 +326,11 @@ async function runAuditWork(jobId: string) {
       }
       
       try {
-        const raw = await callGeminiWithRetry(buildCategoryPrompt(cat, includeCodeFixes), userPrompt, userApiKey, 3, cat.label);
+        const violationLimit = plan === "free" ? 5 : 26;
+        const systemPrompt = getAuditSystemPrompt(cat.key, cat.criteria, includeCodeFixes, violationLimit);
+        console.log(`[SYSTEM_PROMPT_CONFIGURED] Category: ${cat.key}, Violation Limit: ${violationLimit}, Code Fixes: ${includeCodeFixes}`);
+        
+        const raw = await callGeminiWithRetry(systemPrompt, userPrompt, userApiKey, 3, cat.label);
         const parsed = parseJSON(raw);
         const completed = completedCategories.length + categoryResults.length - checkpointResults.length + 1;
         const pct = baseProgress + Math.round((completed / CATEGORIES.length) * span);
