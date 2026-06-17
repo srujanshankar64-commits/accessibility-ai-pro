@@ -50,10 +50,12 @@ function getBackoffWithJitter(attempt: number): number {
 let lastGeminiCall = 0;
 const MIN_CALL_INTERVAL = 3500; // 3.5 seconds = ~17 RPM max
 
-async function callGeminiWithRetry(systemPrompt: string, userPrompt: string, apiKey: string, retries = 5) {
+async function callGeminiWithRetry(systemPrompt: string, userPrompt: string, apiKey: string, retries = 5, categoryName = "unknown") {
   const key = (apiKey || GEMINI_KEY).trim();
   if (!key) throw new Error("Gemini API key not configured");
   let currentModel = "gemini-2.5-flash";
+  
+  console.log(`[AuditWorker] Starting category scan: ${categoryName} with model ${currentModel}`);
   
   for (let i = 0; i < retries; i++) {
     try {
@@ -62,7 +64,7 @@ async function callGeminiWithRetry(systemPrompt: string, userPrompt: string, api
       const timeSinceLastCall = now - lastGeminiCall;
       if (timeSinceLastCall < MIN_CALL_INTERVAL) {
         const waitTime = MIN_CALL_INTERVAL - timeSinceLastCall;
-        console.log(`[RateLimiter] Waiting ${waitTime}ms to respect RPM limit`);
+        console.log(`[RateLimiter] Waiting ${waitTime}ms to respect RPM limit before ${categoryName} scan`);
         await delay(waitTime);
       }
       
@@ -89,42 +91,51 @@ async function callGeminiWithRetry(systemPrompt: string, userPrompt: string, api
         if (!text || text.trim() === "{}") {
           throw new Error("Empty response from AI");
         }
+        console.log(`[AuditWorker] ✓ ${categoryName} scan completed successfully on attempt ${i + 1}/${retries}`);
         return text;
       }
       
-      if (r.status === 429 && i < retries - 1) {
+      if (r.status === 429) {
         // Rate limit hit - exponential backoff with jitter
-        const waitTime = getBackoffWithJitter(i);
-        console.warn(`[RateLimiter] 429 rate limit hit, retrying in ${Math.round(waitTime)}ms with jitter (attempt ${i + 1}/${retries})`);
-        await delay(waitTime);
-        continue;
+        if (i < retries - 1) {
+          const waitTime = getBackoffWithJitter(i);
+          console.error(`[MONITORING] ⚠ 429 RATE LIMIT ERROR for ${categoryName} (attempt ${i + 1}/${retries}) - retrying in ${Math.round(waitTime)}ms with jitter`);
+          await delay(waitTime);
+          continue;
+        } else {
+          console.error(`[MONITORING] ❌ 429 RATE LIMIT ERROR for ${categoryName} - failed after ${retries} retries`);
+        }
       }
       
-      if (r.status === 503 && i < retries - 1) {
-        // Model fallback: if using pro model and getting 503, switch to flash
+      if (r.status === 503) {
+        // Service unavailable - model fallback and exponential backoff
         if (currentModel === "gemini-2.5-pro" && i === 2) {
-          console.warn(`[ModelFallback] Switching from gemini-2.5-pro to gemini-2.5-flash due to 503 errors`);
+          console.warn(`[ModelFallback] Switching from gemini-2.5-pro to gemini-2.5-flash for ${categoryName} due to 503 errors`);
           currentModel = "gemini-2.5-flash";
           continue;
         }
         
-        // Exponential backoff with jitter
-        const waitTime = getBackoffWithJitter(i);
-        console.warn(`[Retry] 503 service unavailable, retrying in ${Math.round(waitTime)}ms with jitter (attempt ${i + 1}/${retries})`);
-        await delay(waitTime);
-        continue;
+        if (i < retries - 1) {
+          const waitTime = getBackoffWithJitter(i);
+          console.error(`[MONITORING] ⚠ 503 SERVICE UNAVAILABLE for ${categoryName} (attempt ${i + 1}/${retries}) - retrying in ${Math.round(waitTime)}ms with jitter`);
+          await delay(waitTime);
+          continue;
+        } else {
+          console.error(`[MONITORING] ❌ 503 SERVICE UNAVAILABLE for ${categoryName} - failed after ${retries} retries`);
+        }
       }
       
       const txt = await r.text();
       throw new Error(`Gemini ${r.status}: ${txt.slice(0, 200)}`);
     } catch (error: any) {
       if (i === retries - 1) {
+        console.error(`[AuditWorker] ❌ ${categoryName} scan failed after ${retries} retries:`, error.message);
         throw error;
       }
-      console.error(`[RateLimiter] Attempt ${i + 1}/${retries} failed:`, error.message);
+      console.error(`[AuditWorker] ${categoryName} attempt ${i + 1}/${retries} failed:`, error.message);
     }
   }
-  throw new Error("Gemini API failed after all retries");
+  throw new Error(`Gemini API failed after all retries for ${categoryName}`);
 }
 
 // Backwards compatibility wrapper
@@ -134,6 +145,14 @@ async function callGemini(systemPrompt: string, userPrompt: string, apiKey: stri
 
 async function updateJob(jobId: string, patch: Record<string, unknown>) {
   await admin.from("audit_jobs").update(patch).eq("id", jobId);
+}
+
+// Save checkpoint for resumable state
+async function saveCheckpoint(jobId: string, completedCategories: string[], categoryResults: any[]) {
+  await updateJob(jobId, {
+    completed_categories: completedCategories,
+    category_results_checkpoint: categoryResults,
+  });
 }
 
 async function pushLog(jobId: string, message: string, percent: number, step: string) {
@@ -220,6 +239,10 @@ async function runAuditWork(jobId: string) {
     const userId = (job as any).user_id as string;
     const url = (job as any).url as string;
 
+    // Check for resumable state
+    const completedCategories = Array.isArray((job as any)?.completed_categories) ? (job as any).completed_categories : [];
+    const checkpointResults = Array.isArray((job as any)?.category_results_checkpoint) ? (job as any).category_results_checkpoint : [];
+    
     const { data: settings } = await admin
       .from("settings")
       .select("plan, audits_used, gemini_api_key")
@@ -232,7 +255,12 @@ async function runAuditWork(jobId: string) {
     const violationCap = plan === "free" ? 5 : Infinity;
 
     await updateJob(jobId, { status: "processing" });
-    await pushLog(jobId, `Starting audit for ${url}`, 5, "Initializing audit...");
+    
+    if (completedCategories.length > 0) {
+      await pushLog(jobId, `Resuming audit from checkpoint (${completedCategories.length}/${CATEGORIES.length} categories already completed)`, 5, "Resuming audit...");
+    } else {
+      await pushLog(jobId, `Starting audit for ${url}`, 5, "Initializing audit...");
+    }
 
     // Fetch HTML
     let pageSnippet = "";
@@ -258,28 +286,43 @@ async function runAuditWork(jobId: string) {
 
     const baseProgress = 25;
     const span = 60; // 25 -> 85
-    let completed = 0;
     const userPrompt = `URL: ${url}\n\nHTML content:\n${pageSnippet}`;
-    const categoryResults: any[] = [];
+    const categoryResults = [...checkpointResults]; // Start with checkpoint results
 
     for (const cat of CATEGORIES) {
+      // Skip if already completed
+      if (completedCategories.includes(cat.key)) {
+        console.log(`[AuditWorker] Skipping ${cat.key} - already completed in checkpoint`);
+        continue;
+      }
+      
       try {
-        const raw = await callGemini(buildCategoryPrompt(cat, includeCodeFixes), userPrompt, userApiKey);
+        const raw = await callGeminiWithRetry(buildCategoryPrompt(cat, includeCodeFixes), userPrompt, userApiKey, 5, cat.label);
         const parsed = parseJSON(raw);
-        completed++;
+        const completed = completedCategories.length + categoryResults.length - checkpointResults.length + 1;
         const pct = baseProgress + Math.round((completed / CATEGORIES.length) * span);
+        
         await pushLog(
           jobId,
           `✓ ${cat.label}: found ${(parsed.violations ?? []).length} violations (score ${parsed.category_score ?? "?"}/25)`,
           pct,
           `Completed ${completed}/${CATEGORIES.length} category scans`,
         );
+        
         categoryResults.push({ key: cat.key, score: parsed.category_score ?? 15, violations: parsed.violations ?? [] });
+        
+        // Save checkpoint after each category
+        const newCompletedCategories = [...completedCategories, cat.key];
+        await saveCheckpoint(jobId, newCompletedCategories, categoryResults);
       } catch (err: any) {
-        completed++;
+        const completed = completedCategories.length + categoryResults.length - checkpointResults.length + 1;
         const pct = baseProgress + Math.round((completed / CATEGORIES.length) * span);
-        await pushLog(jobId, `⚠ ${cat.label} failed: ${err?.message ?? "error"}`, pct, `Category ${cat.key} skipped`);
+        await pushLog(jobId, `⚠ ${cat.label} failed: ${err?.message ?? "error"} - marking as skipped`, pct, `Category ${cat.key} skipped`);
         categoryResults.push({ key: cat.key, score: 15, violations: [] });
+        
+        // Save checkpoint even on failure
+        const newCompletedCategories = [...completedCategories, cat.key];
+        await saveCheckpoint(jobId, newCompletedCategories, categoryResults);
       }
     }
 
