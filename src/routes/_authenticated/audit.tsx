@@ -64,7 +64,7 @@ function NewAuditPage() {
   const [used, setUsed] = useState(0);
   
   // Streaming state
-  const [streamingMode, setStreamingMode] = useState(false);
+  const [streamingMode, setStreamingMode] = useState(true);
   const [streamLogs, setStreamLogs] = useState<string[]>([]);
   const [streamingActive, setStreamingActive] = useState(false);
   
@@ -231,62 +231,75 @@ function NewAuditPage() {
     setLogMessages([]);
 
     if (streamingMode) {
-      // Use streaming mode
+      // Native fetch ReadableStream — supabase.functions.invoke buffers, so we hit the URL directly.
       setStreamingActive(true);
       setStreamLogs([]);
       try {
-        const { data: settings } = await supabase.from("settings").select("gemini_api_key, plan").maybeSingle();
-        const apiKey = (settings as any)?.gemini_api_key;
-        const userPlan = (settings as any)?.plan || "free";
+        const { data: { session } } = await supabase.auth.getSession();
+        const SUPABASE_URL = "https://zkpwpumjacihcjisshod.supabase.co";
+        const ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InprcHdwdW1qYWNpaGNqaXNzaG9kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA5Nzg0MzQsImV4cCI6MjA5NjU1NDQzNH0.rYeMGFBJmK55Ygva1wi_Dcg0Xv2MXTCzujP3LGAazhw";
 
-        const response = await supabase.functions.invoke("audit-stream", {
-          body: { url, apiKey, plan: userPlan },
+        const response = await fetch(`${SUPABASE_URL}/functions/v1/audit-stream`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "apikey": ANON,
+            "Authorization": `Bearer ${session?.access_token ?? ANON}`,
+          },
+          body: JSON.stringify({ url }),
         });
 
-        if (response.error) throw new Error(response.error.message);
+        if (!response.ok || !response.body) {
+          throw new Error(`Stream failed: HTTP ${response.status}`);
+        }
 
-        // Handle streaming response
-        const reader = response.data?.body?.getReader();
-        if (!reader) throw new Error("No stream reader available");
-
+        const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
+        let finalPayload: any = null;
 
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
 
-          const chunk = decoder.decode(value, { stream: true });
-          buffer += chunk;
-
-          // Process line by line
+          buffer += decoder.decode(value, { stream: true });
           const lines = buffer.split("\n");
-          buffer = lines.pop() || ""; // Keep incomplete line in buffer
+          buffer = lines.pop() || "";
 
           for (const line of lines) {
-            if (line.trim()) {
-              setStreamLogs((prev) => [...prev, line]);
+            const trimmed = line.trim();
+            if (!trimmed) continue;
 
-              // Parse JSON at the end
-              if (line.trim().startsWith("{") && line.trim().endsWith("}")) {
-                try {
-                  const json = JSON.parse(line.trim());
-                  if (json.violations) {
-                    setAudit({ violations: json.violations, overall_score: 100 - (json.total_found * 2) });
-                    setProgress(100);
-                    setAuditState("COMPLETED");
-                    setStreamingActive(false);
-                    setLoading(false);
-                    setUsed((u) => u + 1);
-                    toast.success(`Streaming audit complete — ${json.total_found} violations found`);
-                    loadRecent();
-                  }
-                } catch (e) {
-                  // Not JSON, just a log line
+            if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+              try {
+                const json = JSON.parse(trimmed);
+                if (Array.isArray(json.violations)) {
+                  finalPayload = json;
+                  continue;
                 }
-              }
+              } catch {}
             }
+            setStreamLogs((prev) => [...prev, line]);
           }
+        }
+
+        if (finalPayload) {
+          const violations = finalPayload.violations;
+          const score = Math.max(0, 100 - violations.length * 8);
+          setAudit({ violations, overall_score: score, url });
+          setProgress(100);
+          setAuditState("COMPLETED");
+          setUsed((u) => u + 1);
+          const preset = new Set<string>(
+            violations
+              .filter((v: any) => v.severity === "critical" || v.severity === "serious")
+              .map((v: any) => v.id),
+          );
+          setSelected(preset);
+          toast.success(`Audit complete — ${finalPayload.total_found} violations found`);
+          loadRecent();
+        } else {
+          throw new Error("Stream ended without final payload");
         }
 
         setStreamingActive(false);
