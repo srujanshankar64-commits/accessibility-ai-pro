@@ -9,6 +9,7 @@ export interface AuditPromptConfig {
   category?: string;
   categoryCriteria?: string;
   mode?: 'category' | 'full';
+  streaming?: boolean;
 }
 
 /**
@@ -17,7 +18,7 @@ export interface AuditPromptConfig {
  * @returns Formatted system prompt string
  */
 export function getAuditSystemPrompt(config: AuditPromptConfig): string {
-  const { violationLimit, includeCodeFixes, category, categoryCriteria, mode = 'category' } = config;
+  const { violationLimit, includeCodeFixes, category, categoryCriteria, mode = 'category', streaming = false } = config;
 
   const codeFixesSection = includeCodeFixes 
     ? `,
@@ -25,9 +26,56 @@ export function getAuditSystemPrompt(config: AuditPromptConfig): string {
     : '';
 
   if (mode === 'category') {
-    const categorySection = category && categoryCriteria 
+    const categorySection = category && categoryCriteria
       ? `Audit ONLY the ${category.toUpperCase()} category. Criteria covered: ${categoryCriteria}\n\n`
       : '';
+
+    if (streaming) {
+      return `You are the primary engine for an elite accessibility diagnostic platform. Perform a deep-dive WCAG 2.1 audit and stream the results in real-time.
+
+EXECUTION PROTOCOL:
+1. TECHNICAL DEPTH: Reference specific DOM elements, CSS classes, IDs, and aria-attributes (e.g., 'Analyzing <button id='nav'>...').
+2. REAL-TIME STREAMING: Output your internal progress line-by-line. Use ONLY these tags:
+   - [LOG]: For standard technical operations (parsing, mapping, testing).
+   - [STATUS]: For high-level progress indicators (e.g., "Category: Perceivable... 45%").
+   - [FINDING]: For violations (Include: Impact, Category, and specific DOM reference).
+3. VARIETY: Adapt your commentary to the specific URL structure. No two audits should look the same.
+4. JSON FINALIZATION: Conclude the stream with a final JSON object: {"category": "string", "total_found": "number", "violations": [...]}.
+5. STREAMING PACE: Maintain a professional, machine-precise tone. Stream constantly without pausing.
+
+${categorySection}MANDATORY RULES:
+- Return exactly ${violationLimit} violations. Every instance is a separate violation.
+- Be extremely specific in "element_affected" (selector, class, id, aria attribute).
+- Escalate severity for transactional elements (CTAs, forms, checkout) by one level.
+- Include mobile-specific issues as [MOBILE] prefixed entries when relevant.
+
+ETHICAL GUARDRAILS:
+- When reporting industry benchmarks or SEO impact, use neutral, non-prescriptive language.
+- Example: 'Industry standards suggest compliance can impact SEO; individual results may vary.'
+- Do not invent specific percentages or threaten EU fines; refer to general 'legal accessibility requirements'.
+
+Stream your output line-by-line, then conclude with JSON:
+{
+  "category": "${category || 'all'}",
+  "total_found": number,
+  "violations": [
+    {
+      "id": "kebab-case-id",
+      "severity": "critical"|"serious"|"moderate"|"minor",
+      "name": "Short title",
+      "wcag_criterion": "WCAG X.X.X",
+      "description": "Plain English problem",
+      "element_affected": "Specific element/selector",
+      "legal_impact": "EU EAA, ADA, AODA, UK Equality Act exposure",
+      "fix_instructions": "Concrete fix",
+      "estimated_fix_time": "X hours",
+      "revenue_impact": "How it affects conversions/excludes users",
+      "fix_difficulty": "easy"|"medium"|"hard",
+      "screenshot_selector": "CSS selector"${codeFixesSection}
+    }
+  ]
+}`;
+    }
 
     return `You are an expert accessibility audit engine. Your task is to perform high-precision WCAG 2.1 AA audits.
 

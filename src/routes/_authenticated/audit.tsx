@@ -6,6 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { ScoreGauge } from "@/components/ScoreGauge";
+import { Terminal } from "@/components/Terminal";
 import type { Violation } from "@/lib/audit-types";
 import { toast } from "sonner";
 import { ArrowRight, Loader2, ShieldCheck, ScanLine, Copy, Check, ChevronDown, ChevronUp, Code2, Lock, AlertTriangle, Zap, Upload, Share2, RefreshCw, RotateCcw } from "lucide-react";
@@ -61,6 +62,11 @@ function NewAuditPage() {
   const [plan, setPlan] = useState("free");
   const [showUpsell, setShowUpsell] = useState(false);
   const [used, setUsed] = useState(0);
+  
+  // Streaming state
+  const [streamingMode, setStreamingMode] = useState(false);
+  const [streamLogs, setStreamLogs] = useState<string[]>([]);
+  const [streamingActive, setStreamingActive] = useState(false);
   
   // Async job state
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
@@ -223,6 +229,77 @@ function NewAuditPage() {
     setProgress(0);
     setJobError(null);
     setLogMessages([]);
+
+    if (streamingMode) {
+      // Use streaming mode
+      setStreamingActive(true);
+      setStreamLogs([]);
+      try {
+        const { data: settings } = await supabase.from("settings").select("gemini_api_key, plan").maybeSingle();
+        const apiKey = (settings as any)?.gemini_api_key;
+        const userPlan = (settings as any)?.plan || "free";
+
+        const response = await supabase.functions.invoke("audit-stream", {
+          body: { url, apiKey, plan: userPlan },
+        });
+
+        if (response.error) throw new Error(response.error.message);
+
+        // Handle streaming response
+        const reader = response.data?.body?.getReader();
+        if (!reader) throw new Error("No stream reader available");
+
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value, { stream: true });
+          buffer += chunk;
+
+          // Process line by line
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || ""; // Keep incomplete line in buffer
+
+          for (const line of lines) {
+            if (line.trim()) {
+              setStreamLogs((prev) => [...prev, line]);
+
+              // Parse JSON at the end
+              if (line.trim().startsWith("{") && line.trim().endsWith("}")) {
+                try {
+                  const json = JSON.parse(line.trim());
+                  if (json.violations) {
+                    setAudit({ violations: json.violations, overall_score: 100 - (json.total_found * 2) });
+                    setProgress(100);
+                    setAuditState("COMPLETED");
+                    setStreamingActive(false);
+                    setLoading(false);
+                    setUsed((u) => u + 1);
+                    toast.success(`Streaming audit complete — ${json.total_found} violations found`);
+                    loadRecent();
+                  }
+                } catch (e) {
+                  // Not JSON, just a log line
+                }
+              }
+            }
+          }
+        }
+
+        setStreamingActive(false);
+        setLoading(false);
+      } catch (err: any) {
+        console.error("Streaming audit failed:", err);
+        toast.error(err?.message || "Streaming audit failed");
+        setStreamingActive(false);
+        setLoading(false);
+        setAuditState("IDLE");
+      }
+      return;
+    }
 
     try {
       // 1) Create the job row (immediate). Returns a job_id.
@@ -412,6 +489,18 @@ function NewAuditPage() {
         </div>
       )}
 
+      {/* Streaming mode toggle */}
+      <div className="flex items-center gap-3">
+        <Switch
+          checked={streamingMode}
+          onCheckedChange={setStreamingMode}
+          id="streaming-mode"
+        />
+        <label htmlFor="streaming-mode" className="text-sm text-muted-foreground">
+          Elite-Stream Mode (Real-time terminal output)
+        </label>
+      </div>
+
       {/* URL bar */}
       <div className="space-y-2">
         <form onSubmit={submit} className="card-elevated p-1.5 flex items-stretch gap-1.5">
@@ -528,76 +617,39 @@ function NewAuditPage() {
             </div>
             <div className="flex items-center gap-2">
               <span className="text-[11px] text-muted-foreground font-mono tabular-nums">{progress}%</span>
-              <div className="h-1.5 w-24 bg-border rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-primary rounded-full transition-all duration-500 ease-out"
-                  style={{ width: `${progress}%` }}
-                />
-              </div>
             </div>
           </div>
-          <div className="rounded-lg border border-border/40 bg-[#0a0a0f] overflow-hidden">
-            <div className="flex items-center justify-between px-3 py-1.5 border-b border-border/30 bg-[#111116]">
-              <div className="flex items-center gap-1.5">
-                <div className="h-2.5 w-2.5 rounded-full bg-[#ff5f56]" />
-                <div className="h-2.5 w-2.5 rounded-full bg-[#ffbd2e]" />
-                <div className="h-2.5 w-2.5 rounded-full bg-[#27c93f]" />
-              </div>
-              <span className="text-[9px] font-mono text-[#444] uppercase tracking-widest">audit.engine — live output</span>
-              <div className="flex items-center gap-1">
-                <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-[9px] font-mono text-emerald-500">RUNNING</span>
-              </div>
-            </div>
-            <div className="p-3 space-y-1 min-h-[120px] max-h-[240px] overflow-y-auto font-mono text-[11px] leading-relaxed">
-              {logMessages.length === 0 && (
-                <div className="text-[#444] flex items-center gap-2">
-                  <span className="text-[#555]">$</span> Initializing audit engine...
-                  <span className="animate-pulse">▊</span>
-                </div>
-              )}
-              {logMessages.map((msg, i) => (
-                <div key={i} className="flex items-start gap-2">
-                  {msg.done ? (
-                    <span className="text-emerald-500 shrink-0 mt-px">✓</span>
-                  ) : msg.active ? (
-                    <span className="text-yellow-400 shrink-0 mt-px animate-pulse">›</span>
-                  ) : (
-                    <span className="text-[#444] shrink-0 mt-px">○</span>
+
+          {/* Progress bar */}
+          <div className="h-2 bg-muted rounded-full overflow-hidden">
+            <div
+              className="h-full bg-primary transition-all duration-300 ease-out"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+
+          {/* Terminal for streaming mode */}
+          {streamingMode && streamingActive && (
+            <Terminal logs={streamLogs} isActive={streamingActive} />
+          )}
+
+          {/* Log messages for non-streaming mode */}
+          {!streamingMode && logMessages.length > 0 && (
+            <div className="space-y-1.5">
+              {logMessages.map((msg, idx) => (
+                <div
+                  key={idx}
+                  className={cn(
+                    "text-xs font-mono",
+                    msg.active ? "text-primary animate-pulse" : "text-muted-foreground",
+                    msg.done && "opacity-60"
                   )}
-                  <span className={
-                    msg.done ? "text-emerald-400" :
-                    msg.active ? "text-yellow-300" :
-                    "text-[#666]"
-                  }>
-                    {msg.text}
-                    {msg.active && <span className="animate-pulse ml-1">▊</span>}
-                  </span>
+                >
+                  {msg.text}
                 </div>
               ))}
             </div>
-          </div>
-          <div className="grid grid-cols-4 gap-2">
-            {[
-              { label: "Perceivable", pct: Math.min(100, Math.max(0, (progress - 0) * 0.96)), color: "bg-blue-500" },
-              { label: "Operable", pct: Math.min(100, Math.max(0, (progress - 10) * 1.07)), color: "bg-violet-500" },
-              { label: "Understandable", pct: Math.min(100, Math.max(0, (progress - 25) * 1.27)), color: "bg-amber-500" },
-              { label: "Robust", pct: Math.min(100, Math.max(0, (progress - 40) * 1.59)), color: "bg-emerald-500" },
-            ].map(({ label, pct, color }) => (
-              <div key={label} className="space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-[9px] font-mono text-[#555] uppercase tracking-wider">{label}</span>
-                  <span className="text-[9px] font-mono text-[#444]">{Math.round(pct)}%</span>
-                </div>
-                <div className="h-1 w-full bg-[#1a1a20] rounded-full overflow-hidden">
-                  <div
-                    className={`h-full ${color} rounded-full transition-all duration-700 ease-out`}
-                    style={{ width: `${pct}%` }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
+          )}
         </div>
       )}
 
