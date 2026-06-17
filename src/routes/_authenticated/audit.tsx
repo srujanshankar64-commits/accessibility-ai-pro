@@ -64,7 +64,7 @@ function NewAuditPage() {
   const [used, setUsed] = useState(0);
   
   // Streaming state
-  const [streamingMode, setStreamingMode] = useState(false);
+  const [streamingMode, setStreamingMode] = useState(true);
   const [streamLogs, setStreamLogs] = useState<string[]>([]);
   const [streamingActive, setStreamingActive] = useState(false);
   
