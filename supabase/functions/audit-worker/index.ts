@@ -21,9 +21,14 @@ function cleanHtml(html: string) {
   return html
     .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
     .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "")
+    .replace(/<svg\b[^<]*(?:(?!<\/svg>)<[^<]*)*<\/svg>/gi, "")
     .replace(/<!--[\s\S]*?-->/g, "")
     .replace(/\s*style\s*=\s*["'][^"']*["']/gi, "")
     .replace(/\s*data-[\w-]+\s*=\s*["'][^"']*["']/gi, "")
+    .replace(/<(\w+)[^>]*\s*(?:hidden|aria-hidden="true")[^>]*>/gi, "<$1>") // Remove hidden attributes
+    .replace(/<(\w+)[^>]*\s*display\s*:\s*none[^>]*>/gi, "<$1>") // Remove display:none inline styles
+    // Keep only structural tags: h1-h6, button, input, nav, aria-*, a, div, span, p, ul, ol, li, section, article, main, header, footer, aside
+    .replace(/<(?!\/?(h[1-6]|button|input|nav|a|div|span|p|ul|ol|li|section|article|main|header|footer|aside|form|label|select|textarea|img|video|audio|iframe|table|thead|tbody|tfoot|tr|td|th|br|hr)[^>]*>)[^>]*>/gi, "")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -50,7 +55,7 @@ function getBackoffWithJitter(attempt: number): number {
 let lastGeminiCall = 0;
 const MIN_CALL_INTERVAL = 3500; // 3.5 seconds = ~17 RPM max
 
-async function callGeminiWithRetry(systemPrompt: string, userPrompt: string, apiKey: string, retries = 5, categoryName = "unknown") {
+async function callGeminiWithRetry(systemPrompt: string, userPrompt: string, apiKey: string, retries = 3, categoryName = "unknown") {
   const key = (apiKey || GEMINI_KEY).trim();
   if (!key) throw new Error("Gemini API key not configured");
   let currentModel = "gemini-2.5-flash";
@@ -99,17 +104,17 @@ async function callGeminiWithRetry(systemPrompt: string, userPrompt: string, api
         // Rate limit hit - exponential backoff with jitter
         if (i < retries - 1) {
           const waitTime = getBackoffWithJitter(i);
-          console.error(`[MONITORING] ⚠ 429 RATE LIMIT ERROR for ${categoryName} (attempt ${i + 1}/${retries}) - retrying in ${Math.round(waitTime)}ms with jitter`);
+          console.error(`[MONITORING] ⚠ 429_RATE_LIMIT for ${categoryName} (attempt ${i + 1}/${retries}) - retrying in ${Math.round(waitTime)}ms with jitter`);
           await delay(waitTime);
           continue;
         } else {
-          console.error(`[MONITORING] ❌ 429 RATE LIMIT ERROR for ${categoryName} - failed after ${retries} retries`);
+          console.error(`[MONITORING] ❌ 429_RATE_LIMIT for ${categoryName} - failed after ${retries} retries`);
         }
       }
       
       if (r.status === 503) {
         // Service unavailable - model fallback and exponential backoff
-        if (currentModel === "gemini-2.5-pro" && i === 2) {
+        if (currentModel === "gemini-2.5-pro" && i === 1) {
           console.warn(`[ModelFallback] Switching from gemini-2.5-pro to gemini-2.5-flash for ${categoryName} due to 503 errors`);
           currentModel = "gemini-2.5-flash";
           continue;
@@ -117,11 +122,11 @@ async function callGeminiWithRetry(systemPrompt: string, userPrompt: string, api
         
         if (i < retries - 1) {
           const waitTime = getBackoffWithJitter(i);
-          console.error(`[MONITORING] ⚠ 503 SERVICE UNAVAILABLE for ${categoryName} (attempt ${i + 1}/${retries}) - retrying in ${Math.round(waitTime)}ms with jitter`);
+          console.error(`[MONITORING] ⚠ 503_CAPACITY_LIMIT for ${categoryName} (attempt ${i + 1}/${retries}) - retrying in ${Math.round(waitTime)}ms with jitter`);
           await delay(waitTime);
           continue;
         } else {
-          console.error(`[MONITORING] ❌ 503 SERVICE UNAVAILABLE for ${categoryName} - failed after ${retries} retries`);
+          console.error(`[MONITORING] ❌ 503_CAPACITY_LIMIT for ${categoryName} - failed after ${retries} retries`);
         }
       }
       
@@ -194,7 +199,12 @@ const CATEGORIES = [
 ];
 
 function buildCategoryPrompt(cat: typeof CATEGORIES[number], includeCodeFixes: boolean) {
-  return `You are a senior WCAG 2.1 AA auditor specializing in the ${cat.label} category.
+  return `You are an expert accessibility audit engine. Your task is to perform high-precision WCAG audits.
+
+Format: Output ONLY raw, minified JSON. No Markdown, no prose, no explanations.
+Constraint: Keep input tokens under 8k. If the DOM is too large, prioritize scanning the 'main' content and navigation first.
+Schema: Return {"category": "${cat.key}", "status": "success", "category_score": number, "violations": []}. If no issues exist, return [].
+Resilience: If input is truncated, include {"partial_scan": true} in your response.
 
 Audit ONLY the ${cat.key.toUpperCase()} category. Criteria covered: ${cat.criteria}
 
@@ -206,7 +216,10 @@ MANDATORY RULES:
 
 Return ONLY JSON:
 {
+  "category": "${cat.key}",
+  "status": "success",
   "category_score": number (0-25, start at 25 and subtract: critical 6-8, serious 3-5, moderate 2-3, minor 1),
+  "partial_scan": boolean (optional),
   "violations": [
     {
       "id": "kebab-case-id",
@@ -296,8 +309,14 @@ async function runAuditWork(jobId: string) {
         continue;
       }
       
+      // 250ms cooldown between category scans to stay within burst limits
+      if (categoryResults.length > checkpointResults.length) {
+        console.log(`[Cooldown] Waiting 250ms before next category scan`);
+        await delay(250);
+      }
+      
       try {
-        const raw = await callGeminiWithRetry(buildCategoryPrompt(cat, includeCodeFixes), userPrompt, userApiKey, 5, cat.label);
+        const raw = await callGeminiWithRetry(buildCategoryPrompt(cat, includeCodeFixes), userPrompt, userApiKey, 3, cat.label);
         const parsed = parseJSON(raw);
         const completed = completedCategories.length + categoryResults.length - checkpointResults.length + 1;
         const pct = baseProgress + Math.round((completed / CATEGORIES.length) * span);
