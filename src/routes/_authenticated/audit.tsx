@@ -267,22 +267,24 @@ function NewAuditPage() {
             if (line.trim()) {
               setStreamLogs((prev) => [...prev, line]);
 
-              // Parse JSON at the end
+              // Parse final aggregated JSON at the end
               if (line.trim().startsWith("{") && line.trim().endsWith("}")) {
                 try {
                   const json = JSON.parse(line.trim());
-                  if (json.violations) {
-                    setAudit({ violations: json.violations, overall_score: 100 - (json.total_found * 2) });
+                  // Check if this is the final aggregated payload (has summary field)
+                  if (json.summary && json.violations) {
+                    const score = Math.max(0, 100 - (json.summary.total_violations * 1.5));
+                    setAudit({ violations: json.violations, overall_score: Math.round(score) });
                     setProgress(100);
                     setAuditState("COMPLETED");
                     setStreamingActive(false);
                     setLoading(false);
                     setUsed((u) => u + 1);
-                    toast.success(`Streaming audit complete — ${json.total_found} violations found`);
+                    toast.success(`Elite-Stream audit complete — ${json.summary.total_violations} violations found (Critical: ${json.summary.priority_distribution.Critical}, Serious: ${json.summary.priority_distribution.Serious})`);
                     loadRecent();
                   }
                 } catch (e) {
-                  // Not JSON, just a log line
+                  // Not JSON or intermediate JSON, just a log line
                 }
               }
             }

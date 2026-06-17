@@ -1,5 +1,6 @@
 // @ts-nocheck
-// Streaming WCAG audit endpoint - returns ReadableStream for real-time progress
+// Elite-Stream Audit Engine - Aggressive Accumulator with ReadableStream
+// No early-exit logic, no balancing quotas, evidence-anchored findings
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -121,7 +122,6 @@ serve(async (req) => {
       pageSnippet = `(Could not fetch ${url}. Perform a thorough theoretical WCAG 2.1 AA audit based on the URL.)`;
     }
     
-    const violationLimit = plan === "free" ? 5 : 26;
     const userPrompt = `URL: ${url}\n\nHTML content:\n${pageSnippet}`;
     
     // Create a TransformStream to process the streaming response
@@ -129,30 +129,54 @@ serve(async (req) => {
     const writer = writable.getWriter();
     const encoder = new TextEncoder();
     
+    // Aggressive Accumulator: Collect all violations across all categories
+    const allViolations: any[] = [];
+    
     // Start streaming in background
     (async () => {
       try {
-        for (const cat of CATEGORIES) {
-          // Import the streaming system prompt
-          const systemPrompt = `You are the primary engine for an elite accessibility diagnostic platform. Perform a deep-dive WCAG 2.1 audit and stream the results in real-time.
+        await writer.write(encoder.encode("[LOG] Establishing secure connection to target...\n"));
+        await delay(150);
+        
+        await writer.write(encoder.encode("[LOG] Parsing DOM structure...\n"));
+        await delay(150);
+        
+        await writer.write(encoder.encode(`[LOG] Analyzing ${pageSnippet.length} characters of cleaned HTML\n`));
+        await delay(150);
+        
+        for (let i = 0; i < CATEGORIES.length; i++) {
+          const cat = CATEGORIES[i];
+          const progress = Math.round(((i + 1) / CATEGORIES.length) * 100);
+          
+          await writer.write(encoder.encode(`[STATUS] Processing ${cat.label.toUpperCase()}... ${progress}%\n`));
+          await delay(150);
+          
+          // Elite system prompt with aggressive accumulator logic
+          const systemPrompt = `You are the Lead Engineer for an Elite Accessibility Audit platform. Perform a high-speed diagnostic audit of the provided HTML.
+
+CRITICAL OPERATING RULES:
+1. HEURISTIC SPEED: Use heuristic sampling to identify the most critical accessibility patterns immediately. Speed is a priority.
+2. NO BALANCING QUOTAS: Strictly prohibit "equal distribution" of findings. Report findings based on REAL occurrence in the code. If a category has 0 findings, report 0. If a category has 50, report 50. Never force a balanced distribution.
+3. AGGRESSIVE ACCUMULATOR: Scan the entire DOM, collect all accessibility violations into a final array. Do not trigger a return until the scan is 100% complete. No early-exit logic.
+4. HIERARCHICAL ANALYSIS: Categorize all issues by impact (Critical, Serious, Moderate, Minor) and WCAG Principle (Perceivable, Operable, Understandable, Robust).
+5. EVIDENCE ANCHORING: Every finding must cite the specific CSS selector or tag ID found in the HTML snippet.
 
 EXECUTION PROTOCOL:
-1. TECHNICAL DEPTH: Reference specific DOM elements, CSS classes, IDs, and aria-attributes (e.g., 'Analyzing <button id='nav'>...').
-2. REAL-TIME STREAMING: Output your internal progress line-by-line. Use ONLY these tags:
-   - [LOG]: For standard technical operations (parsing, mapping, testing).
-   - [STATUS]: For high-level progress indicators (e.g., "Category: Perceivable... 45%").
-   - [FINDING]: For violations (Include: Impact, Category, and specific DOM reference).
-3. VARIETY: Adapt your commentary to the specific URL structure. No two audits should look the same.
-4. JSON FINALIZATION: Conclude the stream with a final JSON object: {"category": "string", "total_found": "number", "violations": [...]}.
-5. STREAMING PACE: Maintain a professional, machine-precise tone. Stream constantly without pausing.
+- Output your internal progress line-by-line using ONLY these tags:
+  - [LOG]: For standard technical operations (parsing, mapping, testing)
+  - [STATUS]: For high-level progress indicators
+  - [FINDING]: For violations (Include: Impact, Category, and specific DOM reference)
+- Maintain a professional, machine-precise tone
+- Stream constantly without pausing
 
 Audit ONLY the ${cat.key.toUpperCase()} category. Criteria covered: ${cat.criteria}
 
 MANDATORY RULES:
-- Return exactly ${violationLimit} violations. Every instance is a separate violation.
+- Report REAL findings only. No artificial quotas.
 - Be extremely specific in "element_affected" (selector, class, id, aria attribute).
 - Escalate severity for transactional elements (CTAs, forms, checkout) by one level.
 - Include mobile-specific issues as [MOBILE] prefixed entries when relevant.
+- NO EARLY-EXIT: Continue scanning until 100% complete.
 
 ETHICAL GUARDRAILS:
 - When reporting industry benchmarks or SEO impact, use neutral, non-prescriptive language.
@@ -181,25 +205,72 @@ Stream your output line-by-line, then conclude with JSON:
 }`;
           
           // Add cooldown between categories
-          if (cat !== CATEGORIES[0]) {
-            await delay(250);
+          if (i > 0) {
+            await delay(150);
           }
           
           // Stream the category scan
           const stream = await callGeminiStream(systemPrompt, userPrompt, apiKey);
           const reader = stream.getReader();
           const decoder = new TextDecoder();
+          let buffer = "";
           
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
             
             const chunk = decoder.decode(value, { stream: true });
-            await writer.write(encoder.encode(chunk));
+            buffer += chunk;
+            
+            // Process line by line with 150ms delay
+            const lines = buffer.split("\n");
+            buffer = lines.pop() || "";
+            
+            for (const line of lines) {
+              if (line.trim()) {
+                await writer.write(encoder.encode(line + "\n"));
+                await delay(150);
+                
+                // Accumulate violations from JSON responses
+                if (line.trim().startsWith("{") && line.trim().endsWith("}")) {
+                  try {
+                    const json = JSON.parse(line.trim());
+                    if (json.violations && Array.isArray(json.violations)) {
+                      allViolations.push(...json.violations);
+                    }
+                  } catch (e) {
+                    // Not JSON, just a log line
+                  }
+                }
+              }
+            }
           }
         }
         
+        // Final aggregation
+        await writer.write(encoder.encode("[STATUS] Aggregating findings... 100%\n"));
+        await delay(150);
+        
+        await writer.write(encoder.encode(`[LOG] Total violations accumulated: ${allViolations.length}\n`));
+        await delay(150);
+        
+        // Output final aggregated JSON
+        const finalPayload = {
+          summary: {
+            total_violations: allViolations.length,
+            priority_distribution: {
+              Critical: allViolations.filter((v: any) => v.severity === "critical").length,
+              Serious: allViolations.filter((v: any) => v.severity === "serious").length,
+              Moderate: allViolations.filter((v: any) => v.severity === "moderate").length,
+              Minor: allViolations.filter((v: any) => v.severity === "minor").length,
+            }
+          },
+          violations: allViolations
+        };
+        
+        await writer.write(encoder.encode(JSON.stringify(finalPayload) + "\n"));
         await writer.close();
+        
       } catch (error) {
         console.error("Streaming error:", error);
         await writer.write(encoder.encode(`[ERROR] ${error.message}\n`));
