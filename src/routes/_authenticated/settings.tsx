@@ -7,7 +7,8 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { getPlan, TIER, PLAN_PRICES } from "@/lib/tier.utils";
 import { isAdmin } from "@/lib/admin.utils";
-import { createCheckoutSession } from "../-api.checkout";
+import { useServerFn } from "@tanstack/react-start";
+import { createCheckoutSession } from "@/lib/checkout";
 import { getReferralStats, generateReferralCode } from "@/lib/referral";
 
 export const Route = createFileRoute("/_authenticated/settings")({
@@ -22,6 +23,7 @@ const PLAN_LABELS: Record<string, string> = {
 };
 
 function SettingsPage() {
+  const checkoutFn = useServerFn(createCheckoutSession);
   const { user } = Route.useRouteContext();
   const [agencyName, setAgencyName] = useState("");
   const [agencyLogo, setAgencyLogo] = useState("");
@@ -155,7 +157,7 @@ function SettingsPage() {
         return;
       }
 
-      const result = await createCheckoutSession({ data: { priceId, tier: tierName } });
+      const result = await checkoutFn({ data: { priceId, tier: tierName } });
       
       if (result.success && result.checkout_url) {
         window.location.href = result.checkout_url;
