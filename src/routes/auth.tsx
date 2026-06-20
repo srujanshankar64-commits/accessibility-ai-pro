@@ -32,12 +32,12 @@ function AuthPage() {
         });
         if (error) throw error;
         toast.success("Account created.");
-        navigate({ to: "/audit" });
+        navigate({ to: "/dashboard" });
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
         toast.success("Welcome back.");
-        navigate({ to: "/audit" });
+        navigate({ to: "/dashboard" });
       }
     } catch (err: any) {
       const msg = err?.message ?? "Authentication failed";
