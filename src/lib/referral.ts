@@ -171,19 +171,6 @@ async function grantReferrerFreeMonth(referrerId: string): Promise<void> {
  * Get referral stats for a user
  */
 export async function getReferralStats(userId: string): Promise<{ clicks: number; signups: number; earned: number }> {
-  const { data: referral } = await (supabase as any)
-    .from('referrals')
-    .select('*')
-    .eq('referrer_id', userId)
-    .single();
-  
-  if (!referral) {
-    return { clicks: 0, signups: 0, earned: 0 };
-  }
-  
-  return {
-    clicks: referral.total_clicks || 0,
-    signups: referral.total_signups || 0,
-    earned: referral.total_earned_months || 0,
-  };
+  // Temporary mock to prevent 404 console errors until the 'referrals' table is created in Supabase
+  return { clicks: 0, signups: 0, earned: 0 };
 }
