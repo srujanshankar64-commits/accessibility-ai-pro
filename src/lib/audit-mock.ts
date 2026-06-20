@@ -36,6 +36,6 @@ export function runAudit(url: string): Promise<AuditResult> {
           }
         ]
       });
-    }, 1500);
+    }, 2000);
   });
 }

@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Plus, Users, LayoutDashboard, Globe, ChevronRight, Loader2, X } from "lucide-react";
 import { runAudit, type AuditResult } from "@/lib/audit-mock";
 import { AuditReport } from "@/components/AuditReport";
@@ -17,11 +17,38 @@ type Client = {
 };
 
 function DashboardPage() {
-  const [clients, setClients] = useState<Client[]>([]);
-  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+  const [clients, setClients] = useState<Client[]>(() => {
+    const saved = localStorage.getItem("arch_clients");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        return parsed.map((c: any) => ({
+          ...c,
+          addedAt: new Date(c.addedAt)
+        }));
+      } catch (e) {
+        return [];
+      }
+    }
+    return [];
+  });
+  
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(clients[0]?.id || null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newClientUrl, setNewClientUrl] = useState("");
   const [isAuditing, setIsAuditing] = useState(false);
+
+  useEffect(() => {
+    localStorage.setItem("arch_clients", JSON.stringify(clients));
+  }, [clients]);
+
+  useEffect(() => {
+    if (window.location.hash === "#add-client") {
+      setIsModalOpen(true);
+      // clean hash without refreshing
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+  }, []);
 
   const handleAddClient = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -67,9 +94,9 @@ function DashboardPage() {
   const selectedClient = clients.find(c => c.id === selectedClientId) || null;
 
   return (
-    <div className="flex h-[calc(100vh-48px)] -mx-12 -my-10 bg-background overflow-hidden border-t border-border">
+    <div className="flex flex-col md:flex-row h-[calc(100vh-48px)] -mx-12 -my-10 bg-background overflow-hidden relative">
       {/* Sidebar Layout */}
-      <aside className="w-64 border-r border-border bg-card/30 flex flex-col">
+      <aside className="w-full md:w-64 md:border-r border-b md:border-b-0 border-border bg-card/30 flex flex-col md:h-full overflow-hidden shrink-0">
         <div className="p-4 border-b border-border">
           <button
             onClick={() => setIsModalOpen(true)}
@@ -95,18 +122,24 @@ function DashboardPage() {
                 onClick={() => setSelectedClientId(client.id)}
                 className={`w-full flex items-center justify-between p-2 rounded-md text-sm transition-colors ${
                   selectedClientId === client.id 
-                    ? "bg-primary/10 text-primary font-medium" 
-                    : "text-foreground hover:bg-muted"
+                    ? "bg-accent/10 text-accent font-medium border border-accent/20" 
+                    : "text-foreground hover:text-accent hover:bg-muted"
                 }`}
               >
                 <div className="flex items-center gap-2 truncate">
-                  <Globe className="h-4 w-4 shrink-0 opacity-70" />
+                  <Globe className={`h-4 w-4 shrink-0 ${selectedClientId === client.id ? 'text-accent' : 'opacity-70'}`} />
                   <span className="truncate">{new URL(client.url).hostname}</span>
                 </div>
-                {selectedClientId === client.id && <ChevronRight className="h-4 w-4 opacity-70" />}
+                {selectedClientId === client.id && <ChevronRight className="h-4 w-4 text-accent" />}
               </button>
             ))
           )}
+        </div>
+        
+        <div className="p-4 border-t border-border mt-auto">
+          <div className="bg-accent/10 border border-accent/20 rounded-md px-3 py-2 flex items-center justify-center">
+            <span className="text-xs font-medium text-accent uppercase tracking-widest">Beta v0.1</span>
+          </div>
         </div>
       </aside>
 
@@ -118,10 +151,28 @@ function DashboardPage() {
             <h1 className="text-3xl font-display font-bold text-foreground">Agency Dashboard</h1>
           </div>
           
-          <AuditReport 
-            result={selectedClient?.auditResult || null} 
-            clientUrl={selectedClient?.url || ""} 
-          />
+          {clients.length === 0 ? (
+            <div className="glass-card p-12 mt-12 rounded-2xl border border-border flex flex-col items-center justify-center text-center shadow-lg">
+              <div className="bg-accent/10 p-4 rounded-full mb-6">
+                <Globe className="h-16 w-16 text-accent" />
+              </div>
+              <h2 className="text-2xl font-bold text-foreground mb-3">Get Started with Your First Client</h2>
+              <p className="text-muted-foreground max-w-md mb-8">
+                Welcome to your Agency Engine. Add a client's website URL to run a real-time WCAG compliance audit and instantly generate remediation steps.
+              </p>
+              <button
+                onClick={() => setIsModalOpen(true)}
+                className="h-11 px-8 rounded-md bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium flex items-center justify-center gap-2 transition-colors shadow-md"
+              >
+                <Plus className="h-4 w-4" /> Add First Client
+              </button>
+            </div>
+          ) : (
+            <AuditReport 
+              result={selectedClient?.auditResult || null} 
+              clientUrl={selectedClient?.url || ""} 
+            />
+          )}
         </div>
       </main>
 
