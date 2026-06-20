@@ -26,7 +26,10 @@ async function testGeminiConnection() {
     // Send a minimal prompt to minimize token usage
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
-      contents: "Respond with exactly one word: 'SUCCESS'."
+      contents: "Respond with a JSON object { \"status\": \"SUCCESS\" }",
+      config: {
+        responseMimeType: "application/json"
+      }
     });
     
     const text = response.text;
