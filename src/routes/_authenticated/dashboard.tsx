@@ -1,8 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { Plus, Users, LayoutDashboard, Globe, ChevronRight, Loader2, X } from "lucide-react";
-import { runAudit, type AuditResult } from "@/lib/audit-mock";
-import { AuditReport } from "@/components/AuditReport";
+import { useServerFn } from "@tanstack/react-start";
+import { runAudit } from "@/lib/ai.functions";
+import { AuditReport, type AuditResult } from "@/components/AuditReport";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
@@ -17,6 +18,7 @@ type Client = {
 };
 
 function DashboardPage() {
+  const auditFn = useServerFn(runAudit);
   const [clients, setClients] = useState<Client[]>(() => {
     const saved = localStorage.getItem("arch_clients");
     if (saved) {
@@ -67,16 +69,16 @@ function DashboardPage() {
     }
 
     setIsAuditing(true);
-    toast.info("Running real-time audit simulation...");
+    toast.info("Running live audit via AI engine...");
 
     try {
-      const result = await runAudit(parsedUrl);
+      const result = await auditFn({ data: { url: parsedUrl } });
       
       const newClient: Client = {
         id: crypto.randomUUID(),
         url: parsedUrl,
         addedAt: new Date(),
-        auditResult: result,
+        auditResult: result as any,
       };
 
       setClients(prev => [newClient, ...prev]);

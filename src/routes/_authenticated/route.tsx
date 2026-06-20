@@ -15,14 +15,12 @@ export const Route = createFileRoute("/_authenticated")({
 });
 
 const nav = [
-  { to: "/dashboard", label: "Agency Engine", type: "link" },
-  { to: "/dashboard", hash: "add-client", label: "New Audit", type: "action" },
-  { to: "#", label: "Audit History", type: "coming-soon" },
-  { to: "#", label: "Proposals", type: "coming-soon" },
-  { to: "#", label: "Settings", type: "coming-soon" },
+  { to: "/dashboard", label: "Agency Engine" },
+  { to: "/audit", label: "New Audit" },
+  { to: "/history", label: "Audit History" },
+  { to: "/proposal", label: "Proposals" },
+  { to: "/settings", label: "Settings" },
 ] as const;
-
-import { toast } from "sonner";
 
 function AppLayout() {
   const { user } = Route.useRouteContext();
@@ -36,7 +34,7 @@ function AppLayout() {
     });
   }, []);
 
-  const isActive = (to: string) => pathname === to && to !== "#";
+  const isActive = (to: string) => pathname === to || pathname.startsWith(to + "/");
 
   const signOut = async () => {
     await supabase.auth.signOut();
@@ -44,18 +42,6 @@ function AppLayout() {
   };
 
   const initials = (user.email ?? "U")[0]?.toUpperCase();
-
-  const handleNavClick = (e: React.MouseEvent, item: typeof nav[number]) => {
-    if (item.type === "coming-soon") {
-      e.preventDefault();
-      toast("Coming Soon: Agency Features", {
-        description: "This feature is currently under development.",
-      });
-    } else if (item.type === "action" && item.hash) {
-      e.preventDefault();
-      window.location.hash = item.hash;
-    }
-  };
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg-subtle)" }}>
@@ -91,7 +77,6 @@ function AppLayout() {
             <Link
               key={item.label}
               to={item.to as any}
-              onClick={(e) => handleNavClick(e, item)}
               style={{
                 fontSize: 12.5,
                 padding: "5px 14px",
