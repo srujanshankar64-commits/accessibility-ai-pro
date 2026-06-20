@@ -13,14 +13,14 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
     try {
       const { priceId, tier } = data;
 
-      const apiKey = process.env.DODO_PAYMENTS_API_KEY;
+      const apiKey = process.env.DODO_PAYMENTS_API_KEY || process.env.VITE_DODO_PAYMENTS_API_KEY;
       if (!apiKey) {
         throw new Error("Missing DODO_PAYMENTS_API_KEY environment variable");
       }
 
       const client = new DodoPayments({
         bearerToken: apiKey,
-        environment: (process.env.DODO_PAYMENTS_ENVIRONMENT as any) || 'test_mode',
+        environment: (process.env.DODO_PAYMENTS_ENVIRONMENT as any) || 'live_mode',
       });
 
       const checkout = await client.checkoutSessions.create({
