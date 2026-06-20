@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { getPlan, TIER, PLAN_PRICES } from "@/lib/tier.utils";
 import { isAdmin } from "@/lib/admin.utils";
 import { useServerFn } from "@tanstack/react-start";
-import { createCheckoutSession } from "@/lib/checkout";
+import { createCheckoutSession } from "@/lib/checkout.server";
 import { getReferralStats, generateReferralCode } from "@/lib/referral";
 
 export const Route = createFileRoute("/_authenticated/settings")({
