@@ -241,7 +241,7 @@ function NewAuditPage() {
         const userPlan = (settings as any)?.plan || "free";
 
         const response = await supabase.functions.invoke("audit-stream", {
-          body: { url, apiKey, plan: userPlan },
+          body: { url, apiKey, plan: userPlan, multiPageCrawlEnabled, competitorUrl },
         });
 
         if (response.error) throw new Error(response.error.message);
@@ -266,10 +266,8 @@ function NewAuditPage() {
 
           for (const line of lines) {
             if (line.trim()) {
-              setStreamLogs((prev) => [...prev, line]);
-
               // Parse final aggregated JSON at the end
-              if (line.trim().startsWith("{") && line.trim().endsWith("}")) {
+              if (line.trim().startsWith("{")) {
                 try {
                   const json = JSON.parse(line.trim());
                   // Check if this is the final aggregated payload (has summary field)
@@ -281,12 +279,15 @@ function NewAuditPage() {
                     setStreamingActive(false);
                     setLoading(false);
                     setUsed((u) => u + 1);
-                    toast.success(`Elite-Stream audit complete — ${json.summary.total_violations} violations found (Critical: ${json.summary.priority_distribution.Critical}, Serious: ${json.summary.priority_distribution.Serious})`);
+                    toast.success(`Elite-Stream audit complete — ${json.summary.total_violations} violations found`);
                     loadRecent();
                   }
                 } catch (e) {
                   // Not JSON or intermediate JSON, just a log line
+                  setStreamLogs((prev) => [...prev, line]);
                 }
+              } else {
+                setStreamLogs((prev) => [...prev, line]);
               }
             }
           }
@@ -306,12 +307,12 @@ function NewAuditPage() {
 
     try {
       // 1) Create the job row (immediate). Returns a job_id.
-      const jobResult = await startJobFn({ data: { url } });
+      const jobResult = await startJobFn({ data: { url, multiPageCrawlEnabled, competitorUrl } });
       setCurrentJobId(jobResult.job_id);
 
       // 2) Fire-and-forget the background worker (runs via EdgeRuntime.waitUntil).
       supabase.functions
-        .invoke("audit-worker", { body: { jobId: jobResult.job_id } })
+        .invoke("audit-worker", { body: { jobId: jobResult.job_id, multiPageCrawlEnabled, competitorUrl } })
         .catch((err: any) => console.error("Edge worker invoke failed:", err));
     } catch (err: any) {
       toast.error(err?.message ?? "Failed to start audit");
@@ -452,7 +453,7 @@ function NewAuditPage() {
   };
 
   return (
-    <div className="animate-slide-up space-y-8">
+    <main className="animate-slide-up space-y-8 motion-reduce:animate-none">
       <header className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="font-display text-2xl">New Audit</h1>
@@ -510,10 +511,11 @@ function NewAuditPage() {
           <input
             type="url"
             required
+            aria-label="Client Website URL"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             placeholder="https://yourclient.com.au"
-            className="flex-1 h-[52px] bg-transparent px-4 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+            className="flex-1 h-[52px] bg-transparent px-4 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-md"
           />
           <button
             type="submit"
@@ -556,10 +558,11 @@ function NewAuditPage() {
                 </div>
                 <input
                   type="url"
+                  aria-label="Competitor Website URL"
                   value={competitorUrl}
                   onChange={(e) => setCompetitorUrl(e.target.value)}
                   placeholder="https://competitor.com"
-                  className="w-full h-9 bg-background border border-border rounded-md px-3 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  className="w-full h-9 bg-background border border-border rounded-md px-3 text-xs text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                   disabled={loading}
                 />
               </div>
@@ -608,8 +611,8 @@ function NewAuditPage() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <div className="relative">
-                <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                <div className="absolute inset-0 h-4 w-4 animate-ping opacity-20 bg-primary rounded-full" />
+                <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none text-primary" />
+                <div className="absolute inset-0 h-4 w-4 animate-ping motion-reduce:animate-none opacity-20 bg-primary rounded-full" />
               </div>
               <span className="text-sm font-semibold text-foreground tracking-tight">
                 {auditState === "INITIALIZING" && "Connecting to website..."}
@@ -623,10 +626,9 @@ function NewAuditPage() {
             </div>
           </div>
 
-          {/* Progress bar */}
-          <div className="h-2 bg-muted rounded-full overflow-hidden">
+          <div className="h-2 bg-muted rounded-full overflow-hidden" role="progressbar" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}>
             <div
-              className="h-full bg-primary transition-all duration-300 ease-out"
+              className="h-full bg-primary transition-all duration-300 ease-out motion-reduce:transition-none"
               style={{ width: `${progress}%` }}
             />
           </div>
@@ -644,7 +646,7 @@ function NewAuditPage() {
                   key={idx}
                   className={cn(
                     "text-xs font-mono",
-                    msg.active ? "text-primary animate-pulse" : "text-muted-foreground",
+                    msg.active ? "text-primary animate-pulse motion-reduce:animate-none" : "text-muted-foreground",
                     msg.done && "opacity-60"
                   )}
                 >
@@ -661,10 +663,10 @@ function NewAuditPage() {
         <p className="text-xs text-muted-foreground">Audits check 25+ WCAG criteria across all compliance categories.</p>
         <div className="ml-auto">
           {canBulkCsv ? (
-            <label className="h-8 inline-flex items-center gap-1.5 px-3 rounded-md border border-border text-xs text-muted-foreground hover:bg-accent hover:text-foreground cursor-pointer transition-colors">
+            <label className="h-8 inline-flex items-center gap-1.5 px-3 rounded-md border border-border text-xs text-muted-foreground hover:bg-accent hover:text-foreground cursor-pointer transition-colors focus-within:ring-2 focus-within:ring-primary focus-within:outline-none">
               <Upload className="h-3.5 w-3.5" />
               {bulkLoading ? `Processing ${bulkProgress}/${bulkUrls.length}...` : "Bulk CSV upload"}
-              <input type="file" accept=".csv,.txt" className="hidden" onChange={handleCsvUpload} disabled={bulkLoading} />
+              <input type="file" accept=".csv,.txt" aria-label="Upload CSV file for bulk audit" className="sr-only" onChange={handleCsvUpload} disabled={bulkLoading} />
             </label>
           ) : (
             <Link to="/settings" className="h-8 inline-flex items-center gap-1.5 px-3 rounded-md border border-border/50 text-xs text-muted-foreground/50 hover:border-amber-500/40 hover:text-amber-400 transition-colors">
@@ -682,8 +684,8 @@ function NewAuditPage() {
             <span>Bulk audit in progress...</span>
             <span>{bulkProgress} / {bulkUrls.length}</span>
           </div>
-          <div className="h-1.5 w-full bg-accent rounded-full overflow-hidden">
-            <div className="h-full bg-primary transition-all duration-300" style={{ width: `${(bulkProgress / bulkUrls.length) * 100}%` }} />
+          <div className="h-1.5 w-full bg-accent rounded-full overflow-hidden" role="progressbar" aria-valuenow={(bulkProgress / bulkUrls.length) * 100} aria-valuemin={0} aria-valuemax={100}>
+            <div className="h-full bg-primary transition-all duration-300 motion-reduce:transition-none" style={{ width: `${(bulkProgress / bulkUrls.length) * 100}%` }} />
           </div>
         </div>
       )}
@@ -748,12 +750,14 @@ function NewAuditPage() {
                     </code>
                   </div>
                   <button
+                    type="button"
+                    aria-label="Copy embed code"
                     onClick={() => {
                       const code = `<script src="https://accessibility-ai-pro.lovable.app/compliance-shield.js" data-audit-id="${audit.id}"></script>`;
                       navigator.clipboard.writeText(code);
                       toast.success("Embed code copied to clipboard");
                     }}
-                    className="text-xs text-primary hover:text-primary-hover flex items-center gap-1"
+                    className="text-xs text-primary hover:text-primary-hover flex items-center gap-1 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                   >
                     <Copy className="h-3 w-3" /> Copy embed code
                   </button>
@@ -776,9 +780,11 @@ function NewAuditPage() {
                     )}
                   >
                     {/* Row Header */}
-                    <div
+                    <button
+                      type="button"
+                      aria-expanded={isExpanded}
                       onClick={() => toggleExpand(v.id)}
-                      className="flex items-center justify-between p-3.5 cursor-pointer select-none"
+                      className="flex w-full items-center justify-between p-3.5 cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset"
                     >
                       <div className="flex items-start gap-3 flex-1 min-w-0 pr-4">
                         <div className="mt-1 text-muted-foreground shrink-0">
@@ -823,7 +829,7 @@ function NewAuditPage() {
                           onClick={(e) => e.stopPropagation()}
                         />
                       </div>
-                    </div>
+                    </button>
 
                     {/* Expanded drawer */}
                     {isExpanded && (
@@ -963,6 +969,7 @@ function NewAuditPage() {
                             View
                           </Link>
                           <button
+                            type="button"
                             onClick={() => goProposal(r)}
                             disabled={!TIER[currentPlan].proposals}
                             className={cn(
@@ -984,6 +991,6 @@ function NewAuditPage() {
           </div>
         )}
       </section>
-    </div>
+    </main>
   );
 }

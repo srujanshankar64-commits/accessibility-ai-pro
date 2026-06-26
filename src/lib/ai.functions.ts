@@ -786,7 +786,11 @@ Price Range: ${data.priceMin} - ${data.priceMax}`;
 
 export const startAuditJob = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator(z.object({ url: z.string().url() }))
+  .inputValidator(z.object({ 
+    url: z.string().url(),
+    multiPageCrawlEnabled: z.boolean().optional(),
+    competitorUrl: z.string().optional()
+  }))
   .handler(async ({ data, context }) => {
     const { url } = data;
     const settings = await getUserSettings(context.supabase, context.userId);
