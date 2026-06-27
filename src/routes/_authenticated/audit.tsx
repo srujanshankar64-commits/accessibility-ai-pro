@@ -234,49 +234,69 @@ function NewAuditPage() {
     if (streamingMode) {
       setStreamingActive(true);
       setStreamLogs([]);
-      
-      const logs = [
-        "[LOG] Establishing secure HTTPS connection...",
-        "[LOG] Resolving DNS and fetching DOM payload...",
-        "[STATUS] Fetching main page HTML...",
-        "[LOG] Parsing massive DOM structure...",
-        "[STATUS] Executing holistic elite engine across 4 WCAG categories...",
-        "[LOG] Scanning <img>, <video>, <picture> for alt/captions...",
-        "[STATUS] Category: Perceivable - 25%",
-        "[LOG] Evaluating color contrast tokens...",
-        "[LOG] Probing keyboard reachability of interactive nodes...",
-        "[STATUS] Category: Operable - 50%",
-        "[LOG] Checking skip-link presence and focus order...",
-        "[LOG] Inspecting <html lang>, form labels, error messaging...",
-        "[STATUS] Category: Understandable - 75%",
-        "[LOG] Validating ARIA landmarks (<main>, <nav>, <header>)...",
-        "[STATUS] Category: Robust - 90%",
-        "[LOG] Aggregating final compliance payload...",
-      ];
-
-      let logIndex = 0;
-      const interval = setInterval(() => {
-        if (logIndex < logs.length) {
-          setStreamLogs(prev => [...prev, logs[logIndex]]);
-          setProgress(Math.min(95, Math.floor((logIndex / logs.length) * 100)));
-          logIndex++;
-        }
-      }, 1500);
-
       try {
-        const result = await auditFn({ data: { url, multiPageCrawlEnabled, competitorUrl } });
-        clearInterval(interval);
-        
-        setAudit(result);
-        setProgress(100);
-        setAuditState("COMPLETED");
+        const { data: settings } = await supabase.from("settings").select("gemini_api_key, plan").maybeSingle();
+        const apiKey = (settings as any)?.gemini_api_key;
+        const userPlan = (settings as any)?.plan || "free";
+
+        const response = await supabase.functions.invoke("audit-stream", {
+          body: { url, apiKey, plan: userPlan, multiPageCrawlEnabled, competitorUrl },
+        });
+
+        if (response.error) {
+          if (response.error.message?.includes("404") || response.error.message?.includes("not found")) {
+            throw new Error("Elite-Stream Edge Function not deployed. Please deploy audit-stream function first.");
+          }
+          throw new Error(response.error.message);
+        }
+
+        const reader = response.data?.body?.getReader();
+        if (!reader) throw new Error("No stream reader available - Edge Function returned invalid response");
+
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let jsonBuffer = "";
+        let jsonStarted = false;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value, { stream: true });
+          buffer += chunk;
+
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            if (line.trim()) {
+              setStreamLogs((prev) => [...prev, line]);
+
+              if (line.trim().startsWith("{") && line.trim().endsWith("}")) {
+                try {
+                  const json = JSON.parse(line.trim());
+                  if (json.summary && json.violations) {
+                    const score = Math.max(0, 100 - (json.summary.total_violations * 1.5));
+                    setAudit({ violations: json.violations, overall_score: Math.round(score) });
+                    setProgress(100);
+                    setAuditState("COMPLETED");
+                    setStreamingActive(false);
+                    setLoading(false);
+                    setUsed((u) => u + 1);
+                    toast.success(`Elite-Stream audit complete — ${json.summary.total_violations} violations found (Critical: ${json.summary.priority_distribution.Critical}, Serious: ${json.summary.priority_distribution.Serious})`);
+                    loadRecent();
+                  }
+                } catch (e) {
+                  // Not final JSON
+                }
+              }
+            }
+          }
+        }
+
         setStreamingActive(false);
         setLoading(false);
-        setUsed((u) => u + 1);
-        toast.success(`Elite-Stream audit complete — ${result.violationsShown ?? result.violations?.length ?? 0} violations found`);
-        loadRecent();
       } catch (err: any) {
-        clearInterval(interval);
         console.error("Streaming audit failed:", err);
         toast.error(err?.message || "Streaming audit failed");
         setStreamingActive(false);
