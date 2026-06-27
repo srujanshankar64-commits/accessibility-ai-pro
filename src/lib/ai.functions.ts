@@ -228,7 +228,7 @@ async function getUserSettings(supabase: any, userId: string) {
 
 export const runAudit = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .validator(z.object({ 
+  .inputValidator(z.object({ 
     url: z.string().url(),
     multiPageCrawlEnabled: z.boolean().optional(),
     competitorUrl: z.string().optional()

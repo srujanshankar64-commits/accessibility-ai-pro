@@ -18,7 +18,7 @@ function cleanHtml(html: string) {
 }
 
 export const performFastAudit = createServerFn({ method: "POST" })
-  .validator(z.object({ 
+  .inputValidator(z.object({ 
     url: z.string().url(),
     apiKey: z.string().optional(),
     multiPageCrawlEnabled: z.boolean().optional(),
