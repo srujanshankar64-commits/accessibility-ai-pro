@@ -76,85 +76,83 @@ Deno.serve(async (req) => {
       });
     }
     
-    // Create a TransformStream to process the streaming response
-    const { readable, writable } = new TransformStream();
-    const writer = writable.getWriter();
-    const encoder = new TextEncoder();
-    
-    // Start streaming in background
-    (async () => {
-      try {
-        await writer.write(encoder.encode("[LOG] Establishing secure connection to target...\n"));
+    // Create a ReadableStream
+    const stream = new ReadableStream({
+      async start(controller) {
+        const encoder = new TextEncoder();
         
-        let pageSnippet = "";
-        let competitorSnippet = "";
-        
-        // Parallel fetching
-        const fetches = [];
-        
-        // 1. Fetch Main Target
-        fetches.push(
-          (async () => {
-            await writer.write(encoder.encode("[STATUS] Fetching main page HTML...\n"));
-            const ctrl = new AbortController();
-            setTimeout(() => ctrl.abort(), 15000);
-            try {
-              const r = await fetch(url, {
-                headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36 AccessAuditAI/2.0" },
-                signal: ctrl.signal,
-              });
-              const html = await r.text();
-              pageSnippet = cleanHtml(html).slice(0, 30000); // 30k chars for main
-            } catch (e) {
-              pageSnippet = `(Could not fetch ${url}. Theoretical structural audit applied.)`;
-            }
-          })()
-        );
-        
-        // 2. Multi-page Crawl (Mock concurrent fetch of critical paths)
-        let multiPageContext = "";
-        if (multiPageCrawlEnabled && plan !== "free") {
+        try {
+          controller.enqueue(encoder.encode("[LOG] Establishing secure connection to target...\n"));
+          
+          let pageSnippet = "";
+          let competitorSnippet = "";
+          
+          // Parallel fetching
+          const fetches = [];
+          
+          // 1. Fetch Main Target
           fetches.push(
             (async () => {
-              await writer.write(encoder.encode("[STATUS] Initializing multi-page deep crawl (50+ sub-pages)...\n"));
-              await writer.write(encoder.encode("[LOG] Extrapolating site-wide DOM structure patterns from sub-pages...\n"));
-              multiPageContext = `\n[MULTI-PAGE ANALYSIS ENABLED]: The auditor must identify systemic navigation and templating issues that propagate across all sub-pages. Treat findings in the header, footer, and navigation as critical systemic errors affecting 50+ pages.`;
-            })()
-          );
-        }
-        
-        // 3. Competitor Benchmark
-        if (competitorUrl && plan !== "free") {
-          fetches.push(
-            (async () => {
-              await writer.write(encoder.encode(`[STATUS] Fetching competitor benchmark data for ${competitorUrl}...\n`));
+              controller.enqueue(encoder.encode("[STATUS] Fetching main page HTML...\n"));
               const ctrl = new AbortController();
               setTimeout(() => ctrl.abort(), 15000);
               try {
-                const r = await fetch(competitorUrl, {
-                  headers: { "User-Agent": "Mozilla/5.0 Chrome/120.0.0.0 Safari/537.36 AccessAuditAI/2.0" },
+                const r = await fetch(url, {
+                  headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36 AccessAuditAI/2.0" },
                   signal: ctrl.signal,
                 });
                 const html = await r.text();
-                competitorSnippet = cleanHtml(html).slice(0, 15000); // 15k chars for competitor
-                await writer.write(encoder.encode(`[LOG] Competitor benchmark loaded successfully.\n`));
+                pageSnippet = cleanHtml(html).slice(0, 30000);
               } catch (e) {
-                competitorSnippet = `(Could not fetch competitor URL.)`;
+                pageSnippet = `(Could not fetch ${url}. Theoretical structural audit applied.)`;
               }
             })()
           );
-        }
-        
-        await Promise.all(fetches);
-        
-        await writer.write(encoder.encode(`[LOG] Parsing massive DOM structure (${pageSnippet.length} chars)...\n`));
-        
-        let userPrompt = `TARGET URL: ${url}\n\nTARGET HTML:\n${pageSnippet}${multiPageContext}`;
-        if (competitorSnippet) {
-          userPrompt += `\n\nCOMPETITOR URL: ${competitorUrl}\n\nCOMPETITOR HTML (for benchmarking):\n${competitorSnippet}`;
-        }
-        
-        const systemPrompt = `You are the Lead Engineer for an Elite Accessibility Audit platform. Perform a high-speed holistic diagnostic audit of the provided HTML across ALL 4 WCAG categories (Perceivable, Operable, Understandable, Robust).
+          
+          // 2. Multi-page Crawl
+          let multiPageContext = "";
+          if (multiPageCrawlEnabled && plan !== "free") {
+            fetches.push(
+              (async () => {
+                controller.enqueue(encoder.encode("[STATUS] Initializing multi-page deep crawl (50+ sub-pages)...\n"));
+                controller.enqueue(encoder.encode("[LOG] Extrapolating site-wide DOM structure patterns from sub-pages...\n"));
+                multiPageContext = `\n[MULTI-PAGE ANALYSIS ENABLED]: The auditor must identify systemic navigation and templating issues that propagate across all sub-pages. Treat findings in the header, footer, and navigation as critical systemic errors affecting 50+ pages.`;
+              })()
+            );
+          }
+          
+          // 3. Competitor Benchmark
+          if (competitorUrl && plan !== "free") {
+            fetches.push(
+              (async () => {
+                controller.enqueue(encoder.encode(`[STATUS] Fetching competitor benchmark data for ${competitorUrl}...\n`));
+                const ctrl = new AbortController();
+                setTimeout(() => ctrl.abort(), 15000);
+                try {
+                  const r = await fetch(competitorUrl, {
+                    headers: { "User-Agent": "Mozilla/5.0 Chrome/120.0.0.0 Safari/537.36 AccessAuditAI/2.0" },
+                    signal: ctrl.signal,
+                  });
+                  const html = await r.text();
+                  competitorSnippet = cleanHtml(html).slice(0, 15000);
+                  controller.enqueue(encoder.encode(`[LOG] Competitor benchmark loaded successfully.\n`));
+                } catch (e) {
+                  competitorSnippet = `(Could not fetch competitor URL.)`;
+                }
+              })()
+            );
+          }
+          
+          await Promise.all(fetches);
+          
+          controller.enqueue(encoder.encode(`[LOG] Parsing massive DOM structure (${pageSnippet.length} chars)...\n`));
+          
+          let userPrompt = `TARGET URL: ${url}\n\nTARGET HTML:\n${pageSnippet}${multiPageContext}`;
+          if (competitorSnippet) {
+            userPrompt += `\n\nCOMPETITOR URL: ${competitorUrl}\n\nCOMPETITOR HTML (for benchmarking):\n${competitorSnippet}`;
+          }
+          
+          const systemPrompt = `You are the Lead Engineer for an Elite Accessibility Audit platform. Perform a high-speed holistic diagnostic audit of the provided HTML across ALL 4 WCAG categories (Perceivable, Operable, Understandable, Robust).
 
 CRITICAL OPERATING RULES:
 1. HOLISTIC SCAN: Check all 4 WCAG categories simultaneously. Do NOT miss any. 
@@ -183,52 +181,51 @@ MANDATORY RULES:
 Stream your output line-by-line, then conclude with a SINGLE LINE of minified JSON matching this schema:
 {"summary":{"total_violations":number,"priority_distribution":{"Critical":number,"Serious":number,"Moderate":number,"Minor":number}},"violations":[{"id":"kebab-case","severity":"critical|serious|moderate|minor","name":"Title","wcag_criterion":"WCAG X.X.X","description":"Problem","element_affected":"selector","legal_impact":"exposure","fix_instructions":"fix","estimated_fix_time":"X hours","revenue_impact":"impact","fix_difficulty":"easy|medium|hard"}]}
 `;
-        
-        await writer.write(encoder.encode(`[STATUS] Executing holistic elite engine across 4 WCAG categories...\n`));
-        
-        const stream = await callGeminiStream(systemPrompt, userPrompt, apiKey);
-        const reader = stream.getReader();
-        const decoder = new TextDecoder();
-        
-        let jsonBuffer = "";
-        let jsonStarted = false;
-        
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
           
-          const chunk = decoder.decode(value, { stream: true });
+          controller.enqueue(encoder.encode(`[STATUS] Executing holistic elite engine across 4 WCAG categories...\n`));
           
-          if (jsonStarted) {
-            jsonBuffer += chunk;
-          } else if (chunk.includes("{")) {
-            const parts = chunk.split("{");
-            if (parts[0].trim()) {
-              await writer.write(encoder.encode(parts[0]));
+          const geminiStream = await callGeminiStream(systemPrompt, userPrompt, apiKey);
+          const reader = geminiStream.getReader();
+          const decoder = new TextDecoder();
+          
+          let jsonBuffer = "";
+          let jsonStarted = false;
+          
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            
+            const chunk = decoder.decode(value, { stream: true });
+            
+            if (jsonStarted) {
+              jsonBuffer += chunk;
+            } else if (chunk.includes("{")) {
+              const parts = chunk.split("{");
+              if (parts[0].trim()) {
+                controller.enqueue(encoder.encode(parts[0]));
+              }
+              jsonStarted = true;
+              jsonBuffer = "{" + parts.slice(1).join("{");
+            } else {
+              controller.enqueue(encoder.encode(chunk));
             }
-            jsonStarted = true;
-            jsonBuffer = "{" + parts.slice(1).join("{");
-          } else {
-            // Write normal logs out immediately
-            await writer.write(encoder.encode(chunk));
           }
+          
+          if (jsonBuffer) {
+            controller.enqueue(encoder.encode("\n" + jsonBuffer.replace(/\n/g, "") + "\n"));
+          }
+          
+          controller.close();
+          
+        } catch (error) {
+          console.error("Streaming error:", error);
+          controller.enqueue(encoder.encode(`[ERROR] ${error.message}\n`));
+          controller.close();
         }
-        
-        // Emit the final compacted JSON string on a single line
-        if (jsonBuffer) {
-           await writer.write(encoder.encode("\n" + jsonBuffer.replace(/\n/g, "") + "\n"));
-        }
-        
-        await writer.close();
-        
-      } catch (error) {
-        console.error("Streaming error:", error);
-        await writer.write(encoder.encode(`[ERROR] ${error.message}\n`));
-        await writer.close();
       }
-    })();
+    });
     
-    return new Response(readable, {
+    return new Response(stream, {
       headers: {
         ...CORS,
         "Content-Type": "text/plain",
