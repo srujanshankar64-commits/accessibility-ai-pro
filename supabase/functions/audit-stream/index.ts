@@ -85,7 +85,6 @@ Deno.serve(async (req) => {
     (async () => {
       try {
         await writer.write(encoder.encode("[LOG] Establishing secure connection to target...\n"));
-        await delay(150);
         
         let pageSnippet = "";
         let competitorSnippet = "";
@@ -118,7 +117,6 @@ Deno.serve(async (req) => {
           fetches.push(
             (async () => {
               await writer.write(encoder.encode("[STATUS] Initializing multi-page deep crawl (50+ sub-pages)...\n"));
-              await delay(200);
               await writer.write(encoder.encode("[LOG] Extrapolating site-wide DOM structure patterns from sub-pages...\n"));
               multiPageContext = `\n[MULTI-PAGE ANALYSIS ENABLED]: The auditor must identify systemic navigation and templating issues that propagate across all sub-pages. Treat findings in the header, footer, and navigation as critical systemic errors affecting 50+ pages.`;
             })()
@@ -163,8 +161,9 @@ CRITICAL OPERATING RULES:
 2. HEURISTIC SPEED: Identify the most critical accessibility patterns immediately.
 3. NO BALANCING QUOTAS: Report findings based on REAL occurrence in the code.
 4. EVIDENCE ANCHORING: Every finding must cite the specific CSS selector or tag ID found in the HTML snippet.
-${competitorUrl ? "5. COMPETITOR BENCHMARK: Since a competitor URL is provided, include a brief comparison analysis in the JSON output." : ""}
-${multiPageCrawlEnabled ? "6. MULTI-PAGE SYSTEMIC MODE: Treat structural flaws as systemic, impacting 50+ pages." : ""}
+5. TARGET VIOLATIONS: Aim for 70+ total violations across all categories combined. If fewer exist naturally, report all found. If more exist, prioritize the 70 most critical.
+${competitorUrl ? "6. COMPETITOR BENCHMARK: Since a competitor URL is provided, include a brief comparison analysis in the JSON output." : ""}
+${multiPageCrawlEnabled ? "7. MULTI-PAGE SYSTEMIC MODE: Treat structural flaws as systemic, impacting 50+ pages." : ""}
 
 EXECUTION PROTOCOL:
 - Output your internal progress line-by-line using ONLY these tags:
