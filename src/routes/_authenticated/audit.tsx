@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { runAudit, generateWebsitePitch, startAuditJob, processAuditJob, getAuditJobStatus } from "@/lib/ai.functions";
 import { supabase } from "@/integrations/supabase/client";
@@ -68,6 +68,11 @@ function NewAuditPage() {
   const [streamingMode, setStreamingMode] = useState(false);
   const [streamLogs, setStreamLogs] = useState<string[]>([]);
   const [streamingActive, setStreamingActive] = useState(false);
+  
+  // Refs to prevent re-render issues
+  const auditRunningRef = useRef(false);
+  const streamLogsRef = useRef<string[]>([]);
+  const hasStartedRef = useRef(false);
   
   // Async job state
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
@@ -224,6 +229,13 @@ function NewAuditPage() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!url) return;
+    
+    // Prevent audit restart if already running
+    if (auditRunningRef.current) {
+      console.log("Audit already running, ignoring submit");
+      return;
+    }
+    
     setLoading(true);
     setExpandedViolationId(null);
     setAuditState("INITIALIZING");
@@ -232,19 +244,25 @@ function NewAuditPage() {
     setLogMessages([]);
 
     if (streamingMode) {
+      if (auditRunningRef.current) return;
+      auditRunningRef.current = true;
+      
       setStreamingActive(true);
       setStreamLogs([]);
+      streamLogsRef.current = [];
+      
       try {
         const { data: settings } = await supabase.from("settings").select("gemini_api_key, plan").maybeSingle();
         const apiKey = (settings as any)?.gemini_api_key;
         const userPlan = (settings as any)?.plan || "free";
 
-        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || supabase.supabaseUrl;
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+        const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
         const response = await fetch(`${supabaseUrl}/functions/v1/audit-stream`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "Authorization": `Bearer ${supabase.supabaseKey}`,
+            "Authorization": `Bearer ${supabaseKey}`,
           },
           body: JSON.stringify({ url, apiKey, plan: userPlan, multiPageCrawlEnabled, competitorUrl }),
         });
@@ -261,6 +279,8 @@ function NewAuditPage() {
         let buffer = "";
         let jsonBuffer = "";
         let jsonStarted = false;
+        let bufferedViolations: any[] = [];
+        let finalSummary: any = null;
 
         while (true) {
           const { done, value } = await reader.read();
@@ -270,26 +290,35 @@ function NewAuditPage() {
               try {
                 const finalJson = JSON.parse(buffer.trim());
                 if (finalJson.summary && finalJson.violations) {
-                  const score = Math.max(0, 100 - (finalJson.summary.total_violations * 1.5));
-                  setAudit({ violations: finalJson.violations, overall_score: Math.round(score) });
-                  setProgress(100);
-                  setAuditState("COMPLETED");
-                  setStreamingActive(false);
-                  setLoading(false);
-                  setUsed((u) => u + 1);
-                  toast.success(`Elite-Stream audit complete — ${finalJson.summary.total_violations} violations found (Critical: ${finalJson.summary.priority_distribution.Critical}, Serious: ${finalJson.summary.priority_distribution.Serious})`);
-                  loadRecent();
+                  finalSummary = finalJson.summary;
+                  bufferedViolations = finalJson.violations;
                 }
               } catch (e) {
                 // Not JSON, just add as final log line
                 if (buffer.trim()) {
-                  setStreamLogs((prev) => [...prev, buffer.trim()]);
+                  streamLogsRef.current.push(buffer.trim());
+                  setStreamLogs([...streamLogsRef.current]);
                 }
               }
             }
+            
+            // Only setState once after stream completes
+            if (finalSummary && bufferedViolations.length > 0) {
+              const score = Math.max(0, 100 - (finalSummary.total_violations * 1.5));
+              setAudit({ violations: bufferedViolations, overall_score: Math.round(score) });
+              setProgress(100);
+              setAuditState("COMPLETED");
+              setStreamingActive(false);
+              setLoading(false);
+              setUsed((u) => u + 1);
+              toast.success(`Elite-Stream audit complete — ${finalSummary.total_violations} violations found (Critical: ${finalSummary.priority_distribution.Critical}, Serious: ${finalSummary.priority_distribution.Serious})`);
+              loadRecent();
+            }
+            
             // Gracefully transition to completed state
             setStreamingActive(false);
             setLoading(false);
+            auditRunningRef.current = false;
             break;
           }
 
@@ -301,21 +330,16 @@ function NewAuditPage() {
 
           for (const line of lines) {
             if (line.trim()) {
-              setStreamLogs((prev) => [...prev, line]);
+              streamLogsRef.current.push(line);
+              setStreamLogs([...streamLogsRef.current]);
 
               if (line.trim().startsWith("{") && line.trim().endsWith("}")) {
                 try {
                   const json = JSON.parse(line.trim());
                   if (json.summary && json.violations) {
-                    const score = Math.max(0, 100 - (json.summary.total_violations * 1.5));
-                    setAudit({ violations: json.violations, overall_score: Math.round(score) });
-                    setProgress(100);
-                    setAuditState("COMPLETED");
-                    setStreamingActive(false);
-                    setLoading(false);
-                    setUsed((u) => u + 1);
-                    toast.success(`Elite-Stream audit complete — ${json.summary.total_violations} violations found (Critical: ${json.summary.priority_distribution.Critical}, Serious: ${json.summary.priority_distribution.Serious})`);
-                    loadRecent();
+                    // Buffer findings instead of setting state immediately
+                    finalSummary = json.summary;
+                    bufferedViolations = json.violations;
                   }
                 } catch (e) {
                   // Not final JSON
@@ -330,6 +354,7 @@ function NewAuditPage() {
         setStreamingActive(false);
         setLoading(false);
         setAuditState("IDLE");
+        auditRunningRef.current = false;
       }
       return;
     }
