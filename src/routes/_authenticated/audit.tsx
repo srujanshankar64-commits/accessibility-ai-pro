@@ -240,14 +240,26 @@ function NewAuditPage() {
         const apiKey = (settings as any)?.gemini_api_key;
         const userPlan = (settings as any)?.plan || "free";
 
-        const response = await supabase.functions.invoke("audit-stream", {
-          body: { url, apiKey, plan: userPlan, multiPageCrawlEnabled, competitorUrl },
+        const { data: { session } } = await supabase.auth.getSession();
+        const functionUrl = 'https://zkpwpumjacihcjisshod.supabase.co/functions/v1/audit-stream';
+        const fallbackKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InprcHdwdW1qYWNpaGNqaXNzaG9kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA5Nzg0MzQsImV4cCI6MjA5NjU1NDQzNH0.rYeMGFBJmK55Ygva1wi_Dcg0Xv2MXTCzujP3LGAazhw';
+        
+        const response = await fetch(functionUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session?.access_token || fallbackKey}`
+          },
+          body: JSON.stringify({ url, apiKey, plan: userPlan, multiPageCrawlEnabled, competitorUrl })
         });
 
-        if (response.error) throw new Error(response.error.message);
+        if (!response.ok) {
+           const errText = await response.text();
+           throw new Error(errText);
+        }
 
         // Handle streaming response
-        const reader = response.data?.body?.getReader();
+        const reader = response.body?.getReader();
         if (!reader) throw new Error("No stream reader available");
 
         const decoder = new TextDecoder();
