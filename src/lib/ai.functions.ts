@@ -291,19 +291,14 @@ const plan = getPlan(settings?.plan, 'srujanshankar64@gmail.com');
 
     const system = `You are a senior WCAG 2.1 AA accessibility auditor with 10 years of experience. Your audits are used by digital agencies to sell remediation services to corporate entities.
 
-Your job is to produce an EXHAUSTIVE and REALISTIC audit. You MUST find and report every violation present. Do NOT be conservative.
+Your job is to produce an EXHAUSTIVE and REALISTIC audit. Return all violations found.
 
-MANDATORY VOLUME RULES — NON-NEGOTIABLE:
-- You MUST return a MINIMUM of 26 violations. This is a hard floor. If you find fewer than 26, you are not looking hard enough. Keep digging.
-- EVERY INSTANCE is a separate violation. 10 images missing alt text = 10 violations. 15 buttons with contrast issues = 15 violations. 8 links with vague text = 8 violations. Never group them.
-- Be EXTREMELY specific in element_affected. Name the exact HTML element, CSS class, ID, aria attribute, or page location. Example: "button.nav-cta#hero-signup" not just "button".
-- Check ALL 4 WCAG categories exhaustively. Enterprise sites like this ALWAYS have 50-100+ violations across Perceivable, Operable, Understandable, and Robust.
-- If you reach 26 violations and there are more, KEEP GOING. There is no upper limit. Report everything you find.
-- NEVER stop at 20-30 violations. That is a failure. The minimum is 26.
-- For every interactive element (buttons, links, inputs, forms, modals, dropdowns, carousels, tabs, accordions) — check EVERY WCAG criterion against it.
+RULES:
+- EVERY INSTANCE is a separate violation.
+- Be EXTREMELY specific in element_affected. Name the exact HTML element, CSS class, ID, aria attribute, or page location.
+- Check ALL 4 WCAG categories exhaustively.
+- For every interactive element — check EVERY WCAG criterion against it.
 - Mobile violations are SEPARATE from desktop violations. List each mobile issue individually.
-- ELITE MODE: You are in elite audit mode. Be hyper-detailed. Check meta tags, favicon, robots.txt, sitemap.xml, structured data, Open Graph, Twitter Cards, canonical tags, hreflang, viewport settings, and ALL accessibility attributes.
-- Check for: missing skip links, missing breadcrumbs, missing breadcrumbs ARIA, missing search functionality accessibility, missing pagination accessibility, missing table headers, missing table captions, missing form labels, missing fieldset/legend, missing button labels, missing link context, missing image alt text, missing video captions, missing audio transcripts, missing color contrast, missing focus indicators, missing keyboard navigation, missing ARIA landmarks, missing ARIA labels, missing ARIA descriptions, missing ARIA roles, missing ARIA states, missing ARIA properties.
 - Each individual instance of each issue MUST be a separate violation entry.
 
 SEVERITY ESCALATION RULES:
@@ -438,7 +433,7 @@ SCORING RULES:
 - overall_score = sum of all four category scores (max 100).
 
 CRITICAL INSTRUCTION FOR VIOLATIONS ARRAY:
-DO NOT artificially limit or paginate the violations array to 12 or 15 items. If there are 50, 100, or multiple instances of the same bug across different elements (e.g., 40 distinct color contrast failures on individual buttons, missing alt text on dozens of images), you MUST loop through the entire page snippet and aggregate ALL of them. The final JSON array must contain a full, deep inventory of every single detected flaw to demonstrate massive diagnostic value.
+Return a comprehensive list of violations. Make sure to capture as many real issues as possible to provide a thorough audit.
 
 ` + (includeCodeFixes
   ? `For each violation, include a "code_fix" field with the exact HTML/CSS/JavaScript code snippet that fixes the issue. Make it copy-paste ready for a developer.`
@@ -478,26 +473,6 @@ Return ONLY valid JSON with EXACTLY this schema:
     const result = parseJSON(raw);
 
     let allViolations = result.violations ?? [];
-    
-    // Elite validation: Ensure minimum violations for paid tiers
-    if (plan !== "free" && allViolations.length < violationLimit) {
-      console.warn(`[runAudit] Only ${allViolations.length} violations found, below ${violationLimit} minimum. Retrying with enhanced prompt...`);
-      
-      // Retry with stronger prompt
-      const enhancedSystem = system.replace(
-        'MANDATORY VOLUME RULES — NON-NEGOTIABLE:',
-        'CRITICAL: YOU MUST FIND AT LEAST 26 VIOLATIONS. MANDATORY VOLUME RULES — NON-NEGOTIABLE:'
-      ).replace(
-        '- You MUST return a MINIMUM of 26 violations.',
-        '- You MUST return a MINIMUM of 26 violations. THIS IS NOT NEGOTIABLE. If you return fewer than 26, the audit is FAILED.'
-      );
-      
-      const retryRaw = await callGemini(enhancedSystem, userPrompt + "\n\nCRITICAL: You must find at least 26 violations. Be exhaustive. Check every single element.", settings?.gemini_api_key);
-      const retryResult = parseJSON(retryRaw);
-      allViolations = retryResult.violations ?? [];
-      
-      console.log(`[runAudit] Retry returned ${allViolations.length} violations`);
-    }
     
     // Final validation
     if (allViolations.length === 0) {
