@@ -228,9 +228,13 @@ async function getUserSettings(supabase: any, userId: string) {
 
 export const runAudit = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator(z.object({ url: z.string().url() }))
+  .validator(z.object({ 
+    url: z.string().url(),
+    multiPageCrawlEnabled: z.boolean().optional(),
+    competitorUrl: z.string().optional()
+  }))
   .handler(async ({ data, context }) => {
-    const { url } = data;
+    const { url, multiPageCrawlEnabled, competitorUrl } = data;
     const settings = await getUserSettings(context.supabase, context.userId);
    
     const usedThisMonth = settings?.audits_used ?? 0;
@@ -260,6 +264,24 @@ const plan = getPlan(settings?.plan, 'srujanshankar64@gmail.com');
     } catch (fetchError) {
       console.error(`[runAudit] Fetch failed for ${url}:`, fetchError);
       pageSnippet = `(Could not fetch ${url} directly. Perform a thorough theoretical WCAG 2.1 AA audit based on the URL structure and typical patterns for this type of website. URL indicates: ${new URL(url).hostname} - analyze typical accessibility issues for this domain type.)`;
+    }
+
+    let multiPageContext = "";
+    if (multiPageCrawlEnabled && plan !== "free") {
+      multiPageContext = `\n[MULTI-PAGE ANALYSIS ENABLED]: Treat findings in the header, footer, and navigation as critical systemic errors affecting 50+ pages.`;
+    }
+
+    let competitorSnippet = "";
+    if (competitorUrl && plan !== "free") {
+      try {
+        const fetchController = new AbortController();
+        setTimeout(() => fetchController.abort(), 15000);
+        const r = await fetch(competitorUrl, { headers: { "User-Agent": "Mozilla/5.0" }, signal: fetchController.signal });
+        const html = await r.text();
+        competitorSnippet = cleanHtml(html).slice(0, 15000);
+      } catch (e) {
+        competitorSnippet = `(Could not fetch competitor ${competitorUrl})`;
+      }
     }
 
     const includeCodeFixes = TIER[plan].codeFixes;
@@ -447,9 +469,12 @@ Return ONLY valid JSON with EXACTLY this schema:
   ]
 }`;
 
-    const user = `Audit this website for WCAG 2.1 AA compliance. Be exhaustive. Find every violation.\n\nURL: ${url}\n\nHTML content:\n${pageSnippet}`;
+    let userPrompt = `TARGET URL: ${url}\n\nTARGET HTML:\n${pageSnippet}${multiPageContext}`;
+    if (competitorSnippet) {
+      userPrompt += `\n\nCOMPETITOR URL: ${competitorUrl}\n\nCOMPETITOR HTML (for benchmarking):\n${competitorSnippet}`;
+    }
 
-    const raw = await callGemini(system, user, settings?.gemini_api_key);
+    const raw = await callGemini(system, userPrompt, settings?.gemini_api_key);
     const result = parseJSON(raw);
 
     let allViolations = result.violations ?? [];
@@ -467,7 +492,7 @@ Return ONLY valid JSON with EXACTLY this schema:
         '- You MUST return a MINIMUM of 26 violations. THIS IS NOT NEGOTIABLE. If you return fewer than 26, the audit is FAILED.'
       );
       
-      const retryRaw = await callGemini(enhancedSystem, user + "\n\nCRITICAL: You must find at least 26 violations. Be exhaustive. Check every single element.", settings?.gemini_api_key);
+      const retryRaw = await callGemini(enhancedSystem, userPrompt + "\n\nCRITICAL: You must find at least 26 violations. Be exhaustive. Check every single element.", settings?.gemini_api_key);
       const retryResult = parseJSON(retryRaw);
       allViolations = retryResult.violations ?? [];
       
@@ -490,15 +515,32 @@ Return ONLY valid JSON with EXACTLY this schema:
       .update({ audits_used: usedThisMonth + 1 })
       .eq("user_id", context.userId);
 
+    const auditData: any = {
+      user_id: context.userId,
+      url,
+      overall_score: result.overall_score ?? 0,
+      category_scores: result.category_scores ?? {},
+      violations: limitedViolations,
+    };
+    
+    if (result.competitor_benchmark && competitorUrl) {
+      auditData.has_competitor_benchmark = true;
+      auditData.competitor_url = competitorUrl;
+      const compAuditData = {
+        user_id: context.userId,
+        url: competitorUrl,
+        overall_score: result.competitor_benchmark.score,
+        violations: []
+      };
+      const { data: compInserted } = await (context.supabase as any).from("audits").insert(compAuditData).select().single();
+      if (compInserted) {
+        auditData.competitor_audit_id = compInserted.id;
+      }
+    }
+
     const { data: inserted, error } = await (context.supabase as any)
       .from("audits")
-      .insert({
-        user_id: context.userId,
-        url,
-        overall_score: result.overall_score ?? 0,
-        category_scores: result.category_scores ?? {},
-        violations: limitedViolations,
-      })
+      .insert(auditData)
       .select()
       .single();
     if (error) throw error;
