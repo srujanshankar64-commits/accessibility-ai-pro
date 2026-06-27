@@ -234,10 +234,13 @@ Stream your output line-by-line, then conclude with a SINGLE LINE of minified JS
     });
     
   } catch (error) {
-    console.error("Audit stream error:", error);
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
-      headers: { ...CORS, "Content-Type": "application/json" },
-    });
+    console.error("Edge Function Error:", error);
+    return new Response(
+      JSON.stringify({ error: error.message || String(error) }),
+      { 
+        status: 400, 
+        headers: { ...CORS, "Content-Type": "application/json" } 
+      }
+    );
   }
 });

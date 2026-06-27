@@ -239,18 +239,22 @@ function NewAuditPage() {
         const apiKey = (settings as any)?.gemini_api_key;
         const userPlan = (settings as any)?.plan || "free";
 
-        const response = await supabase.functions.invoke("audit-stream", {
-          body: { url, apiKey, plan: userPlan, multiPageCrawlEnabled, competitorUrl },
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || supabase.supabaseUrl;
+        const response = await fetch(`${supabaseUrl}/functions/v1/audit-stream`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${supabase.supabaseKey}`,
+          },
+          body: JSON.stringify({ url, apiKey, plan: userPlan, multiPageCrawlEnabled, competitorUrl }),
         });
 
-        if (response.error) {
-          if (response.error.message?.includes("404") || response.error.message?.includes("not found")) {
-            throw new Error("Elite-Stream Edge Function not deployed. Please deploy audit-stream function first.");
-          }
-          throw new Error(response.error.message);
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || `Server returned status ${response.status}`);
         }
 
-        const reader = response.data?.body?.getReader();
+        const reader = response.body?.getReader();
         if (!reader) throw new Error("No stream reader available - Edge Function returned invalid response");
 
         const decoder = new TextDecoder();
