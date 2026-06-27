@@ -256,7 +256,7 @@ function NewAuditPage() {
         const apiKey = (settings as any)?.gemini_api_key;
         const userPlan = (settings as any)?.plan || "free";
 
-        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "https://zkpwpumjacihcjisshod.supabase.co";
         const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
         const response = await fetch(`${supabaseUrl}/functions/v1/audit-stream`, {
           method: "POST",
