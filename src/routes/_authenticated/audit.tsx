@@ -264,7 +264,34 @@ function NewAuditPage() {
 
         while (true) {
           const { done, value } = await reader.read();
-          if (done) break;
+          if (done) {
+            // Process any remaining buffer before closing
+            if (buffer.trim()) {
+              try {
+                const finalJson = JSON.parse(buffer.trim());
+                if (finalJson.summary && finalJson.violations) {
+                  const score = Math.max(0, 100 - (finalJson.summary.total_violations * 1.5));
+                  setAudit({ violations: finalJson.violations, overall_score: Math.round(score) });
+                  setProgress(100);
+                  setAuditState("COMPLETED");
+                  setStreamingActive(false);
+                  setLoading(false);
+                  setUsed((u) => u + 1);
+                  toast.success(`Elite-Stream audit complete — ${finalJson.summary.total_violations} violations found (Critical: ${finalJson.summary.priority_distribution.Critical}, Serious: ${finalJson.summary.priority_distribution.Serious})`);
+                  loadRecent();
+                }
+              } catch (e) {
+                // Not JSON, just add as final log line
+                if (buffer.trim()) {
+                  setStreamLogs((prev) => [...prev, buffer.trim()]);
+                }
+              }
+            }
+            // Gracefully transition to completed state
+            setStreamingActive(false);
+            setLoading(false);
+            break;
+          }
 
           const chunk = decoder.decode(value, { stream: true });
           buffer += chunk;
@@ -297,9 +324,6 @@ function NewAuditPage() {
             }
           }
         }
-
-        setStreamingActive(false);
-        setLoading(false);
       } catch (err: any) {
         console.error("Streaming audit failed:", err);
         toast.error(err?.message || "Streaming audit failed");
