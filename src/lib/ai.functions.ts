@@ -846,306 +846,127 @@ export const processAuditJob = createServerFn({ method: "POST" })
   .inputValidator(z.object({ jobId: z.string().uuid() }))
   .handler(async ({ data, context }) => {
     const { jobId } = data;
-    
-    // Update job status to processing
-    await (context.supabase as any)
+    const sb = context.supabase as any;
+
+    // Append a structured entry to progress_log (real-time visible via realtime channel)
+    const appendLog = async (
+      message: string,
+      status: "running" | "failed" | "completed" = "running",
+      extras: Record<string, any> = {},
+    ) => {
+      try {
+        const { data: row } = await sb
+          .from("audit_jobs")
+          .select("progress_log")
+          .eq("id", jobId)
+          .single();
+        const existing = Array.isArray(row?.progress_log) ? row.progress_log : [];
+        const next = [
+          ...existing,
+          { timestamp: new Date().toISOString(), status, message },
+        ];
+        await sb.from("audit_jobs").update({ progress_log: next, ...extras }).eq("id", jobId);
+      } catch (e) {
+        console.error("[processAuditJob] appendLog failed:", e);
+      }
+    };
+
+    await sb
       .from("audit_jobs")
-      .update({ 
-        status: 'processing',
-        progress_percent: 5,
-        current_step: 'Fetching website content...'
-      })
-      .eq('id', jobId);
-    
+      .update({ status: "processing", progress_percent: 5, current_step: "Fetching website content..." })
+      .eq("id", jobId);
+    await appendLog("Job started — fetching target URL");
+
     try {
-      // Fetch job details
-      const { data: job } = await (context.supabase as any)
-        .from("audit_jobs")
-        .select('*')
-        .eq('id', jobId)
-        .single();
-      
+      const { data: job } = await sb.from("audit_jobs").select("*").eq("id", jobId).single();
       if (!job) throw new Error("Job not found");
-      
+
       const settings = await getUserSettings(context.supabase, context.userId);
-      const plan = getPlan(settings?.plan, 'srujanshankar64@gmail.com');
-      
-      // Fetch HTML
+      const plan = getPlan(settings?.plan, "srujanshankar64@gmail.com");
+
+      // Fetch HTML with hard 15s timeout so we never stall
       let pageSnippet = "";
-      await (context.supabase as any)
-        .from("audit_jobs")
-        .update({ 
-          progress_percent: 15,
-          current_step: 'Parsing HTML structure...'
-        })
-        .eq('id', jobId);
-      
       try {
         const fetchController = new AbortController();
-        setTimeout(() => fetchController.abort(), 20000);
+        const t = setTimeout(() => fetchController.abort(), 15000);
         const r = await fetch(job.url, {
-          headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 AccessAuditAI/2.0 (WCAG Compliance Scanner)" },
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 AccessAuditAI/2.0",
+          },
           signal: fetchController.signal,
         });
+        clearTimeout(t);
         const html = await r.text();
-        const cleanedHtml = cleanHtml(html);
-        pageSnippet = cleanedHtml.slice(0, 35000);
-        console.log(`[processAuditJob] Fetched ${html.length} chars, using ${pageSnippet.length}`);
-      } catch (fetchError) {
-        console.error(`[processAuditJob] Fetch failed:`, fetchError);
-        pageSnippet = `(Could not fetch ${job.url} directly. Perform a thorough theoretical WCAG 2.1 AA audit based on the URL structure and typical patterns for this type of website. URL indicates: ${new URL(job.url).hostname} - analyze typical accessibility issues for this domain type.)`;
-      }
-      
-      await (context.supabase as any)
-        .from("audit_jobs")
-        .update({ 
+        pageSnippet = cleanHtml(html).slice(0, 35000);
+        await appendLog(`Fetched ${html.length} bytes — parsing HTML`, "running", {
           progress_percent: 25,
-          current_step: 'Analyzing WCAG criteria...'
-        })
-        .eq('id', jobId);
-      
+          current_step: "Parsing HTML structure...",
+        });
+      } catch (fetchError) {
+        console.error("[processAuditJob] Fetch failed:", fetchError);
+        pageSnippet = `(Could not fetch ${job.url} directly. Perform a thorough theoretical WCAG 2.1 AA audit for hostname ${new URL(job.url).hostname}.)`;
+        await appendLog("Direct fetch failed — falling back to heuristic audit", "running", {
+          progress_percent: 25,
+          current_step: "Heuristic fallback...",
+        });
+      }
+
+      await appendLog("Running WCAG 2.1 AA analysis (AI)", "running", {
+        progress_percent: 50,
+        current_step: "Analyzing WCAG criteria...",
+      });
+
       const includeCodeFixes = TIER[plan].codeFixes;
-      const system = `You are a senior WCAG 2.1 AA accessibility auditor with 10 years of experience. Your audits are used by digital agencies to sell remediation services to corporate entities.
-
-Your job is to produce an EXHAUSTIVE and REALISTIC audit. You MUST find and report every violation present. Do NOT be conservative.
-
-MANDATORY VOLUME RULES — NON-NEGOTIABLE:
-- You MUST return a MINIMUM of 26 violations. This is a hard floor. If you find fewer than 26, you are not looking hard enough. Keep digging.
-- EVERY INSTANCE is a separate violation. 10 images missing alt text = 10 violations. 15 buttons with contrast issues = 15 violations. 8 links with vague text = 8 violations. Never group them.
-- Be EXTREMELY specific in element_affected. Name the exact HTML element, CSS class, ID, aria attribute, or page location. Example: "button.nav-cta#hero-signup" not just "button".
-- Check ALL 4 WCAG categories exhaustively. Enterprise sites like this ALWAYS have 50-100+ violations across Perceivable, Operable, Understandable, and Robust.
-- If you reach 26 violations and there are more, KEEP GOING. There is no upper limit. Report everything you find.
-- NEVER stop at 20-30 violations. That is a failure. The minimum is 26.
-- For every interactive element (buttons, links, inputs, forms, modals, dropdowns, carousels, tabs, accordions) — check EVERY WCAG criterion against it.
-- Mobile violations are SEPARATE from desktop violations. List each mobile issue individually.
-- ELITE MODE: You are in elite audit mode. Be hyper-detailed. Check meta tags, favicon, robots.txt, sitemap.xml, structured data, Open Graph, Twitter Cards, canonical tags, hreflang, viewport settings, and ALL accessibility attributes.
-- Check for: missing skip links, missing breadcrumbs, missing breadcrumbs ARIA, missing search functionality accessibility, missing pagination accessibility, missing table headers, missing table captions, missing form labels, missing fieldset/legend, missing button labels, missing link context, missing image alt text, missing video captions, missing audio transcripts, missing color contrast, missing focus indicators, missing keyboard navigation, missing ARIA landmarks, missing ARIA labels, missing ARIA descriptions, missing ARIA roles, missing ARIA states, missing ARIA properties.
-- Each individual instance of each issue MUST be a separate violation entry.
-
-SEVERITY ESCALATION RULES:
-- Any violation with direct legal exposure (missing alt text, missing labels, contrast failures on CTAs) MUST be rated critical or serious. Never rate legally-exposed violations as moderate or minor.
-- If a violation affects a transactional element (button, form, checkout, CTA) escalate severity by one level automatically.
-
-ADDITIONAL REQUIRED FIELDS PER VIOLATION:
-- "revenue_impact": "Estimate how this specific violation affects conversions or excludes users. Example: 8-12% of visually impaired users cannot complete this interaction, representing significant lost revenue potential."
-- "fix_difficulty": "easy" | "medium" | "hard" — easy = under 1 hour, medium = 1-4 hours, hard = 4+ hours or requires architectural change.
-
-MOBILE-SPECIFIC AUDIT (run separately and add as additional violations):
-After completing the desktop audit, run a dedicated mobile check for:
-- Touch targets smaller than 44x44px on all interactive elements
-- Viewport meta tag missing or incorrectly configured
-- Font sizes below 16px on body text causing readability issues
-- Horizontal scroll triggered on mobile viewports
-- Pinch-to-zoom disabled via user-scalable=no
-- Tap targets too close together (less than 8px spacing)
-- Mobile keyboard not triggering correct input types
-Report each mobile violation as a separate entry with element_affected prefixed with [MOBILE].
-
-COMPETITIVE BENCHMARK:
-In the overall audit result, add a field:
-"industry_benchmark": "The average WCAG compliance score across audited platforms in this industry is 71/100. This site scores X/100 — placing it below the industry average and at competitive disadvantage."
-
-RETURN SCHEMA UPDATE — add these fields to each violation object:
-"revenue_impact": string,
-"fix_difficulty": "easy" | "medium" | "hard"
-
-SYSTEMIC ISSUE DETECTION:
-After listing all violations, analyze patterns. If the same violation type appears 3+ times, flag it as systemic. Add a top-level field to the JSON:
-"systemic_issues": [
-  {
-    "pattern": "Short name of the pattern",
-    "count": number,
-    "description": "This indicates a design system level problem, not isolated fixes. Requires a full design audit.",
-    "impact": "High/Medium/Low"
-  }
-]
-
-URGENCY SCORE:
-Add a top-level field:
-"urgency_score": number between 1-10. Calculate based on: number of critical violations (each = +1.5), jurisdiction deadline proximity (.com.au +2, .com +1.5, .co.uk +1), total violations above 20 (+1). Cap at 10. Add "urgency_reason": one sentence explaining the score.
-
-SCREENSHOT SELECTORS:
-Add to each violation object:
-"screenshot_selector": "The exact CSS selector or XPath of the affected element for automated screenshot capture. Example: button#submit, .nav-menu a, input[type=email]"
-
-SCORE TREND PREDICTION:
-Add top-level field:
-"score_prediction": {
-  "current": number,
-  "projected_after_remediation": number (always between 91-97),
-  "timeline": "4 weeks",
-  "trend_without_remediation": "Projected to decline as browser accessibility enforcement increases"
-}
-
-DEV HOURS BREAKDOWN:
-Add top-level field:
-"hours_breakdown": {
-  "critical_fixes": number,
-  "serious_fixes": number,
-  "mobile_fixes": number,
-  "testing_and_certification": 2,
-  "total": number
-}
-Calculate each category from the violations estimated_fix_time fields.
-
-ARIA WIDGET DEEP AUDIT:
-Specifically audit every interactive widget found on the page:
-- Modals/dialogs: missing role=dialog, aria-modal, aria-labelledby, focus trap
-- Dropdowns/selects: missing aria-expanded, aria-haspopup, keyboard arrow navigation
-- Carousels/sliders: missing aria-live, aria-label, prev/next button labels
-- Tabs: missing role=tablist, role=tab, aria-selected, aria-controls
-- Tooltips: missing role=tooltip, aria-describedby
-- Accordions: missing aria-expanded, aria-controls on triggers
-Each missing ARIA attribute on each widget = a SEPARATE violation entry.
-
-UPDATED RETURN SCHEMA — top level JSON must include:
-"overall_score": number,
-"category_scores": object,
-"violations": array,
-"systemic_issues": array,
-"urgency_score": number,
-"urgency_reason": string,
-"score_prediction": object,
-"hours_breakdown": object,
-"industry_benchmark": string
-
-MANDATORY CHECKS:
-
-PERCEIVABLE (score out of 25):
-1. Images missing alt attributes or with empty/meaningless alt text (WCAG 1.1.1)
-2. Videos or audio missing captions or transcripts (WCAG 1.2.1, 1.2.2)
-3. Text with insufficient color contrast ratio below 4.5:1 (WCAG 1.4.3)
-4. UI components with insufficient contrast (WCAG 1.4.11)
-5. Information conveyed by color alone (WCAG 1.4.1)
-6. Text that cannot be resized up to 200% (WCAG 1.4.4)
-7. Content that breaks on small viewports (WCAG 1.4.10)
-8. Missing prefers-reduced-motion support (WCAG 2.3.3)
-
-OPERABLE (score out of 25):
-9. Interactive elements not reachable by keyboard (WCAG 2.1.1)
-10. Illogical focus order (WCAG 2.4.3)
-11. Missing or weak focus indicator (WCAG 2.4.7)
-12. No skip navigation link (WCAG 2.4.1)
-13. Links with vague text like "click here" or "read more" (WCAG 2.4.6)
-14. Touch targets smaller than 44x44px (WCAG 2.5.5)
-15. Keyboard traps (WCAG 2.1.2)
-16. Auto-playing media with no pause control (WCAG 2.2.2)
-17. Session timeouts with no warning (WCAG 2.2.1)
-
-UNDERSTANDABLE (score out of 25):
-18. Missing lang attribute on HTML element (WCAG 3.1.1)
-19. Form inputs without associated labels (WCAG 1.3.1, 3.3.2)
-20. Form validation errors not described in text (WCAG 3.3.1)
-21. Instructions relying solely on sensory characteristics (WCAG 1.3.3)
-22. Inconsistent navigation across pages (WCAG 3.2.3)
-23. Unexplained abbreviations or jargon (WCAG 3.1.5)
-
-ROBUST (score out of 25):
-24. Missing or incorrect ARIA roles (WCAG 4.1.2)
-25. Missing ARIA landmark regions (WCAG 1.3.6)
-26. Broken or invalid HTML structure (WCAG 4.1.1)
-27. Missing or empty page title (WCAG 2.4.2)
-28. Incorrect heading hierarchy (WCAG 1.3.1)
-29. Custom widgets without keyboard or ARIA support (WCAG 4.1.2)
-30. iFrames without title attributes (WCAG 4.1.2)
-
-SCORING RULES:
-- Start each category at 25. Subtract per violation: Critical = 6-8pts, Serious = 3-5pts, Moderate = 2-3pts, Minor = 1pt.
-- overall_score = sum of all four category scores (max 100).
-
-CRITICAL INSTRUCTION FOR VIOLATIONS ARRAY:
-DO NOT artificially limit or paginate the violations array to 12 or 15 items. If there are 50, 100, or multiple instances of the same bug across different elements (e.g., 40 distinct color contrast failures on individual buttons, missing alt text on dozens of images), you MUST loop through the entire page snippet and aggregate ALL of them. The final JSON array must contain a full, deep inventory of every single detected flaw to demonstrate massive diagnostic value.
-
-` + (includeCodeFixes
-  ? `For each violation, include a "code_fix" field with the exact HTML/CSS/JavaScript code snippet that fixes the issue. Make it copy-paste ready for a developer.`
-  : `Do NOT include a "code_fix" field in the output.`) + `
-
-Return ONLY valid JSON with EXACTLY this schema:
+      const system = `You are a senior WCAG 2.1 AA accessibility auditor. Return ONLY valid JSON matching this schema:
 {
   "overall_score": number,
-  "category_scores": {
-    "perceivable": number,
-    "operable": number,
-    "understandable": number,
-    "robust": number
-  },
+  "category_scores": { "perceivable": number, "operable": number, "understandable": number, "robust": number },
   "violations": [
     {
       "id": "kebab-case-id",
       "severity": "critical" | "serious" | "moderate" | "minor",
       "name": "Short descriptive title",
       "wcag_criterion": "WCAG X.X.X",
-      "description": "Plain English explanation of the exact problem",
-      "element_affected": "Specific element or area affected",
-      "legal_impact": "Specific legal exposure under EU EAA, ADA, AODA, UK Equality Act",
-      "fix_instructions": "Concrete plain-English fix description",
-      "estimated_fix_time": "X hours"` + (includeCodeFixes ? `,
-      "code_fix": "exact code snippet"` : "") + `
+      "description": "Plain English explanation",
+      "element_affected": "Specific element or area",
+      "legal_impact": "Legal exposure under EAA/ADA/AODA/UK Equality Act",
+      "fix_instructions": "Concrete plain-English fix",
+      "estimated_fix_time": "X hours",
+      "revenue_impact": "How this affects conversions",
+      "fix_difficulty": "easy" | "medium" | "hard"${includeCodeFixes ? `,\n      "code_fix": "exact code snippet"` : ""}
     }
   ]
-}`;
+}
+Rules:
+- Find every violation. Every instance is a separate entry. Aim for 26+ on real sites.
+- Be specific in element_affected (tag + class/id when possible).
+- ${includeCodeFixes ? "Include copy-paste ready code_fix." : "Do NOT include code_fix."}
+- Return ONLY JSON, no prose.`;
 
-      await (context.supabase as any)
-        .from("audit_jobs")
-        .update({ 
-          progress_percent: 50,
-          current_step: 'Running AI analysis...'
-        })
-        .eq('id', jobId);
-      
-      const user = `Audit this website for WCAG 2.1 AA compliance. Be exhaustive. Find every violation.\n\nURL: ${job.url}\n\nHTML content:\n${pageSnippet}`;
-      
+      const user = `Audit this website for WCAG 2.1 AA compliance. Be exhaustive.\n\nURL: ${job.url}\n\nHTML content:\n${pageSnippet}`;
+
       const raw = await callGemini(system, user, settings?.gemini_api_key);
       const result = parseJSON(raw);
-      
-      await (context.supabase as any)
-        .from("audit_jobs")
-        .update({ 
-          progress_percent: 75,
-          current_step: 'Processing results...'
-        })
-        .eq('id', jobId);
-      
+
+      await appendLog("Processing results and scoring", "running", {
+        progress_percent: 80,
+        current_step: "Processing results...",
+      });
+
       const violationLimit = TIER[plan].violations;
-      let allViolations = result.violations ?? [];
-      
-      // Elite validation: Ensure minimum violations for paid tiers
-      if (plan !== "free" && allViolations.length < 50) {
-        console.warn(`[processAuditJob] Only ${allViolations.length} violations found, below 50 minimum. Retrying...`);
-        
-        const enhancedSystem = system.replace(
-          'MANDATORY VOLUME RULES — NON-NEGOTIABLE:',
-          'CRITICAL: YOU MUST FIND AT LEAST 50 VIOLATIONS. MANDATORY VOLUME RULES — NON-NEGOTIABLE:'
-        ).replace(
-          '- You MUST return a MINIMUM of 50 violations.',
-          '- You MUST return a MINIMUM of 50 violations. THIS IS NOT NEGOTIABLE. If you return fewer than 50, the audit is FAILED.'
-        );
-        
-        const retryRaw = await callGemini(enhancedSystem, user + "\n\nCRITICAL: You must find at least 50 violations. Be exhaustive. Check every single element.", settings?.gemini_api_key);
-        const retryResult = parseJSON(retryRaw);
-        allViolations = retryResult.violations ?? [];
-        
-        console.log(`[processAuditJob] Retry returned ${allViolations.length} violations`);
-      }
-      
-      if (allViolations.length === 0) {
-        throw new Error("AI audit returned no violations. This indicates a system error.");
-      }
-      
-      console.log(`[processAuditJob] Final violation count: ${allViolations.length}`);
-      
-      const limitedViolations = plan === "free"
-        ? allViolations.slice(0, violationLimit)
-        : allViolations;
-      
-      // Update audit count
-      await (context.supabase as any)
+      const allViolations = result.violations ?? [];
+      if (allViolations.length === 0) throw new Error("AI audit returned no violations.");
+
+      const limitedViolations =
+        plan === "free" ? allViolations.slice(0, violationLimit) : allViolations;
+
+      await sb
         .from("settings")
         .update({ audits_used: (settings?.audits_used ?? 0) + 1 })
         .eq("user_id", context.userId);
-      
-      // Insert audit record
-      const { data: inserted, error: insertError } = await (context.supabase as any)
+
+      const { data: inserted, error: insertError } = await sb
         .from("audits")
         .insert({
           user_id: context.userId,
@@ -1156,36 +977,64 @@ Return ONLY valid JSON with EXACTLY this schema:
         })
         .select()
         .single();
-      
+
       if (insertError) throw insertError;
-      
-      // Update job as completed
-      await (context.supabase as any)
+
+      const finalResult = {
+        ...(inserted as any),
+        plan,
+        totalViolationsFound: allViolations.length,
+        violationsShown: limitedViolations.length,
+        isLimited: plan === "free" && allViolations.length > violationLimit,
+      };
+
+      // Final log entry + mark completed (single write includes progress_log)
+      const { data: row } = await sb
         .from("audit_jobs")
-        .update({ 
-          status: 'completed',
+        .select("progress_log")
+        .eq("id", jobId)
+        .single();
+      const existing = Array.isArray(row?.progress_log) ? row.progress_log : [];
+      await sb
+        .from("audit_jobs")
+        .update({
+          status: "completed",
           progress_percent: 100,
-          current_step: 'Audit complete',
-          result: {
-            ...(inserted as any),
-            plan,
-            totalViolationsFound: allViolations.length,
-            violationsShown: limitedViolations.length,
-            isLimited: plan === "free" && allViolations.length > violationLimit,
-          }
+          current_step: "Audit complete",
+          result: finalResult,
+          progress_log: [
+            ...existing,
+            {
+              timestamp: new Date().toISOString(),
+              status: "completed",
+              message: `Complete — ${limitedViolations.length} violations reported`,
+            },
+          ],
         })
-        .eq('id', jobId);
-      
+        .eq("id", jobId);
+
       return { success: true };
-      
     } catch (error: any) {
-      await (context.supabase as any)
-        .from("audit_jobs")
-        .update({ 
-          status: 'failed',
-          error_message: error?.message || "Unknown error"
-        })
-        .eq('id', jobId);
+      const msg = error?.message || "Unknown error";
+      try {
+        const { data: row } = await sb
+          .from("audit_jobs")
+          .select("progress_log")
+          .eq("id", jobId)
+          .single();
+        const existing = Array.isArray(row?.progress_log) ? row.progress_log : [];
+        await sb
+          .from("audit_jobs")
+          .update({
+            status: "failed",
+            error_message: msg,
+            progress_log: [
+              ...existing,
+              { timestamp: new Date().toISOString(), status: "failed", message: `Failed: ${msg}` },
+            ],
+          })
+          .eq("id", jobId);
+      } catch {}
       throw error;
     }
   });
@@ -1209,6 +1058,7 @@ export const getAuditJobStatus = createServerFn({ method: "GET" })
       status: job.status,
       progress_percent: job.progress_percent,
       current_step: job.current_step,
+      progress_log: job.progress_log ?? [],
       result: job.result,
       error_message: job.error_message,
     };
