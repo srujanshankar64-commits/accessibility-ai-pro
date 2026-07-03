@@ -1058,6 +1058,7 @@ export const getAuditJobStatus = createServerFn({ method: "GET" })
       status: job.status,
       progress_percent: job.progress_percent,
       current_step: job.current_step,
+      progress_log: job.progress_log ?? [],
       result: job.result,
       error_message: job.error_message,
     };
