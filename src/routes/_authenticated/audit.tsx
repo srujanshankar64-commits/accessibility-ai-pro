@@ -410,7 +410,7 @@ function NewAuditPage() {
       } catch (err) {
         console.error("Polling error:", err);
       }
-    }, 3000);
+    }, 2000);
 
     return () => {
       cancelled = true;
