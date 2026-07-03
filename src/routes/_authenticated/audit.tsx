@@ -360,18 +360,15 @@ function NewAuditPage() {
     }
 
     try {
-      // Background / Non-streaming mode
-      setLogMessages([{ text: "Initializing fast holistic audit...", done: false, active: true }]);
-      setProgress(25);
-      const result = await auditFn({ data: { url, multiPageCrawlEnabled, competitorUrl } });
-      
-      setAudit(result);
-      setProgress(100);
-      setAuditState("COMPLETED");
-      setLoading(false);
-      setUsed((u) => u + 1);
-      toast.success(`Audit complete — ${result.violationsShown ?? result.violations?.length ?? 0} violations found`);
-      loadRecent();
+      // Async job mode: enqueue and let realtime + polling drive the UI
+      setLogMessages([{ text: "Queuing audit job...", done: false, active: true }]);
+      setProgress(5);
+      const { job_id } = await startJobFn({ data: { url, multiPageCrawlEnabled, competitorUrl } });
+      setCurrentJobId(job_id);
+      // Fire-and-forget the worker; do NOT await — the UI will follow via realtime/polling
+      processJobFn({ data: { jobId: job_id } }).catch((err: any) => {
+        console.error("processAuditJob failed:", err);
+      });
     } catch (err: any) {
       toast.error(err?.message ?? "Failed to start audit");
       setLoading(false);
