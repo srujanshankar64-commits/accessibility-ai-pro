@@ -204,9 +204,7 @@ function NewAuditPage() {
       setLoading(false);
       setCurrentJobId(null);
       const preset = new Set<string>(
-        ((status.result.violations as unknown) as Violation[])
-          .filter((v: any) => v.severity === "critical" || v.severity === "serious")
-          .map((v: any) => v.id)
+        ((status.result.violations as unknown) as Violation[]).map((v: any) => v.id)
       );
       setSelected(preset);
       toast.success(`Audit complete — ${status.result.violationsShown ?? (status.result.violations?.length ?? 0)} violations found`);
@@ -250,6 +248,11 @@ function NewAuditPage() {
       const timerInterval = setInterval(() => {
         setElapsed(prev => prev + 1);
       }, 1000);
+
+      // Throttled UI update to prevent freezing React with 1000+ renders/sec
+      const uiFlushInterval = setInterval(() => {
+        setStreamLogs([...streamLogsRef.current]);
+      }, 100);
 
       try {
         const { data: settings } = await supabase.from("settings").select("gemini_api_key, plan").maybeSingle();
@@ -300,25 +303,28 @@ function NewAuditPage() {
                     setAudit({ violations: json.violations, overall_score: Math.round(score) });
                     setProgress(100);
                     setAuditState("COMPLETED");
+                    
+                    const preset = new Set<string>(json.violations.map((v: any) => v.id));
+                    setSelected(preset);
+                    
                     toast.success(`Elite-Stream audit complete — ${json.summary.total_violations} violations found`);
                     loadRecent();
                   }
                 } catch (e) {
                   streamLogsRef.current.push(line);
-                  setStreamLogs([...streamLogsRef.current]);
                 }
               } else {
                 streamLogsRef.current.push(line);
-                setStreamLogs([...streamLogsRef.current]);
               }
             }
           }
         }
       } catch (streamError: any) {
         streamLogsRef.current.push(`[ERROR] ${streamError.message}`);
-        setStreamLogs([...streamLogsRef.current]);
       } finally {
         clearInterval(timerInterval);
+        clearInterval(uiFlushInterval);
+        setStreamLogs([...streamLogsRef.current]);
         setStreamingActive(false);
         auditRunningRef.current = false;
         setLoading(false);
