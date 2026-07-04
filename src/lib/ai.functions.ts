@@ -585,26 +585,15 @@ export const generateProposal = createServerFn({ method: "POST" })
 
     const system = `You are a senior B2B sales consultant writing a corporate compliance proposal on behalf of a digital agency.
 
-CRITICAL RULES:
-1. INDUSTRY: Read the website URL and context to determine industry. If uncertain, ALWAYS use 'prominent digital platform' or 'online brand presence'. NEVER guess 'e-commerce' or 'retail' unless explicitly confirmed.
-2. SCORE PERCENTILE: After mentioning the compliance score, calculate (100 minus the actual score number) and add exactly: 'This score places [domain] in the bottom [calculated number]% of audited platforms in our database.' Example: if score is 58, write 'bottom 42% of audited platforms'.
-3. COMPETITOR HOOK: Include in executive_summary: 'Sites achieving WCAG AA compliance typically rank 2-3 positions higher for the same keywords than non-compliant competitors in your industry.'
-4. JURISDICTION DEADLINE: Detect from URL TLD and add to compliance_risk:
-   - .com.au = 'Australian DDA compliance expected'
-   - .co.uk = 'UK Equality Act enforcement active — no SMB exemptions'
-   - .com = 'ADA Title II deadline: April 2026 — 3,117 lawsuits filed in 2025'
-   - EU = 'EU Accessibility Act enforced June 2025'
-   - Unknown = use US fallback
-5. NO EU FINES: Never mention 'EU fines', 'EU Act €100,000', or '€100,000'. Replace with 'costly private ADA demand letters, brand reputation damages, and legal cost avoidance'.
-6. REMEDIATION PLAN: Always output this EXACT static text for remediation_plan: 'A complete inventory of production-ready HTML/CSS code patches has been compiled for all detected violations. These copy-and-paste assets are hosted live on your secure AccessAudit Agency Dashboard for immediate deployment by your engineering team.'
-7. FOLLOW-UP EMAIL: Open with the single most critical violation found. State the jurisdiction-specific legal deadline. Reference the exact dollar range from investment. End with: 'I have 2 slots open this week for a 15-minute call. Reply with a time that works.' Sign off with agency name.
-8. COMPETITIVE GAP ANALYSIS (Business Elite): If competitor benchmark data is provided, include a dedicated 'competitive_gap_analysis' section that:
-   - Compares the client's score directly against the competitor's score
-   - Frames the remediation as a strategic move to neutralize the competitor's advantage
-   - Explicitly mentions the competitor's name/URL for strategic relevance
-   - Quantifies the gap in points and what it means for market position
-   - If client is behind: Frame as urgent market risk requiring immediate action
-   - If client is ahead: Frame as competitive advantage to maintain and expand
+CRITICAL RULES & STRICT GUARDRAILS:
+1. MATHEMATICAL CONSISTENCY (NO SCORE CONTRADICTIONS): You must use the exact string '${score}/100' everywhere a score is mentioned. NEVER hallucinate, approximate, or change this number in the body text.
+2. LEGAL ACCURACY (DYNAMIC ADA CONDITIONING): Check the BUSINESS_TYPE variable before writing any legal risk sections. IF TYPE IS 'Government/Public Education/Municipality': Use ADA Title II framework and mention the strict compliance deadline of April 2026. IF TYPE IS 'Private/SaaS/E-commerce': Use ADA Title III (Public Accommodations) framework. Do NOT mention an April 2026 deadline. Instead, emphasize the continuous surge in private Title III predatory lawsuits, demand letters, and brand reputation risks.
+3. CONTEXTUAL SANITY (TECHNICAL FALSE-POSITIVE PROTECTION): If the Violations List contains both "Missing DOCTYPE/HTML/BODY tags" AND highly specific nested elements (e.g. specific classes or ids), DO NOT write that the company "forgot basic HTML tags." Instead, accurately frame it as a "Client-Side Rendering/SPA Hydration or Scraper Blockage issue that severely hinders search engine crawlers from reading the page structure."
+4. VALUE PROPOSITION ALIGNMENT: Match the pitch to the scale of the company. For major SaaS or custom applications (based on URL/Industry), do not promise "copy-and-paste dashboard code patches". Instead, pitch "production-ready component remediation guidelines and expert engineering advisory".
+5. INDUSTRY: Read the website URL and context to determine industry. If uncertain, ALWAYS use 'prominent digital platform' or 'online brand presence'.
+6. SCORE PERCENTILE: After mentioning the compliance score, calculate (100 minus ${score}) and add exactly: 'This score places [domain] in the bottom [calculated number]% of audited platforms in our database.'
+7. COMPETITOR HOOK: Include in executive_summary: 'Sites achieving WCAG AA compliance typically rank 2-3 positions higher for the same keywords than non-compliant competitors in your industry.'
+8. COMPETITIVE GAP ANALYSIS (Business Elite): If competitor benchmark data is provided, explicitly compare scores, frame remediation as a strategic move to neutralize competitor advantage, and quantify the gap in points.
 
 The proposal must:
 1. Start with SEO and accessibility analysis - explain how their current accessibility issues are directly hurting their search rankings, organic traffic, and user experience. Mention specific SEO factors affected: crawlability, mobile usability, Core Web Vitals, and user engagement metrics.
@@ -630,7 +619,7 @@ Output STRICTLY JSON:
   "score_projection": "State current score, projected score after remediation (91-97/100), and timeline. Add: Competitors who remediate first will capture the SEO advantage permanently.",
   "hours_breakdown_statement": "Present the dev hours breakdown by category in a clear format. Critical fixes: X hrs, Serious fixes: X hrs, Mobile fixes: X hrs, Testing & certification: 2 hrs. Total: X hrs.",
   "competitor_teaser": "We also performed a preliminary scan of 3 of your top competitors in this space. Their average WCAG compliance score is 78/100. A full competitive accessibility analysis — including their violation breakdown and your relative positioning — is available as part of our Agency Growth Package. Agencies that benchmark against competitors consistently close 40% more remediation contracts.",
-  "remediation_plan": "Output exactly this static text: 'A complete inventory of production-ready HTML/CSS code patches has been compiled for all detected violations. These copy-and-paste assets are hosted live on your secure AccessAudit Agency Dashboard for immediate deployment by your engineering team.'",
+  "remediation_plan": "Condition output based on VALUE PROPOSITION ALIGNMENT guardrail. If SaaS/Custom, offer expert engineering advisory. Otherwise, output this static text: 'A complete inventory of production-ready HTML/CSS code patches has been compiled for all detected violations. These copy-and-paste assets are hosted live on your secure AccessAudit Agency Dashboard for immediate deployment by your engineering team.'",
   "investment": "Professional price range statement referencing the estimated work hours (${totalFixTime} hours). Break down by phase if relevant. Emphasize this is an investment with measurable ROI.",
   "roi_statement": "3-4 sentences on ROI. Quantify where possible: potential SEO traffic increase (15-30% typical), conversion rate improvement, legal cost avoidance, market expansion to 1.3 billion people with disabilities. Frame as competitive advantage.",
   "next_steps": "4-step CTA: (1) approve proposal, (2) kickoff call within 48 hours, (3) technical audit kickoff, (4) compliance certificate delivery in 4 weeks.",
@@ -652,11 +641,15 @@ Gap: Your client is ${Math.abs(scoreGap)} points ${gapDirection} the competitor
 ${scoreGap < 0 ? "MARKET RISK: Your client lags behind competitor on accessibility, creating legal and competitive disadvantage." : "COMPETITIVE ADVANTAGE: Your client leads competitor on accessibility compliance."}`;
     }
 
-    const user = `Agency: ${data.agencyName}
-Client: ${data.clientName}
+    const isGovOrEdu = data.clientIndustry?.toLowerCase().includes("gov") || data.clientIndustry?.toLowerCase().includes("edu") || data.clientIndustry?.toLowerCase().includes("public");
+    const businessType = isGovOrEdu ? "Government/Public Education/Municipality" : "Private/SaaS/E-commerce";
+
+    const user = `Agency Name: ${data.agencyName}
+Company Name: ${data.clientName}
 Industry: ${data.clientIndustry}
-Website: ${data.url ?? ""}
-Score: ${score}/100
+BUSINESS_TYPE: ${businessType}
+Website URL: ${data.url ?? ""}
+Actual Compliance Score: ${score}/100
 Violations: ${data.violations.length} total, ${criticalViolations.length} critical/serious
 Estimated fix time: ${totalFixTime} hours
 Price range: $${data.priceMin} - $${data.priceMax}${competitiveAnalysis}
@@ -707,11 +700,15 @@ The email must:
 Return JSON: { "subject": string, "body": string }
 Do NOT include conversational filler like "I hope this email finds you well", "touching base", "reaching out", "checking in", or any generic sales phrases. Be direct, specific, and helpful.`;
 
-    const user = `Agency: ${data.agencyName}
-Prospect: ${data.clientName}
-Website: ${data.url}
-Compliance score: ${data.score}/100
-Top issues:
+    const isGovOrEdu = data.clientName?.toLowerCase().includes("gov") || data.clientName?.toLowerCase().includes("school") || data.url?.includes(".edu") || data.url?.includes(".gov");
+    const businessType = isGovOrEdu ? "Government/Public Education/Municipality" : "Private/SaaS/E-commerce";
+
+    const user = `Agency Name: ${data.agencyName}
+Company Name: ${data.clientName}
+BUSINESS_TYPE: ${businessType}
+Website URL: ${data.url}
+Actual Compliance Score: ${data.score}/100
+Raw Violations List:
 ${topCritical.map((v: any) => `- ${v.name}: ${v.description} (${v.wcag_criterion})`).join("\n")}`;
 
     const raw = await callGemini(system, user, settings?.gemini_api_key);
