@@ -53,7 +53,7 @@ export async function reauditWebsite(auditId: string): Promise<void> {
     
     // Check if score dropped significantly
     if (scoreDrop >= 10) {
-      await sendScoreDropAlert(auditId, audit.url, previousScore, newScore, audit.user_id);
+      await sendScoreDropAlert(auditId, audit.url, previousScore, newScore, audit.user_id ?? '');
     }
   }
 }
