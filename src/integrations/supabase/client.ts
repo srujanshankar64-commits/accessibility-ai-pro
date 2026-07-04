@@ -8,10 +8,23 @@ const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiO
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
 
+function getBrowserStorage(): Storage | undefined {
+  if (typeof globalThis.window === "undefined") return undefined;
+
+  try {
+    return globalThis.window.localStorage;
+  } catch {
+    return undefined;
+  }
+}
+
+const authStorage = getBrowserStorage();
+
 export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: {
-    storage: typeof window !== "undefined" ? window.localStorage : undefined,
-    persistSession: typeof window !== "undefined",
-    autoRefreshToken: typeof window !== "undefined",
+    storage: authStorage,
+    persistSession: Boolean(authStorage),
+    autoRefreshToken: Boolean(authStorage),
+    detectSessionInUrl: Boolean(authStorage),
   }
 });
