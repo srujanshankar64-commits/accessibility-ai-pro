@@ -360,18 +360,15 @@ function NewAuditPage() {
     }
 
     try {
-      // Background / Non-streaming mode
-      setLogMessages([{ text: "Initializing fast holistic audit...", done: false, active: true }]);
-      setProgress(25);
-      const result = await auditFn({ data: { url, multiPageCrawlEnabled, competitorUrl } });
-      
-      setAudit(result);
-      setProgress(100);
-      setAuditState("COMPLETED");
-      setLoading(false);
-      setUsed((u) => u + 1);
-      toast.success(`Audit complete — ${result.violationsShown ?? result.violations?.length ?? 0} violations found`);
-      loadRecent();
+      // Async job mode: enqueue and let realtime + polling drive the UI
+      setLogMessages([{ text: "Queuing audit job...", done: false, active: true }]);
+      setProgress(5);
+      const { job_id } = await startJobFn({ data: { url, multiPageCrawlEnabled, competitorUrl } });
+      setCurrentJobId(job_id);
+      // Fire-and-forget the worker; do NOT await — the UI will follow via realtime/polling
+      processJobFn({ data: { jobId: job_id } }).catch((err: any) => {
+        console.error("processAuditJob failed:", err);
+      });
     } catch (err: any) {
       toast.error(err?.message ?? "Failed to start audit");
       setLoading(false);
@@ -379,14 +376,14 @@ function NewAuditPage() {
     }
   };
 
-  // Realtime subscription + 3s polling fallback for the active job
+  // Realtime-only subscription for the active job (no long-polling).
+  // The channel filters on this job id so the terminal receives updates
+  // as soon as processAuditJob appends to progress_log.
   useEffect(() => {
     if (!currentJobId) return;
     const jobId = currentJobId;
     let cancelled = false;
-    let realtimeConnected = false;
 
-    // Realtime channel: listen to row updates for this specific job
     const channel = supabase
       .channel(`audit_job:${jobId}`)
       .on(
@@ -397,30 +394,25 @@ function NewAuditPage() {
           applyJobState(payload.new);
         }
       )
-      .subscribe((status) => {
-        if (status === "SUBSCRIBED") realtimeConnected = true;
-        else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
-          realtimeConnected = false;
+      .subscribe(async (status) => {
+        // On (re)subscribe, seed state once so the terminal reflects any
+        // rows the worker wrote before the channel was ready. No interval.
+        if (status === "SUBSCRIBED") {
+          try {
+            const snapshot = await getJobStatusFn({ data: { jobId } });
+            if (!cancelled) applyJobState(snapshot);
+          } catch (err) {
+            console.error("Initial job snapshot failed:", err);
+          }
         }
       });
 
-    // Polling fallback (always on at 3s — cheap row read, covers realtime drops)
-    const pollInterval = setInterval(async () => {
-      if (cancelled) return;
-      try {
-        const status = await getJobStatusFn({ data: { jobId } });
-        applyJobState(status);
-      } catch (err) {
-        console.error("Polling error:", err);
-      }
-    }, 3000);
-
     return () => {
       cancelled = true;
-      clearInterval(pollInterval);
       supabase.removeChannel(channel);
     };
   }, [currentJobId]);
+
 
   // Retry function
   const retryAudit = () => {

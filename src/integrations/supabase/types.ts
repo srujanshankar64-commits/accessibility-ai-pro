@@ -16,41 +16,41 @@ export type Database = {
     Tables: {
       audit_jobs: {
         Row: {
-          created_at: string
+          created_at: string | null
           current_step: string | null
           error_message: string | null
           id: string
-          progress_log: Json
-          progress_percent: number
+          progress_log: Json | null
+          progress_percent: number | null
           result: Json | null
           status: string
-          updated_at: string
+          updated_at: string | null
           url: string
           user_id: string
         }
         Insert: {
-          created_at?: string
+          created_at?: string | null
           current_step?: string | null
           error_message?: string | null
           id?: string
-          progress_log?: Json
-          progress_percent?: number
+          progress_log?: Json | null
+          progress_percent?: number | null
           result?: Json | null
           status?: string
-          updated_at?: string
+          updated_at?: string | null
           url: string
           user_id: string
         }
         Update: {
-          created_at?: string
+          created_at?: string | null
           current_step?: string | null
           error_message?: string | null
           id?: string
-          progress_log?: Json
-          progress_percent?: number
+          progress_log?: Json | null
+          progress_percent?: number | null
           result?: Json | null
           status?: string
-          updated_at?: string
+          updated_at?: string | null
           url?: string
           user_id?: string
         }
@@ -58,79 +58,214 @@ export type Database = {
       }
       audits: {
         Row: {
-          category_scores: Json
-          created_at: string
-          has_proposal: boolean
+          category_scores: Json | null
+          competitor_audit_id: string | null
+          competitor_url: string | null
+          created_at: string | null
+          has_competitor_benchmark: boolean | null
           id: string
-          overall_score: number
+          is_parent: boolean | null
+          overall_score: number | null
+          parent_audit_id: string | null
+          raw_html: string | null
+          remediation_roadmap: Json | null
+          status: string | null
+          total_pages: number | null
           url: string
-          user_id: string
-          violations: Json
+          user_id: string | null
+          violations: Json | null
         }
         Insert: {
-          category_scores?: Json
-          created_at?: string
-          has_proposal?: boolean
+          category_scores?: Json | null
+          competitor_audit_id?: string | null
+          competitor_url?: string | null
+          created_at?: string | null
+          has_competitor_benchmark?: boolean | null
           id?: string
-          overall_score?: number
+          is_parent?: boolean | null
+          overall_score?: number | null
+          parent_audit_id?: string | null
+          raw_html?: string | null
+          remediation_roadmap?: Json | null
+          status?: string | null
+          total_pages?: number | null
           url: string
-          user_id: string
-          violations?: Json
+          user_id?: string | null
+          violations?: Json | null
         }
         Update: {
-          category_scores?: Json
-          created_at?: string
-          has_proposal?: boolean
+          category_scores?: Json | null
+          competitor_audit_id?: string | null
+          competitor_url?: string | null
+          created_at?: string | null
+          has_competitor_benchmark?: boolean | null
           id?: string
-          overall_score?: number
+          is_parent?: boolean | null
+          overall_score?: number | null
+          parent_audit_id?: string | null
+          raw_html?: string | null
+          remediation_roadmap?: Json | null
+          status?: string | null
+          total_pages?: number | null
           url?: string
-          user_id?: string
-          violations?: Json
+          user_id?: string | null
+          violations?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "audits_competitor_audit_id_fkey"
+            columns: ["competitor_audit_id"]
+            isOneToOne: false
+            referencedRelation: "audits"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "audits_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cron_health: {
+        Row: {
+          id: number
+          job_name: string | null
+          last_run: string | null
+          status: string | null
+        }
+        Insert: {
+          id?: number
+          job_name?: string | null
+          last_run?: string | null
+          status?: string | null
+        }
+        Update: {
+          id?: number
+          job_name?: string | null
+          last_run?: string | null
+          status?: string | null
+        }
+        Relationships: []
+      }
+      email_drafts: {
+        Row: {
+          audit_id: string | null
+          body: string | null
+          created_at: string | null
+          id: string
+          subject: string | null
+          user_id: string | null
+        }
+        Insert: {
+          audit_id?: string | null
+          body?: string | null
+          created_at?: string | null
+          id?: string
+          subject?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          audit_id?: string | null
+          body?: string | null
+          created_at?: string | null
+          id?: string
+          subject?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_drafts_audit_id_fkey"
+            columns: ["audit_id"]
+            isOneToOne: false
+            referencedRelation: "audits"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_drafts_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          agency_name: string | null
+          audits_used_this_month: number | null
+          billing_cycle_start: string | null
+          brand_color: string | null
+          created_at: string | null
+          full_name: string | null
+          id: string
+          logo_url: string | null
+          plan: string | null
+          stripe_customer_id: string | null
+          stripe_subscription_id: string | null
+        }
+        Insert: {
+          agency_name?: string | null
+          audits_used_this_month?: number | null
+          billing_cycle_start?: string | null
+          brand_color?: string | null
+          created_at?: string | null
+          full_name?: string | null
+          id: string
+          logo_url?: string | null
+          plan?: string | null
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+        }
+        Update: {
+          agency_name?: string | null
+          audits_used_this_month?: number | null
+          billing_cycle_start?: string | null
+          brand_color?: string | null
+          created_at?: string | null
+          full_name?: string | null
+          id?: string
+          logo_url?: string | null
+          plan?: string | null
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
         }
         Relationships: []
       }
       proposals: {
         Row: {
           audit_id: string | null
-          client_industry: string | null
           client_name: string | null
-          content: Json
-          created_at: string
+          created_at: string | null
           id: string
+          pdf_url: string | null
           price_max: number | null
           price_min: number | null
-          selected_violations: Json
-          tone: string | null
-          updated_at: string
-          user_id: string
+          proposal_text: string | null
+          user_id: string | null
         }
         Insert: {
           audit_id?: string | null
-          client_industry?: string | null
           client_name?: string | null
-          content?: Json
-          created_at?: string
+          created_at?: string | null
           id?: string
+          pdf_url?: string | null
           price_max?: number | null
           price_min?: number | null
-          selected_violations?: Json
-          tone?: string | null
-          updated_at?: string
-          user_id: string
+          proposal_text?: string | null
+          user_id?: string | null
         }
         Update: {
           audit_id?: string | null
-          client_industry?: string | null
           client_name?: string | null
-          content?: Json
-          created_at?: string
+          created_at?: string | null
           id?: string
+          pdf_url?: string | null
           price_max?: number | null
           price_min?: number | null
-          selected_violations?: Json
-          tone?: string | null
-          updated_at?: string
-          user_id?: string
+          proposal_text?: string | null
+          user_id?: string | null
         }
         Relationships: [
           {
@@ -140,43 +275,77 @@ export type Database = {
             referencedRelation: "audits"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "proposals_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
         ]
+      }
+      referrals: {
+        Row: {
+          created_at: string | null
+          id: string
+          referral_code: string
+          referrer_id: string
+          total_clicks: number | null
+          total_earned_months: number | null
+          total_signups: number | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          referral_code: string
+          referrer_id: string
+          total_clicks?: number | null
+          total_earned_months?: number | null
+          total_signups?: number | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          referral_code?: string
+          referrer_id?: string
+          total_clicks?: number | null
+          total_earned_months?: number | null
+          total_signups?: number | null
+        }
+        Relationships: []
       }
       settings: {
         Row: {
           agency_logo_url: string | null
           agency_name: string | null
-          audits_limit: number
-          audits_used: number
+          audits_used: number | null
           brand_color: string | null
-          created_at: string
+          created_at: string | null
           gemini_api_key: string | null
-          plan: string
-          updated_at: string
+          plan: string | null
+          updated_at: string | null
           user_id: string
         }
         Insert: {
           agency_logo_url?: string | null
           agency_name?: string | null
-          audits_limit?: number
-          audits_used?: number
+          audits_used?: number | null
           brand_color?: string | null
-          created_at?: string
+          created_at?: string | null
           gemini_api_key?: string | null
-          plan?: string
-          updated_at?: string
+          plan?: string | null
+          updated_at?: string | null
           user_id: string
         }
         Update: {
           agency_logo_url?: string | null
           agency_name?: string | null
-          audits_limit?: number
-          audits_used?: number
+          audits_used?: number | null
           brand_color?: string | null
-          created_at?: string
+          created_at?: string | null
           gemini_api_key?: string | null
-          plan?: string
-          updated_at?: string
+          plan?: string | null
+          updated_at?: string | null
           user_id?: string
         }
         Relationships: []
@@ -186,7 +355,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      cleanup_old_audit_jobs: { Args: never; Returns: undefined }
     }
     Enums: {
       [_ in never]: never

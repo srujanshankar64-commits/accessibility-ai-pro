@@ -30,7 +30,7 @@ export async function reauditWebsite(auditId: string): Promise<void> {
   if (fetchError || !audit) throw new Error('Audit not found');
   
   // Store previous score
-  const previousScore = audit.overall_score;
+  const previousScore = audit.overall_score ?? 0;
   
   // Run new audit
   const result = await runAudit({ data: { url: audit.url } });
@@ -53,7 +53,7 @@ export async function reauditWebsite(auditId: string): Promise<void> {
     
     // Check if score dropped significantly
     if (scoreDrop >= 10) {
-      await sendScoreDropAlert(auditId, audit.url, previousScore, newScore, audit.user_id);
+      await sendScoreDropAlert(auditId, audit.url, previousScore, newScore, audit.user_id ?? '');
     }
   }
 }
