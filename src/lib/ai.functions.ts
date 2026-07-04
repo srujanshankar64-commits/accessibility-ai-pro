@@ -610,7 +610,7 @@ The proposal must:
 1. Start with SEO and accessibility analysis - explain how their current accessibility issues are directly hurting their search rankings, organic traffic, and user experience. Mention specific SEO factors affected: crawlability, mobile usability, Core Web Vitals, and user engagement metrics.
 2. Connect accessibility improvements to tangible SEO benefits: higher rankings, increased organic traffic, better conversion rates, and improved brand perception.
 3. Then transition to compliance liability - cross-reference specific legal mandates: EU Accessibility Act, US ADA Title II, UK Equality Act.
-4. Present ALL violations found in detail - do not summarize or group them. List each specific violation with its impact and priority level.
+4. Summarize the top 5 most critical violations in detail. Group the remaining issues by category to save space and time. Keep this highly concise and punchy.
 5. Frame remediation as a dual investment: legal compliance protection AND significant SEO/traffic growth.
 6. Present pricing as a professional engineering project quote with clear deliverables.
 7. Close with a clear corporate action plan and timeline.
@@ -624,7 +624,7 @@ Output STRICTLY JSON:
   "executive_summary": "4-5 sentences. Start with SEO impact, then transition to accessibility compliance. Name the client, reference their industry using the Company Profile Logic. State total violations found. Inject this exact static line: 'Sites achieving WCAG AA compliance typically rank 2–3 positions higher for the same keywords than non-compliant competitors in your industry.' Below the score, generate one dynamic sentence: 'This score places [site domain] in the bottom ${100 - score}% of audited platforms in our database.'",
   "seo_analysis": "3-4 paragraphs directly linking accessibility to Google mobile-first indexing, Core Web Vitals, and reducing bounce rates. Include specific examples from their actual violations.",
   "compliance_risk": "2-3 paragraphs focusing on costly private ADA demand letters, brand reputation damages, and legal cost avoidance. Do NOT use aggressive scare tactics or mention EU Act €100,000 fines. Add a compliance deadline sentence at the end of this field: Detect country from URL TLD or page context (.com.au = 'Australian DDA compliance expected', .co.uk = 'UK Equality Act enforcement active — no SMB exemptions', .com = 'ADA Title II deadline: April 2026 — 3,117 lawsuits in 2025', EU = 'EU Accessibility Act enforced June 2025', fallback to US).",
-  "violation_summary": "Detailed breakdown of ALL violations found. Group by severity but list each one specifically. For critical/serious violations, explain the direct business impact. Do not summarize - be comprehensive.",
+  "violation_summary": "Detailed breakdown of the top 5 critical violations. Briefly summarize the remaining issues by category. Keep it extremely concise and punchy. Maximum 150 words.",
   "systemic_issues_summary": "List all detected systemic patterns. Explain each one as a design-system-level problem requiring architectural fixes, not just individual patches. Frame as additional scope beyond basic remediation.",
   "urgency_statement": "State the urgency_score out of 10 and the urgency_reason. Add: Without immediate action, [client] risks both legal enforcement and continued SEO underperformance.",
   "score_projection": "State current score, projected score after remediation (91-97/100), and timeline. Add: Competitors who remediate first will capture the SEO advantage permanently.",
@@ -662,7 +662,7 @@ Estimated fix time: ${totalFixTime} hours
 Price range: $${data.priceMin} - $${data.priceMax}${competitiveAnalysis}
 
 Violations:
-${data.violations.map((v: any, i: number) => `${i + 1}. [${v.severity?.toUpperCase()}] ${v.name} (${v.wcag_criterion}) - ${v.description} | Fix: ${v.fix_instructions} | Time: ${v.estimated_fix_time ?? "2 hours"}`).join("\n")}`;
+${data.violations.slice(0, 15).map((v: any, i: number) => `${i + 1}. [${v.severity?.toUpperCase()}] ${v.name} (${v.wcag_criterion}) - ${v.description} | Fix: ${v.fix_instructions} | Time: ${v.estimated_fix_time ?? "2 hours"}`).join("\n")}${data.violations.length > 15 ? `\n...and ${data.violations.length - 15} more systemic issues.` : ""}`;
 
     const raw = await callGemini(system, user, settings?.gemini_api_key);
     return parseJSON(raw);
