@@ -209,6 +209,7 @@ Your final JSON object MUST match this schema and be outputted on a single line 
           let jsonBuffer = "";
           let jsonStarted = false;
           let buffer = "";
+          let terminalSlidingBuffer = "";
 
           while (true) {
             const { done, value } = await reader.read();
@@ -228,24 +229,40 @@ Your final JSON object MUST match this schema and be outputted on a single line 
                 const text = parsed?.candidates?.[0]?.content?.parts?.[0]?.text || "";
                 if (!text) continue;
                 
-                // Stream text to terminal in real time
                 if (jsonStarted) {
                   jsonBuffer += text;
-                } else if (text.includes("{")) {
-                  const parts = text.split("{");
-                  if (parts[0].trim()) {
-                    controller.enqueue(encoder.encode(parts[0]));
-                  }
-                  jsonStarted = true;
-                  jsonBuffer = "{" + parts.slice(1).join("{");
                 } else {
-                  // Pure text — stream directly to terminal immediately
-                  controller.enqueue(encoder.encode(text));
+                  terminalSlidingBuffer += text;
+                  const markerIndex = terminalSlidingBuffer.indexOf('{"summary"');
+                  
+                  if (markerIndex !== -1) {
+                    // JSON has officially started!
+                    const textToStream = terminalSlidingBuffer.slice(0, markerIndex);
+                    if (textToStream) {
+                      controller.enqueue(encoder.encode(textToStream));
+                    }
+                    jsonStarted = true;
+                    jsonBuffer = terminalSlidingBuffer.slice(markerIndex);
+                    terminalSlidingBuffer = ""; // clear
+                  } else {
+                    // Safe to stream everything except the last 15 chars 
+                    // (in case they form the beginning of '{"summary"')
+                    if (terminalSlidingBuffer.length > 15) {
+                      const flushLength = terminalSlidingBuffer.length - 15;
+                      controller.enqueue(encoder.encode(terminalSlidingBuffer.slice(0, flushLength)));
+                      terminalSlidingBuffer = terminalSlidingBuffer.slice(flushLength);
+                    }
+                  }
                 }
               } catch (e) {
                 // Skip malformed SSE chunks
               }
             }
+          }
+          
+          // Flush any remaining terminal text if JSON never started
+          if (!jsonStarted && terminalSlidingBuffer.length > 0) {
+            controller.enqueue(encoder.encode(terminalSlidingBuffer));
           }
           
           // Emit the final compacted JSON string on a single line
