@@ -3,8 +3,8 @@ import { getRequest } from '@tanstack/react-start/server'
 import { createClient } from '@supabase/supabase-js'
 import type { Database } from './types'
 
-const SUPABASE_URL = 'https://zkpwpumjacihcjisshod.supabase.co';
-const SUPABASE_PUBLISHABLE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InprcHdwdW1qYWNpaGNqaXNzaG9kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA5Nzg0MzQsImV4cCI6MjA5NjU1NDQzNH0.rYeMGFBJmK55Ygva1wi_Dcg0Xv2MXTCzujP3LGAazhw';
+const SUPABASE_URL = 'https://xyyneqqbncyokeaynebt.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh5eW5lcXFibmN5b2tlYXluZWJ0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA5NzQ0ODAsImV4cCI6MjA5NjU1MDQ4MH0.BCPWQSaWF7ACxBl9s3sDnM84ovAX6SeQ87nft4-q7Qw';
 
 export const requireSupabaseAuth = createMiddleware({ type: 'function' }).server(
   async ({ next }) => {
