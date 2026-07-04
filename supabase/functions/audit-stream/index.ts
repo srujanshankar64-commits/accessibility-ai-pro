@@ -45,8 +45,8 @@ async function callGeminiStreamWithFallback(systemPrompt: string, userPrompt: st
         body: JSON.stringify({
           contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
           generationConfig: {
-            temperature: 0.05, // reduced to 0.05 as requested
-            maxOutputTokens: 81920, // keep max output tokens large as requested
+            temperature: 0.2, // increased slightly to encourage exhaustive generation
+            maxOutputTokens: 81920,
           },
         }),
       });
@@ -112,7 +112,7 @@ Deno.serve(async (req) => {
                   signal: ctrl.signal,
                 });
                 const html = await r.text();
-                pageSnippet = cleanHtml(html).slice(0, 12000); // kept at 12000
+                pageSnippet = cleanHtml(html).slice(0, 30000); // Increased to 30000 chars to find more violations
               } catch (e) {
                 pageSnippet = `(Could not fetch ${url}. Theoretical structural audit applied.)`;
               } finally {
@@ -192,10 +192,12 @@ Deno.serve(async (req) => {
             userPrompt += `\n\nCOMPETITOR URL: ${competitorUrl}\n\nCOMPETITOR HTML (for benchmarking):\n${competitorSnippet}`;
           }
           
-          const systemPrompt = `You are an expert WCAG 2.1 accessibility auditor. Analyze the HTML and find EVERY accessibility violation — Critical, Serious, Moderate, and Minor. Do not skip any violation no matter how small. Agencies need comprehensive reports. As you analyze, narrate what you are finding in real time like:
+          const systemPrompt = `You are a hyper-critical WCAG 2.1 accessibility auditor. Analyze the HTML aggressively. You MUST find and report AT LEAST 30 to 50+ distinct accessibility violations. Be extremely exhaustive. Do not skip any violation no matter how small. Look for EVERY missing aria attribute, low contrast text, semantic HTML misuse, missing focus states, empty links, complex layout issues, missing language tags, etc. Break down large systemic issues into individual, specific component-level violations. Agencies need massive, comprehensive reports.
+
+As you analyze, narrate what you are finding in real time like:
 '[FINDING] CRITICAL | WCAG 1.1.1 | Missing alt text on hero image — <img class=hero src=...>'
 '[FINDING] SERIOUS | WCAG 1.4.3 | Low contrast ratio 3.2:1 on nav links'
-Stream each finding as you discover it. After all findings, output a single line of minified JSON with the complete structured data.
+Stream each finding as you discover it. DO NOT STOP until you have reached 30 to 50 findings.
 
 Your final JSON object MUST match this schema and be outputted on a single line at the very end:
 {"summary":{"total_violations":number,"priority_distribution":{"Critical":number,"Serious":number,"Moderate":number,"Minor":number}},"violations":[{"id":"kebab-case","severity":"critical|serious|moderate|minor","name":"Title","wcag_criterion":"WCAG X.X.X","description":"Problem","element_affected":"selector","legal_impact":"exposure","fix_instructions":"fix","estimated_fix_time":"X hours","revenue_impact":"impact","fix_difficulty":"easy|medium|hard"}]}
