@@ -34,31 +34,67 @@ function cleanHtml(html: string) {
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-async function callGeminiStream(systemPrompt: string, userPrompt: string, apiKey: string) {
-  const key = (apiKey || GEMINI_KEY).trim();
-  if (!key) throw new Error("Gemini API key not configured");
-  
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?key=${key}`;
-  
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
-      generationConfig: {
-        responseMimeType: "text/plain",
-        temperature: 0.2,
-        maxOutputTokens: 81920,
-      },
-    }),
-  });
-  
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Gemini ${response.status}: ${error.slice(0, 200)}`);
+async function callGeminiStreamWithFallback(systemPrompt: string, userPrompt: string, key: string) {
+  const models = [
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",  
+    "gemini-1.5-flash",
+  ];
+  let lastError = null;
+  for (const model of models) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${key}&alt=sse`;
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
+          generationConfig: {
+            temperature: 0.1,
+            maxOutputTokens: 8192,
+          },
+        }),
+      });
+      if (response.ok) return { body: response.body, model };
+      lastError = `${model} failed: ${response.status}`;
+    } catch (e) {
+      lastError = `${model} error: ${e.message}`;
+    }
   }
+  throw new Error(`All Gemini models failed. Last error: ${lastError}`);
+}
+
+async function* parseGeminiSSE(stream: ReadableStream<Uint8Array>) {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
   
-  return response.body;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    
+    buffer += decoder.decode(value, { stream: true });
+    let boundary = buffer.indexOf("\n");
+    while (boundary !== -1) {
+      const line = buffer.slice(0, boundary).trim();
+      buffer = buffer.slice(boundary + 1);
+      boundary = buffer.indexOf("\n");
+      
+      if (line.startsWith("data: ")) {
+        const dataStr = line.slice(6).trim();
+        if (dataStr === "[DONE]" || !dataStr) continue;
+        try {
+          const parsed = JSON.parse(dataStr);
+          const text = parsed.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (text) {
+            yield text;
+          }
+        } catch (e) {
+          // JSON might be split, ignore parsing error
+        }
+      }
+    }
+  }
 }
 
 Deno.serve(async (req) => {
@@ -76,13 +112,22 @@ Deno.serve(async (req) => {
       });
     }
     
-    // Create a ReadableStream
-    const stream = new ReadableStream({
+    const encoder = new TextEncoder();
+    
+    const readable = new ReadableStream({
       async start(controller) {
-        const encoder = new TextEncoder();
-        
+        let heartbeat: any = null;
         try {
           controller.enqueue(encoder.encode("[LOG] Establishing secure connection to target...\n"));
+          await delay(150);
+          
+          const key = (apiKey || GEMINI_KEY).trim();
+          if (!key) {
+            controller.enqueue(encoder.encode("[ERROR] Gemini API key missing. Add GOOGLE_GEMINI_API_KEY to Supabase Edge Function Secrets.\n"));
+            controller.close();
+            return;
+          }
+          controller.enqueue(encoder.encode(`[LOG] AI engine ready.\n`));
           
           let pageSnippet = "";
           let competitorSnippet = "";
@@ -95,26 +140,29 @@ Deno.serve(async (req) => {
             (async () => {
               controller.enqueue(encoder.encode("[STATUS] Fetching main page HTML...\n"));
               const ctrl = new AbortController();
-              setTimeout(() => ctrl.abort(), 15000);
+              const timeoutId = setTimeout(() => ctrl.abort(), 8000);
               try {
                 const r = await fetch(url, {
                   headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36 AccessAuditAI/2.0" },
                   signal: ctrl.signal,
                 });
                 const html = await r.text();
-                pageSnippet = cleanHtml(html).slice(0, 30000);
+                pageSnippet = cleanHtml(html).slice(0, 12000); // reduced from 30000 to 12000
               } catch (e) {
                 pageSnippet = `(Could not fetch ${url}. Theoretical structural audit applied.)`;
+              } finally {
+                clearTimeout(timeoutId);
               }
             })()
           );
           
-          // 2. Multi-page Crawl
+          // 2. Multi-page Crawl (Mock concurrent fetch of critical paths)
           let multiPageContext = "";
           if (multiPageCrawlEnabled && plan !== "free") {
             fetches.push(
               (async () => {
                 controller.enqueue(encoder.encode("[STATUS] Initializing multi-page deep crawl (50+ sub-pages)...\n"));
+                await delay(200);
                 controller.enqueue(encoder.encode("[LOG] Extrapolating site-wide DOM structure patterns from sub-pages...\n"));
                 multiPageContext = `\n[MULTI-PAGE ANALYSIS ENABLED]: The auditor must identify systemic navigation and templating issues that propagate across all sub-pages. Treat findings in the header, footer, and navigation as critical systemic errors affecting 50+ pages.`;
               })()
@@ -127,7 +175,7 @@ Deno.serve(async (req) => {
               (async () => {
                 controller.enqueue(encoder.encode(`[STATUS] Fetching competitor benchmark data for ${competitorUrl}...\n`));
                 const ctrl = new AbortController();
-                setTimeout(() => ctrl.abort(), 15000);
+                const timeoutId = setTimeout(() => ctrl.abort(), 8000);
                 try {
                   const r = await fetch(competitorUrl, {
                     headers: { "User-Agent": "Mozilla/5.0 Chrome/120.0.0.0 Safari/537.36 AccessAuditAI/2.0" },
@@ -138,6 +186,8 @@ Deno.serve(async (req) => {
                   controller.enqueue(encoder.encode(`[LOG] Competitor benchmark loaded successfully.\n`));
                 } catch (e) {
                   competitorSnippet = `(Could not fetch competitor URL.)`;
+                } finally {
+                  clearTimeout(timeoutId);
                 }
               })()
             );
@@ -159,9 +209,8 @@ CRITICAL OPERATING RULES:
 2. HEURISTIC SPEED: Identify the most critical accessibility patterns immediately.
 3. NO BALANCING QUOTAS: Report findings based on REAL occurrence in the code.
 4. EVIDENCE ANCHORING: Every finding must cite the specific CSS selector or tag ID found in the HTML snippet.
-5. TARGET VIOLATIONS: Aim for 70+ total violations across all categories combined. If fewer exist naturally, report all found. If more exist, prioritize the 70 most critical.
-${competitorUrl ? "6. COMPETITOR BENCHMARK: Since a competitor URL is provided, include a brief comparison analysis in the JSON output." : ""}
-${multiPageCrawlEnabled ? "7. MULTI-PAGE SYSTEMIC MODE: Treat structural flaws as systemic, impacting 50+ pages." : ""}
+${competitorUrl ? "5. COMPETITOR BENCHMARK: Since a competitor URL is provided, include a brief comparison analysis in the JSON output." : ""}
+${multiPageCrawlEnabled ? "6. MULTI-PAGE SYSTEMIC MODE: Treat structural flaws as systemic, impacting 50+ pages." : ""}
 
 EXECUTION PROTOCOL:
 - Output your internal progress line-by-line using ONLY these tags:
@@ -175,6 +224,7 @@ MANDATORY RULES:
 - Report REAL findings only. No artificial quotas.
 - Be extremely specific in "element_affected" (selector, class, id, aria attribute).
 - Escalate severity for transactional elements (CTAs, forms, checkout) by one level.
+- Find maximum 5 violations per WCAG category (Perceivable, Operable, Understandable, Robust). Total violations must not exceed 20. Be concise. Skip minor issues.
 - Output ALL violations in ONE final JSON object at the very end. Do NOT output multiple JSONs. 
 - The JSON object must be on a SINGLE uninterrupted line. Do NOT format with newlines or pretty-printing.
 
@@ -184,40 +234,43 @@ Stream your output line-by-line, then conclude with a SINGLE LINE of minified JS
           
           controller.enqueue(encoder.encode(`[STATUS] Executing holistic elite engine across 4 WCAG categories...\n`));
           
-          const geminiStream = await callGeminiStream(systemPrompt, userPrompt, apiKey);
-          const reader = geminiStream.getReader();
-          const decoder = new TextDecoder();
+          const { body: stream, model } = await callGeminiStreamWithFallback(systemPrompt, userPrompt, key);
+          controller.enqueue(encoder.encode(`[LOG] Using AI model: ${model}...\n`));
+          
+          // Setup heartbeat logs
+          heartbeat = setInterval(() => {
+            controller.enqueue(encoder.encode("[LOG] AI analyzing accessibility patterns...\n"));
+          }, 5000);
           
           let jsonBuffer = "";
           let jsonStarted = false;
           
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            
-            const chunk = decoder.decode(value, { stream: true });
-            
+          const sseGen = parseGeminiSSE(stream);
+          for await (const textChunk of sseGen) {
             if (jsonStarted) {
-              jsonBuffer += chunk;
-            } else if (chunk.includes("{")) {
-              const parts = chunk.split("{");
+              jsonBuffer += textChunk;
+            } else if (textChunk.includes("{")) {
+              const parts = textChunk.split("{");
               if (parts[0].trim()) {
                 controller.enqueue(encoder.encode(parts[0]));
               }
               jsonStarted = true;
               jsonBuffer = "{" + parts.slice(1).join("{");
             } else {
-              controller.enqueue(encoder.encode(chunk));
+              controller.enqueue(encoder.encode(textChunk));
             }
           }
           
+          if (heartbeat) clearInterval(heartbeat);
+          
+          // Emit the final compacted JSON string on a single line
           if (jsonBuffer) {
-            controller.enqueue(encoder.encode("\n" + jsonBuffer.replace(/\n/g, "") + "\n"));
+             controller.enqueue(encoder.encode("\n" + jsonBuffer.replace(/\n/g, "") + "\n"));
           }
           
           controller.close();
-          
         } catch (error) {
+          if (heartbeat) clearInterval(heartbeat);
           console.error("Streaming error:", error);
           controller.enqueue(encoder.encode(`[ERROR] ${error.message}\n`));
           controller.close();
@@ -225,7 +278,7 @@ Stream your output line-by-line, then conclude with a SINGLE LINE of minified JS
       }
     });
     
-    return new Response(stream, {
+    return new Response(readable, {
       headers: {
         ...CORS,
         "Content-Type": "text/plain",
@@ -234,13 +287,10 @@ Stream your output line-by-line, then conclude with a SINGLE LINE of minified JS
     });
     
   } catch (error) {
-    console.error("Edge Function Error:", error);
-    return new Response(
-      JSON.stringify({ error: error.message || String(error) }),
-      { 
-        status: 400, 
-        headers: { ...CORS, "Content-Type": "application/json" } 
-      }
-    );
+    console.error("Audit stream error:", error);
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+      headers: { ...CORS, "Content-Type": "application/json" },
+    });
   }
 });

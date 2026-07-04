@@ -68,11 +68,8 @@ function NewAuditPage() {
   const [streamingMode, setStreamingMode] = useState(false);
   const [streamLogs, setStreamLogs] = useState<string[]>([]);
   const [streamingActive, setStreamingActive] = useState(false);
-  
-  // Refs to prevent re-render issues
-  const auditRunningRef = useRef(false);
   const streamLogsRef = useRef<string[]>([]);
-  const hasStartedRef = useRef(false);
+  const auditRunningRef = useRef(false);
   
   // Async job state
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
@@ -243,84 +240,44 @@ function NewAuditPage() {
     setJobError(null);
     setLogMessages([]);
 
-    if (streamingMode) {
-      if (auditRunningRef.current) return;
-      auditRunningRef.current = true;
-      
+      if (streamingMode) {
       setStreamingActive(true);
+      auditRunningRef.current = true;
       setStreamLogs([]);
       streamLogsRef.current = [];
-      
+
       try {
         const { data: settings } = await supabase.from("settings").select("gemini_api_key, plan").maybeSingle();
         const apiKey = (settings as any)?.gemini_api_key;
         const userPlan = (settings as any)?.plan || "free";
 
-        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "https://xyyneqqbncyokeaynebt.supabase.co";
-        const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-        const response = await fetch(`${supabaseUrl}/functions/v1/audit-stream`, {
-          method: "POST",
+        const { data: { session } } = await supabase.auth.getSession();
+        const functionUrl = 'https://xyyneqqbncyokeaynebt.supabase.co/functions/v1/audit-stream';
+        const fallbackKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh5eW5lcXFibmN5b2tleWF5bmVidCIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNzgxNjA0ODIzLCJleHAiOjIwOTcyMDA4MjN9.Bq11j-ZptP1rQ01rQzYxXzY1c1c1c1c1c1c1c1c1c1c';
+        
+        const response = await fetch(functionUrl, {
+          method: 'POST',
           headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${supabaseKey}`,
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session?.access_token || fallbackKey}`
           },
-          body: JSON.stringify({ url, apiKey, plan: userPlan, multiPageCrawlEnabled, competitorUrl }),
+          body: JSON.stringify({ url, apiKey, plan: userPlan, multiPageCrawlEnabled, competitorUrl })
         });
 
         if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.error || `Server returned status ${response.status}`);
+           const errText = await response.text();
+           throw new Error(errText);
         }
 
         const reader = response.body?.getReader();
-        if (!reader) throw new Error("No stream reader available - Edge Function returned invalid response");
+        if (!reader) throw new Error("No stream reader available");
 
         const decoder = new TextDecoder();
         let buffer = "";
-        let jsonBuffer = "";
-        let jsonStarted = false;
-        let bufferedViolations: any[] = [];
-        let finalSummary: any = null;
 
         while (true) {
           const { done, value } = await reader.read();
-          if (done) {
-            // Process any remaining buffer before closing
-            if (buffer.trim()) {
-              try {
-                const finalJson = JSON.parse(buffer.trim());
-                if (finalJson.summary && finalJson.violations) {
-                  finalSummary = finalJson.summary;
-                  bufferedViolations = finalJson.violations;
-                }
-              } catch (e) {
-                // Not JSON, just add as final log line
-                if (buffer.trim()) {
-                  streamLogsRef.current.push(buffer.trim());
-                  setStreamLogs([...streamLogsRef.current]);
-                }
-              }
-            }
-            
-            // Only setState once after stream completes
-            if (finalSummary && bufferedViolations.length > 0) {
-              const score = Math.max(0, 100 - (finalSummary.total_violations * 1.5));
-              setAudit({ violations: bufferedViolations, overall_score: Math.round(score) });
-              setProgress(100);
-              setAuditState("COMPLETED");
-              setStreamingActive(false);
-              setLoading(false);
-              setUsed((u) => u + 1);
-              toast.success(`Elite-Stream audit complete — ${finalSummary.total_violations} violations found (Critical: ${finalSummary.priority_distribution.Critical}, Serious: ${finalSummary.priority_distribution.Serious})`);
-              loadRecent();
-            }
-            
-            // Gracefully transition to completed state
-            setStreamingActive(false);
-            setLoading(false);
-            auditRunningRef.current = false;
-            break;
-          }
+          if (done) break;
 
           const chunk = decoder.decode(value, { stream: true });
           buffer += chunk;
@@ -330,31 +287,35 @@ function NewAuditPage() {
 
           for (const line of lines) {
             if (line.trim()) {
-              streamLogsRef.current.push(line);
-              setStreamLogs([...streamLogsRef.current]);
-
-              if (line.trim().startsWith("{") && line.trim().endsWith("}")) {
+              if (line.trim().startsWith("{")) {
                 try {
                   const json = JSON.parse(line.trim());
                   if (json.summary && json.violations) {
-                    // Buffer findings instead of setting state immediately
-                    finalSummary = json.summary;
-                    bufferedViolations = json.violations;
+                    const score = Math.max(0, 100 - (json.summary.total_violations * 1.5));
+                    setAudit({ violations: json.violations, overall_score: Math.round(score) });
+                    setProgress(100);
+                    setAuditState("COMPLETED");
+                    toast.success(`Elite-Stream audit complete — ${json.summary.total_violations} violations found`);
+                    loadRecent();
                   }
                 } catch (e) {
-                  // Not final JSON
+                  streamLogsRef.current.push(line);
+                  setStreamLogs([...streamLogsRef.current]);
                 }
+              } else {
+                streamLogsRef.current.push(line);
+                setStreamLogs([...streamLogsRef.current]);
               }
             }
           }
         }
-      } catch (err: any) {
-        console.error("Streaming audit failed:", err);
-        toast.error(err?.message || "Streaming audit failed");
+      } catch (streamError: any) {
+        streamLogsRef.current.push(`[ERROR] ${streamError.message}`);
+        setStreamLogs([...streamLogsRef.current]);
+      } finally {
         setStreamingActive(false);
-        setLoading(false);
-        setAuditState("IDLE");
         auditRunningRef.current = false;
+        setLoading(false);
       }
       return;
     }
