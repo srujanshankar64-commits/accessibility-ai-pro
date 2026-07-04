@@ -35,12 +35,7 @@ function cleanHtml(html: string) {
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 async function callGeminiStreamWithFallback(systemPrompt: string, userPrompt: string, key: string) {
-  const models = [
-    "gemini-2.5-flash",
-    "gemini-2.0-flash",  
-    "gemini-1.5-flash",
-  ];
-  let lastError = null;
+  const models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
   for (const model of models) {
     try {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${key}&alt=sse`;
@@ -50,51 +45,22 @@ async function callGeminiStreamWithFallback(systemPrompt: string, userPrompt: st
         body: JSON.stringify({
           contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
           generationConfig: {
-            temperature: 0.1,
-            maxOutputTokens: 8192,
+            temperature: 0.05, // reduced to 0.05 as requested
+            maxOutputTokens: 81920, // keep max output tokens large as requested
           },
         }),
       });
       if (response.ok) return { body: response.body, model };
-      lastError = `${model} failed: ${response.status}`;
+      if (response.status === 404 || response.status === 429) continue;
+      const error = await response.text();
+      throw new Error(`Gemini ${response.status}: ${error.slice(0, 200)}`);
     } catch (e) {
-      lastError = `${model} error: ${e.message}`;
-    }
-  }
-  throw new Error(`All Gemini models failed. Last error: ${lastError}`);
-}
-
-async function* parseGeminiSSE(stream: ReadableStream<Uint8Array>) {
-  const reader = stream.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    
-    buffer += decoder.decode(value, { stream: true });
-    let boundary = buffer.indexOf("\n");
-    while (boundary !== -1) {
-      const line = buffer.slice(0, boundary).trim();
-      buffer = buffer.slice(boundary + 1);
-      boundary = buffer.indexOf("\n");
-      
-      if (line.startsWith("data: ")) {
-        const dataStr = line.slice(6).trim();
-        if (dataStr === "[DONE]" || !dataStr) continue;
-        try {
-          const parsed = JSON.parse(dataStr);
-          const text = parsed.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (text) {
-            yield text;
-          }
-        } catch (e) {
-          // JSON might be split, ignore parsing error
-        }
+      if (model === models[models.length - 1]) {
+        throw e;
       }
     }
   }
+  throw new Error("All Gemini models unavailable");
 }
 
 Deno.serve(async (req) => {
@@ -116,7 +82,6 @@ Deno.serve(async (req) => {
     
     const readable = new ReadableStream({
       async start(controller) {
-        let heartbeat: any = null;
         try {
           controller.enqueue(encoder.encode("[LOG] Establishing secure connection to target...\n"));
           await delay(150);
@@ -147,7 +112,7 @@ Deno.serve(async (req) => {
                   signal: ctrl.signal,
                 });
                 const html = await r.text();
-                pageSnippet = cleanHtml(html).slice(0, 12000); // reduced from 30000 to 12000
+                pageSnippet = cleanHtml(html).slice(0, 12000); // kept at 12000
               } catch (e) {
                 pageSnippet = `(Could not fetch ${url}. Theoretical structural audit applied.)`;
               } finally {
@@ -197,71 +162,91 @@ Deno.serve(async (req) => {
           
           controller.enqueue(encoder.encode(`[LOG] Parsing massive DOM structure (${pageSnippet.length} chars)...\n`));
           
+          // Real DOM analysis pre-scan in Deno using regex on the fetched HTML
+          const imgTags = (pageSnippet.match(/<img[^>]*>/gi) || []);
+          const imgsWithoutAlt = imgTags.filter(t => !t.includes('alt=')).length;
+          const imgsWithEmptyAlt = imgTags.filter(t => /alt=["']\s*["']/.test(t)).length;
+          const inputTags = (pageSnippet.match(/<input[^>]*>/gi) || []);
+          const inputsWithoutLabel = inputTags.filter(t => !t.includes('aria-label') && !t.includes('id=')).length;
+          const hasLangAttr = /<html[^>]+lang=/i.test(pageSnippet);
+          const hasMainLandmark = /<main[\s>]/i.test(pageSnippet);
+          const hasH1 = /<h1[\s>]/i.test(pageSnippet);
+          const buttonTags = (pageSnippet.match(/<button[^>]*>/gi) || []);
+          const buttonsWithoutName = buttonTags.filter(t => 
+            !t.includes('aria-label') && !t.includes('aria-labelledby')
+          ).length;
+          const hasSkipLink = /href=["']#main|href=["']#content/i.test(pageSnippet);
+          const metaViewport = /<meta[^>]+viewport[^>]*>/i.test(pageSnippet);
+          const hasTitle = /<title[^>]*>[^<]+<\/title>/i.test(pageSnippet);
+
+          // Stream REAL pre-scan results
+          controller.enqueue(encoder.encode(`[LOG] DOM Analysis: ${imgTags.length} images found — ${imgsWithoutAlt} missing alt text, ${imgsWithEmptyAlt} with empty alt\n`));
+          controller.enqueue(encoder.encode(`[LOG] Forms: ${inputTags.length} input fields — ${inputsWithoutLabel} potentially missing labels\n`));
+          controller.enqueue(encoder.encode(`[LOG] Buttons: ${buttonTags.length} found — ${buttonsWithoutName} missing accessible names\n`));
+          controller.enqueue(encoder.encode(`[LOG] Page structure: lang=${hasLangAttr ? '✓' : '✗MISSING'} | <main>=${hasMainLandmark ? '✓' : '✗MISSING'} | <h1>=${hasH1 ? '✓' : '✗MISSING'} | <title>=${hasTitle ? '✓' : '✗MISSING'}\n`));
+          controller.enqueue(encoder.encode(`[LOG] Navigation: skip-link=${hasSkipLink ? '✓' : '✗MISSING'} | viewport-meta=${metaViewport ? '✓' : '✗MISSING'}\n`));
+          controller.enqueue(encoder.encode(`[STATUS] Pre-scan complete. Launching deep AI analysis across all WCAG 2.1 criteria...\n`));
+          
           let userPrompt = `TARGET URL: ${url}\n\nTARGET HTML:\n${pageSnippet}${multiPageContext}`;
           if (competitorSnippet) {
             userPrompt += `\n\nCOMPETITOR URL: ${competitorUrl}\n\nCOMPETITOR HTML (for benchmarking):\n${competitorSnippet}`;
           }
           
-          const systemPrompt = `You are the Lead Engineer for an Elite Accessibility Audit platform. Perform a high-speed holistic diagnostic audit of the provided HTML across ALL 4 WCAG categories (Perceivable, Operable, Understandable, Robust).
+          const systemPrompt = `You are an expert WCAG 2.1 accessibility auditor. Analyze the HTML and find EVERY accessibility violation — Critical, Serious, Moderate, and Minor. Do not skip any violation no matter how small. Agencies need comprehensive reports. As you analyze, narrate what you are finding in real time like:
+'[FINDING] CRITICAL | WCAG 1.1.1 | Missing alt text on hero image — <img class=hero src=...>'
+'[FINDING] SERIOUS | WCAG 1.4.3 | Low contrast ratio 3.2:1 on nav links'
+Stream each finding as you discover it. After all findings, output a single line of minified JSON with the complete structured data.
 
-CRITICAL OPERATING RULES:
-1. HOLISTIC SCAN: Check all 4 WCAG categories simultaneously. Do NOT miss any. 
-2. HEURISTIC SPEED: Identify the most critical accessibility patterns immediately.
-3. NO BALANCING QUOTAS: Report findings based on REAL occurrence in the code.
-4. EVIDENCE ANCHORING: Every finding must cite the specific CSS selector or tag ID found in the HTML snippet.
-${competitorUrl ? "5. COMPETITOR BENCHMARK: Since a competitor URL is provided, include a brief comparison analysis in the JSON output." : ""}
-${multiPageCrawlEnabled ? "6. MULTI-PAGE SYSTEMIC MODE: Treat structural flaws as systemic, impacting 50+ pages." : ""}
-
-EXECUTION PROTOCOL:
-- Output your internal progress line-by-line using ONLY these tags:
-  - [LOG]: For standard technical operations (parsing, mapping, testing)
-  - [STATUS]: For high-level progress indicators
-  - [FINDING]: For violations (Include: Impact, Category, and specific DOM reference)
-- Maintain a professional, machine-precise tone
-- Stream constantly without pausing
-
-MANDATORY RULES:
-- Report REAL findings only. No artificial quotas.
-- Be extremely specific in "element_affected" (selector, class, id, aria attribute).
-- Escalate severity for transactional elements (CTAs, forms, checkout) by one level.
-- Find maximum 5 violations per WCAG category (Perceivable, Operable, Understandable, Robust). Total violations must not exceed 20. Be concise. Skip minor issues.
-- Output ALL violations in ONE final JSON object at the very end. Do NOT output multiple JSONs. 
-- The JSON object must be on a SINGLE uninterrupted line. Do NOT format with newlines or pretty-printing.
-
-Stream your output line-by-line, then conclude with a SINGLE LINE of minified JSON matching this schema:
+Your final JSON object MUST match this schema and be outputted on a single line at the very end:
 {"summary":{"total_violations":number,"priority_distribution":{"Critical":number,"Serious":number,"Moderate":number,"Minor":number}},"violations":[{"id":"kebab-case","severity":"critical|serious|moderate|minor","name":"Title","wcag_criterion":"WCAG X.X.X","description":"Problem","element_affected":"selector","legal_impact":"exposure","fix_instructions":"fix","estimated_fix_time":"X hours","revenue_impact":"impact","fix_difficulty":"easy|medium|hard"}]}
 `;
-          
-          controller.enqueue(encoder.encode(`[STATUS] Executing holistic elite engine across 4 WCAG categories...\n`));
           
           const { body: stream, model } = await callGeminiStreamWithFallback(systemPrompt, userPrompt, key);
           controller.enqueue(encoder.encode(`[LOG] Using AI model: ${model}...\n`));
           
-          // Setup heartbeat logs
-          heartbeat = setInterval(() => {
-            controller.enqueue(encoder.encode("[LOG] AI analyzing accessibility patterns...\n"));
-          }, 5000);
-          
+          const reader = stream.getReader();
+          const decoder = new TextDecoder();
           let jsonBuffer = "";
           let jsonStarted = false;
-          
-          const sseGen = parseGeminiSSE(stream);
-          for await (const textChunk of sseGen) {
-            if (jsonStarted) {
-              jsonBuffer += textChunk;
-            } else if (textChunk.includes("{")) {
-              const parts = textChunk.split("{");
-              if (parts[0].trim()) {
-                controller.enqueue(encoder.encode(parts[0]));
+          let buffer = "";
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop() || "";
+            
+            for (const line of lines) {
+              if (!line.startsWith("data: ")) continue;
+              const jsonStr = line.slice(6).trim();
+              if (jsonStr === "[DONE]") continue;
+              
+              try {
+                const parsed = JSON.parse(jsonStr);
+                const text = parsed?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+                if (!text) continue;
+                
+                // Stream text to terminal in real time
+                if (jsonStarted) {
+                  jsonBuffer += text;
+                } else if (text.includes("{")) {
+                  const parts = text.split("{");
+                  if (parts[0].trim()) {
+                    controller.enqueue(encoder.encode(parts[0]));
+                  }
+                  jsonStarted = true;
+                  jsonBuffer = "{" + parts.slice(1).join("{");
+                } else {
+                  // Pure text — stream directly to terminal immediately
+                  controller.enqueue(encoder.encode(text));
+                }
+              } catch (e) {
+                // Skip malformed SSE chunks
               }
-              jsonStarted = true;
-              jsonBuffer = "{" + parts.slice(1).join("{");
-            } else {
-              controller.enqueue(encoder.encode(textChunk));
             }
           }
-          
-          if (heartbeat) clearInterval(heartbeat);
           
           // Emit the final compacted JSON string on a single line
           if (jsonBuffer) {
@@ -270,7 +255,6 @@ Stream your output line-by-line, then conclude with a SINGLE LINE of minified JS
           
           controller.close();
         } catch (error) {
-          if (heartbeat) clearInterval(heartbeat);
           console.error("Streaming error:", error);
           controller.enqueue(encoder.encode(`[ERROR] ${error.message}\n`));
           controller.close();

@@ -245,6 +245,11 @@ function NewAuditPage() {
       auditRunningRef.current = true;
       setStreamLogs([]);
       streamLogsRef.current = [];
+      setElapsed(0);
+      
+      const timerInterval = setInterval(() => {
+        setElapsed(prev => prev + 1);
+      }, 1000);
 
       try {
         const { data: settings } = await supabase.from("settings").select("gemini_api_key, plan").maybeSingle();
@@ -313,6 +318,7 @@ function NewAuditPage() {
         streamLogsRef.current.push(`[ERROR] ${streamError.message}`);
         setStreamLogs([...streamLogsRef.current]);
       } finally {
+        clearInterval(timerInterval);
         setStreamingActive(false);
         auditRunningRef.current = false;
         setLoading(false);
@@ -337,14 +343,51 @@ function NewAuditPage() {
     }
   };
 
-  // Realtime-only subscription for the active job (no long-polling).
-  // The channel filters on this job id so the terminal receives updates
-  // as soon as processAuditJob appends to progress_log.
+  const [elapsed, setElapsed] = useState(0);
+  const terminalRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (terminalRef.current) {
+      terminalRef.current.scrollTo(0, terminalRef.current.scrollHeight);
+    }
+  }, [streamLogs]);
+
+  const renderTerminalLine = (line: string, index: number) => {
+    let className = "text-zinc-300 font-mono text-xs";
+    let bgStyle = {};
+
+    if (line.includes("[FINDING] CRITICAL") || line.includes("[FINDING] | CRITICAL")) {
+      className = "text-red-500 font-bold";
+    } else if (line.includes("[FINDING] SERIOUS") || line.includes("[FINDING] | SERIOUS")) {
+      className = "text-orange-500 font-bold";
+    } else if (line.includes("[FINDING] MODERATE") || line.includes("[FINDING] | MODERATE")) {
+      className = "text-yellow-400 font-semibold";
+    } else if (line.includes("[FINDING] MINOR") || line.includes("[FINDING] | MINOR")) {
+      className = "text-blue-400";
+    } else if (line.startsWith("[STATUS]")) {
+      className = "text-green-400 font-semibold";
+    } else if (line.startsWith("[LOG]")) {
+      className = "text-zinc-400/80";
+    } else if (line.startsWith("[ERROR]")) {
+      className = "text-white font-bold px-1.5 py-0.5 rounded";
+      bgStyle = { backgroundColor: "#ef4444" };
+    }
+
+    return (
+      <div key={index} className={className} style={bgStyle}>
+        {line}
+      </div>
+    );
+  };
+
+  // Realtime subscription + 3s polling fallback for the active job
   useEffect(() => {
     if (!currentJobId) return;
     const jobId = currentJobId;
     let cancelled = false;
+    let realtimeConnected = false;
 
+    // Realtime channel: listen to row updates for this specific job
     const channel = supabase
       .channel(`audit_job:${jobId}`)
       .on(
@@ -355,21 +398,27 @@ function NewAuditPage() {
           applyJobState(payload.new);
         }
       )
-      .subscribe(async (status) => {
-        // On (re)subscribe, seed state once so the terminal reflects any
-        // rows the worker wrote before the channel was ready. No interval.
-        if (status === "SUBSCRIBED") {
-          try {
-            const snapshot = await getJobStatusFn({ data: { jobId } });
-            if (!cancelled) applyJobState(snapshot);
-          } catch (err) {
-            console.error("Initial job snapshot failed:", err);
-          }
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") realtimeConnected = true;
+        else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+          realtimeConnected = false;
         }
       });
 
+    // Polling fallback (always on at 3s — cheap row read, covers realtime drops)
+    const pollInterval = setInterval(async () => {
+      if (cancelled) return;
+      try {
+        const status = await getJobStatusFn({ data: { jobId } });
+        applyJobState(status);
+      } catch (err) {
+        console.error("Polling error:", err);
+      }
+    }, 3000);
+
     return () => {
       cancelled = true;
+      clearInterval(pollInterval);
       supabase.removeChannel(channel);
     };
   }, [currentJobId]);
@@ -646,7 +695,40 @@ function NewAuditPage() {
 
           {/* Terminal for streaming mode */}
           {streamingMode && streamingActive && (
-            <Terminal logs={streamLogs} isActive={streamingActive} />
+            <div className="relative w-full rounded-lg border border-zinc-800 bg-zinc-950 overflow-hidden shadow-2xl">
+              {/* Terminal header */}
+              <div className="flex items-center justify-between px-4 py-2.5 bg-zinc-900/60 border-b border-zinc-850 backdrop-blur-sm">
+                <div className="flex items-center gap-1.5">
+                  <div className="w-2.5 h-2.5 rounded-full bg-[#ff5f56]" />
+                  <div className="w-2.5 h-2.5 rounded-full bg-[#ffbd2e]" />
+                  <div className="w-2.5 h-2.5 rounded-full bg-[#27c93f]" />
+                </div>
+                <div className="flex items-center gap-3.5 text-[11px] font-mono text-zinc-400">
+                  <span className="text-amber-400 font-medium shrink-0">🔍 {streamLogs.filter(line => line.includes("[FINDING]")).length} violations detected</span>
+                  <span className="text-zinc-500">|</span>
+                  <span className="tabular-nums">⏱ {Math.floor(elapsed / 60).toString().padStart(2, "0")}:{(elapsed % 60).toString().padStart(2, "0")} elapsed</span>
+                  <span className="text-zinc-500">|</span>
+                  <span className="text-green-500 font-semibold shrink-0 animate-pulse">● LIVE STREAM</span>
+                </div>
+              </div>
+
+              {/* Terminal content */}
+              <div
+                ref={terminalRef}
+                className="h-80 overflow-y-auto p-4 space-y-1.5 bg-[#0d0e11] text-zinc-300 font-mono text-xs leading-relaxed"
+                style={{
+                  fontFamily: "'Courier New', Courier, monospace",
+                }}
+              >
+                {streamLogs.length === 0 ? (
+                  <div className="text-zinc-500 animate-pulse">
+                    [SYSTEM] Establishing secure connection to target...
+                  </div>
+                ) : (
+                  streamLogs.map((line, index) => renderTerminalLine(line, index))
+                )}
+              </div>
+            </div>
           )}
 
           {/* Log messages for non-streaming mode */}
