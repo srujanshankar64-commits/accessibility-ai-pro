@@ -251,9 +251,10 @@ function ProposalPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user?.id) return;
 
+      const derivedClientName = s.url ? new URL(s.url).hostname.replace(/^www\./, '') : "General Client";
       const out = await proposalFn({ data: {
         auditId: s.auditId, url: s.url, agencyName,
-        clientName: "", clientIndustry: "E-commerce",
+        clientName: derivedClientName, clientIndustry: "E-commerce",
         tone: "professional", priceMin: 2500, priceMax: 8000,
         violations: s.violations ?? [],
         competitorUrl: s.competitorData?.url,
@@ -264,7 +265,7 @@ function ProposalPage() {
       if (s.auditId) {
         await (supabase.from("audits") as any).update({ has_proposal: true }).eq("id", s.auditId);
         await (supabase.from("proposals") as any).insert({
-          audit_id: s.auditId, client_name: "", client_industry: "General Business",
+          audit_id: s.auditId, client_name: derivedClientName, client_industry: "General Business",
           tone: "professional", price_min: 2500, price_max: 8000,
           content: out as any, selected_violations: (s.violations ?? []) as any,
           user_id: user.id,
@@ -284,8 +285,9 @@ function ProposalPage() {
         return;
       }
 
+      const derivedClientName = client || (seed.url ? new URL(seed.url).hostname.replace(/^www\./, '') : "General Client");
       const out = await proposalFn({ data: {
-        auditId: seed.auditId, url: seed.url, agencyName: agency, clientName: client,
+        auditId: seed.auditId, url: seed.url, agencyName: agency, clientName: derivedClientName,
         clientIndustry: industry || "E-commerce", tone, priceMin, priceMax,
         violations: seed.violations ?? [],
         competitorUrl: seed.competitorData?.url,
@@ -296,7 +298,7 @@ function ProposalPage() {
       if (seed.auditId) {
         await (supabase.from("audits") as any).update({ has_proposal: true }).eq("id", seed.auditId);
         await (supabase.from("proposals") as any).insert({
-          audit_id: seed.auditId, client_name: client, client_industry: industry,
+          audit_id: seed.auditId, client_name: derivedClientName, client_industry: industry,
           tone, price_min: priceMin, price_max: priceMax,
           content: out as any, selected_violations: (seed.violations ?? []) as any,
           user_id: user.id,
@@ -340,8 +342,9 @@ function ProposalPage() {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(11);
     doc.setTextColor(100, 100, 115);
-    doc.text(`Prepared for: ${client || "Your Client"}`, 48, y); y += 16;
-    doc.text(`Site audited: ${seed.url ?? "—"}`, 48, y); y += 16;
+    const derivedClientName = client || (seed.url ? new URL(seed.url).hostname.replace(/^www\./, '') : "Your Client");
+    doc.text(`Prepared for: ${derivedClientName}`, 48, y); y += 16;
+    doc.text(`Site audited: ${seed.url || "—"}`, 48, y); y += 16;
     doc.text(`Compliance score: ${seed.score ?? 0}/100`, 48, y); y += 28;
 
     // Score badge
@@ -429,7 +432,7 @@ ${(content.follow_up_email as any)?.body || ""}` : (content.follow_up_email || "
       doc.text(`Page ${i} of ${pageCount}`, W - 48, doc.internal.pageSize.getHeight() - 20, { align: "right" });
     }
 
-    doc.save(`Accessibility_Report_${client || "Client"}.pdf`);
+    doc.save(`Accessibility_Report_${(client || (seed.url ? new URL(seed.url).hostname.replace(/^www\./, '') : "Client")).replace(/[^a-zA-Z0-9_-]/g, "_")}.pdf`);
     toast.success("PDF exported successfully");
   };
 

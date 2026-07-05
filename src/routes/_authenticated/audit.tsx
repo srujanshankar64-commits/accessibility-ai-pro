@@ -64,16 +64,11 @@ function NewAuditPage() {
   const [showUpsell, setShowUpsell] = useState(false);
   const [used, setUsed] = useState(0);
   
-  // Streaming state
-  const [streamingMode, setStreamingMode] = useState(false);
-  const [streamLogs, setStreamLogs] = useState<string[]>([]);
-  const [streamingActive, setStreamingActive] = useState(false);
-  const streamLogsRef = useRef<string[]>([]);
-  const auditRunningRef = useRef(false);
-  
   // Async job state
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
   const [jobError, setJobError] = useState<string | null>(null);
+  const terminalRef = useRef<HTMLDivElement>(null);
+  const auditRunningRef = useRef(false);
 
   // No website prospect mode
   const [noWebsite, setNoWebsite] = useState(false);
@@ -237,104 +232,11 @@ function NewAuditPage() {
     setProgress(0);
     setJobError(null);
     setLogMessages([]);
-
-      if (streamingMode) {
-      setStreamingActive(true);
-      auditRunningRef.current = true;
-      setStreamLogs([]);
-      streamLogsRef.current = [];
-      setElapsed(0);
-      
-      const timerInterval = setInterval(() => {
-        setElapsed(prev => prev + 1);
-      }, 1000);
-
-      // Throttled UI update to prevent freezing React with 1000+ renders/sec
-      const uiFlushInterval = setInterval(() => {
-        setStreamLogs([...streamLogsRef.current]);
-      }, 100);
-
-      try {
-        const { data: settings } = await supabase.from("settings").select("gemini_api_key, plan").maybeSingle();
-        const apiKey = (settings as any)?.gemini_api_key;
-        const userPlan = (settings as any)?.plan || "free";
-
-        const { data: { session } } = await supabase.auth.getSession();
-        const functionUrl = 'https://xyyneqqbncyokeaynebt.supabase.co/functions/v1/audit-stream';
-        const fallbackKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh5eW5lcXFibmN5b2tleWF5bmVidCIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNzgxNjA0ODIzLCJleHAiOjIwOTcyMDA4MjN9.Bq11j-ZptP1rQ01rQzYxXzY1c1c1c1c1c1c1c1c1c1c';
-        
-        const response = await fetch(functionUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session?.access_token || fallbackKey}`
-          },
-          body: JSON.stringify({ url, apiKey, plan: userPlan, multiPageCrawlEnabled, competitorUrl })
-        });
-
-        if (!response.ok) {
-           const errText = await response.text();
-           throw new Error(errText);
-        }
-
-        const reader = response.body?.getReader();
-        if (!reader) throw new Error("No stream reader available");
-
-        const decoder = new TextDecoder();
-        let buffer = "";
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          const chunk = decoder.decode(value, { stream: true });
-          buffer += chunk;
-
-          const lines = buffer.split("\n");
-          buffer = lines.pop() || "";
-
-          for (const line of lines) {
-            if (line.trim()) {
-              if (line.trim().startsWith("{")) {
-                try {
-                  const json = JSON.parse(line.trim());
-                  if (json.summary && json.violations) {
-                    const score = Math.max(0, 100 - (json.summary.total_violations * 1.5));
-                    setAudit({ violations: json.violations, overall_score: Math.round(score) });
-                    setProgress(100);
-                    setAuditState("COMPLETED");
-                    
-                    const preset = new Set<string>(json.violations.map((v: any) => v.id));
-                    setSelected(preset);
-                    
-                    toast.success(`Elite-Stream audit complete — ${json.summary.total_violations} violations found`);
-                    loadRecent();
-                  }
-                } catch (e) {
-                  streamLogsRef.current.push(line);
-                }
-              } else {
-                streamLogsRef.current.push(line);
-              }
-            }
-          }
-        }
-      } catch (streamError: any) {
-        streamLogsRef.current.push(`[ERROR] ${streamError.message}`);
-      } finally {
-        clearInterval(timerInterval);
-        clearInterval(uiFlushInterval);
-        setStreamLogs([...streamLogsRef.current]);
-        setStreamingActive(false);
-        auditRunningRef.current = false;
-        setLoading(false);
-      }
-      return;
-    }
+    auditRunningRef.current = true;
 
     try {
       // Async job mode: enqueue and let realtime + polling drive the UI
-      setLogMessages([{ text: "Queuing audit job...", done: false, active: true }]);
+      setLogMessages([{ text: "[LOG] Queuing audit job...", done: false, active: true }]);
       setProgress(5);
       const { job_id } = await startJobFn({ data: { url, multiPageCrawlEnabled, competitorUrl } });
       setCurrentJobId(job_id);
@@ -344,19 +246,18 @@ function NewAuditPage() {
       });
     } catch (err: any) {
       toast.error(err?.message ?? "Failed to start audit");
+      setJobError(err?.message ?? "Failed to start audit");
       setLoading(false);
       setAuditState("IDLE");
+      auditRunningRef.current = false;
     }
   };
-
-  const [elapsed, setElapsed] = useState(0);
-  const terminalRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (terminalRef.current) {
       terminalRef.current.scrollTo(0, terminalRef.current.scrollHeight);
     }
-  }, [streamLogs]);
+  }, [logMessages]);
 
   const renderTerminalLine = (line: string, index: number) => {
     let className = "text-zinc-300 font-mono text-xs";
@@ -377,6 +278,8 @@ function NewAuditPage() {
     } else if (line.startsWith("[ERROR]")) {
       className = "text-white font-bold px-1.5 py-0.5 rounded";
       bgStyle = { backgroundColor: "#ef4444" };
+    } else if (line.startsWith("[WARN]")) {
+      className = "text-yellow-400 font-bold px-1.5 py-0.5 rounded bg-yellow-500/20";
     }
 
     return (
@@ -559,17 +462,8 @@ function NewAuditPage() {
         </div>
       )}
 
-      {/* Streaming mode toggle */}
-      <div className="flex items-center gap-3">
-        <Switch
-          checked={streamingMode}
-          onCheckedChange={setStreamingMode}
-          id="streaming-mode"
-        />
-        <label htmlFor="streaming-mode" className="text-sm text-muted-foreground">
-          Elite-Stream Mode (Real-time terminal output)
-        </label>
-      </div>
+      {/* UI Spacing preserved */}
+      <div className="h-2"></div>
 
       {/* URL bar */}
       <div className="space-y-2">
@@ -699,9 +593,27 @@ function NewAuditPage() {
             />
           </div>
 
-          {/* Terminal for streaming mode */}
-          {streamingMode && streamingActive && (
-            <div className="relative w-full rounded-lg border border-zinc-800 bg-zinc-950 overflow-hidden shadow-2xl">
+
+          {/* Error Boundary */}
+          {jobError && (
+            <div className="relative w-full rounded-lg border border-red-500/30 bg-red-500/10 p-4 shadow-2xl flex flex-col gap-3 mt-4">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="h-5 w-5 text-red-500 mt-0.5" />
+                <div className="flex-1">
+                  <h3 className="text-sm font-semibold text-red-400">Audit Failed</h3>
+                  <p className="text-xs text-red-300 mt-1 font-mono">{jobError}</p>
+                </div>
+              </div>
+              <Button onClick={retryAudit} variant="outline" size="sm" className="w-fit self-end border-red-500/50 hover:bg-red-500/20 text-red-200">
+                <RotateCcw className="h-3 w-3 mr-1.5" />
+                Retry Audit
+              </Button>
+            </div>
+          )}
+
+          {/* Unified Terminal */}
+          {!jobError && logMessages.length > 0 && (
+            <div className="relative w-full rounded-lg border border-zinc-800 bg-zinc-950 overflow-hidden shadow-2xl mt-4">
               {/* Terminal header */}
               <div className="flex items-center justify-between px-4 py-2.5 bg-zinc-900/60 border-b border-zinc-850 backdrop-blur-sm">
                 <div className="flex items-center gap-1.5">
@@ -710,11 +622,8 @@ function NewAuditPage() {
                   <div className="w-2.5 h-2.5 rounded-full bg-[#27c93f]" />
                 </div>
                 <div className="flex items-center gap-3.5 text-[11px] font-mono text-zinc-400">
-                  <span className="text-amber-400 font-medium shrink-0">🔍 {streamLogs.filter(line => line.includes("[FINDING]")).length} violations detected</span>
-                  <span className="text-zinc-500">|</span>
-                  <span className="tabular-nums">⏱ {Math.floor(elapsed / 60).toString().padStart(2, "0")}:{(elapsed % 60).toString().padStart(2, "0")} elapsed</span>
-                  <span className="text-zinc-500">|</span>
-                  <span className="text-green-500 font-semibold shrink-0 animate-pulse">● LIVE STREAM</span>
+                  <span className="text-amber-400 font-medium shrink-0">🔍 {logMessages.filter(msg => msg.text.includes("[FINDING]")).length} violations detected</span>
+                  <span className="text-green-500 font-semibold shrink-0 animate-pulse">● LIVE AUDIT</span>
                 </div>
               </div>
 
@@ -726,32 +635,8 @@ function NewAuditPage() {
                   fontFamily: "'Courier New', Courier, monospace",
                 }}
               >
-                {streamLogs.length === 0 ? (
-                  <div className="text-zinc-500 animate-pulse">
-                    [SYSTEM] Establishing secure connection to target...
-                  </div>
-                ) : (
-                  streamLogs.map((line, index) => renderTerminalLine(line, index))
-                )}
+                {logMessages.map((msg, index) => renderTerminalLine(msg.text, index))}
               </div>
-            </div>
-          )}
-
-          {/* Log messages for non-streaming mode */}
-          {!streamingMode && logMessages.length > 0 && (
-            <div className="space-y-1.5">
-              {logMessages.map((msg, idx) => (
-                <div
-                  key={idx}
-                  className={cn(
-                    "text-xs font-mono",
-                    msg.active ? "text-primary animate-pulse motion-reduce:animate-none" : "text-muted-foreground",
-                    msg.done && "opacity-60"
-                  )}
-                >
-                  {msg.text}
-                </div>
-              ))}
             </div>
           )}
         </div>
