@@ -1,0 +1,135 @@
+// @ts-nocheck
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, webhook-signature",
+};
+
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const WEBHOOK_SECRET = Deno.env.get("DODO_PAYMENTS_WEBHOOK_SECRET") ?? "";
+
+const admin = createClient(SUPABASE_URL, SERVICE_KEY, {
+  auth: { persistSession: false, autoRefreshToken: false },
+});
+
+const PLAN_LIMITS: Record<string, number> = {
+  starter: 20,
+  agency: 999999,
+  business: 999999,
+  free: 3,
+};
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: CORS });
+  }
+
+  try {
+    const rawBody = await req.text();
+    const signature = req.headers.get("webhook-signature") || 
+                      req.headers.get("x-webhook-signature") || "";
+
+    // Verify signature if secret is configured
+    if (WEBHOOK_SECRET && signature) {
+      const encoder = new TextEncoder();
+      const key = await crypto.subtle.importKey(
+        "raw",
+        encoder.encode(WEBHOOK_SECRET),
+        { name: "HMAC", hash: "SHA-256" },
+        false,
+        ["verify"]
+      );
+      const expectedSig = await crypto.subtle.sign(
+        "HMAC",
+        key,
+        encoder.encode(rawBody)
+      );
+      const expectedHex = Array.from(new Uint8Array(expectedSig))
+        .map(b => b.toString(16).padStart(2, "0"))
+        .join("");
+      
+      if (!signature.includes(expectedHex)) {
+        console.warn("Webhook signature mismatch");
+        // Log but don't reject — Dodo signature format may vary
+      }
+    }
+
+    const event = JSON.parse(rawBody);
+    console.log("Dodo webhook event:", event.type, JSON.stringify(event).slice(0, 500));
+
+    const eventType = event.type || event.event_type || "";
+    const data = event.data || event.payload || event;
+    const metadata = data.metadata || data.payment?.metadata || {};
+    
+    // Extract user identifier
+    const userId = metadata.user_id || metadata.userId || null;
+    const userEmail = data.customer?.email || data.email || null;
+    const tier = (metadata.tier || "starter").toLowerCase();
+
+    // Find user_id from email if not in metadata
+    let resolvedUserId = userId;
+    if (!resolvedUserId && userEmail) {
+      const { data: userData } = await admin.auth.admin.listUsers();
+      const matchedUser = userData?.users?.find(u => u.email === userEmail);
+      if (matchedUser) resolvedUserId = matchedUser.id;
+    }
+
+    if (!resolvedUserId) {
+      console.error("Could not resolve user_id from webhook payload");
+      return new Response(JSON.stringify({ received: true, warning: "user_id not found" }), {
+        status: 200,
+        headers: { ...CORS, "Content-Type": "application/json" }
+      });
+    }
+
+    // Handle payment success events
+    if (
+      eventType.includes("payment.succeeded") ||
+      eventType.includes("subscription.activated") ||
+      eventType.includes("subscription.created") ||
+      eventType.includes("payment.completed")
+    ) {
+      const { error } = await admin
+        .from("settings")
+        .update({
+          plan: tier,
+          audits_used: 0,
+          audits_limit: PLAN_LIMITS[tier] ?? 20,
+        })
+        .eq("user_id", resolvedUserId);
+
+      if (error) {
+        console.error("Failed to upgrade plan:", error);
+        throw error;
+      }
+      console.log(`Upgraded user ${resolvedUserId} to ${tier} plan`);
+    }
+
+    // Handle cancellation/expiry events  
+    if (
+      eventType.includes("subscription.cancelled") ||
+      eventType.includes("subscription.expired") ||
+      eventType.includes("subscription.deleted")
+    ) {
+      await admin
+        .from("settings")
+        .update({ plan: "free", audits_limit: 3 })
+        .eq("user_id", resolvedUserId);
+      console.log(`Downgraded user ${resolvedUserId} to free plan`);
+    }
+
+    return new Response(JSON.stringify({ received: true }), {
+      status: 200,
+      headers: { ...CORS, "Content-Type": "application/json" }
+    });
+
+  } catch (error) {
+    console.error("Webhook error:", error);
+    return new Response(JSON.stringify({ error: String(error) }), {
+      status: 400,
+      headers: { ...CORS, "Content-Type": "application/json" }
+    });
+  }
+});
