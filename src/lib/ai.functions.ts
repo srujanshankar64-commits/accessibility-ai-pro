@@ -255,7 +255,7 @@ const plan = getPlan(settings?.plan, 'srujanshankar64@gmail.com');
 
     console.log(`[SYSTEM_PROMPT_CONFIGURED] Full audit mode, Violation Limit: ${violationLimit}, Code Fixes: ${includeCodeFixes}`);
 
-    const isJsRendered = detectJsRendered(html);
+    const isJsRendered = detectJsRendered(pageSnippet);
     
     const systemPrompt = isFree 
         ? buildFreeAuditPrompt()
@@ -707,7 +707,7 @@ export const processAuditJob = createServerFn({ method: "POST" })
 
       await pushLog(sb, jobId, 15, "Parsing HTML...", `[LOG] Fetched ${Math.round(html.length/1024)}kb of HTML — using first ${Math.round(snippetLength/1024)}KB`);
 
-      const isJsRendered = detectJsRendered(html);
+      const isJsRendered = detectJsRendered(pageSnippet);
       if (isJsRendered) {
         await pushLog(sb, jobId, 20, "JS-rendered site detected", "[WARN] JavaScript-rendered SPA detected — auditing HTML shell only. Some dynamic content violations may not be visible.");
       }
