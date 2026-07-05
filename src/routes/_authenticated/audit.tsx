@@ -69,6 +69,7 @@ function NewAuditPage() {
   const [jobError, setJobError] = useState<string | null>(null);
   const terminalRef = useRef<HTMLDivElement>(null);
   const auditRunningRef = useRef(false);
+  const safetyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // No website prospect mode
   const [noWebsite, setNoWebsite] = useState(false);
@@ -192,6 +193,7 @@ function NewAuditPage() {
     }
 
     if (status.status === "completed" && status.result) {
+      if (safetyTimeoutRef.current) clearTimeout(safetyTimeoutRef.current);
       setProgress(100);
       setAuditState("COMPLETED");
       setAudit(status.result);
@@ -208,11 +210,13 @@ function NewAuditPage() {
     }
 
     if (status.status === "failed") {
+      if (safetyTimeoutRef.current) clearTimeout(safetyTimeoutRef.current);
       const msg = status.error_message || "Audit failed";
       setJobError(msg);
       setCurrentJobId(null);
       setLoading(false);
       setAuditState("IDLE");
+      auditRunningRef.current = false;
       toast.error(msg);
     }
   };
@@ -235,6 +239,16 @@ function NewAuditPage() {
     setLogMessages([]);
     auditRunningRef.current = true;
 
+    // Safety timeout to reset auditRunningRef if audit takes more than 3 minutes
+    safetyTimeoutRef.current = setTimeout(() => {
+      if (auditRunningRef.current) {
+        auditRunningRef.current = false;
+        setLoading(false);
+        setAuditState("IDLE");
+        toast.error("Audit timed out after 3 minutes. Please try again.");
+      }
+    }, 180000);
+
     try {
       // Async job mode: enqueue and let realtime + polling drive the UI
       setLogMessages([{ text: "[LOG] Queuing audit job...", done: false, active: true }]);
@@ -246,6 +260,7 @@ function NewAuditPage() {
         console.error("processAuditJob failed:", err);
       });
     } catch (err: any) {
+      if (safetyTimeoutRef.current) clearTimeout(safetyTimeoutRef.current);
       toast.error(err?.message ?? "Failed to start audit");
       setJobError(err?.message ?? "Failed to start audit");
       setLoading(false);

@@ -70,7 +70,7 @@ async function callGemini(
   userApiKey?: string,
   model = "gemini-2.5-flash"
 ): Promise<string> {
-  const apiKey = (process.env.GOOGLE_GEMINI_API_KEY || userApiKey)?.trim();
+  const apiKey = (userApiKey || process.env.GOOGLE_GEMINI_API_KEY)?.trim();
   if (!apiKey) throw new Error("AI service unavailable. Add your Gemini API key in Settings.");
 
   const ai = new GoogleGenAI({ apiKey });

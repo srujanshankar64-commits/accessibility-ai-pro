@@ -28,6 +28,22 @@ export const Route = createFileRoute("/_authenticated/proposal")({
 
 interface Seed { auditId?: string; url?: string; score?: number; violations?: Violation[]; competitorData?: { url?: string; score?: number; violations?: number } }
 
+// Global flag to prevent auto-generate from running multiple times per browser session
+let hasAutoRunGlobal = false;
+
+function deriveIndustry(url: string): string {
+  if (!url) return "Business Services";
+  const hostname = new URL(url).hostname.toLowerCase();
+  if (hostname.includes("dental") || hostname.includes("clinic") || hostname.includes("health")) return "Healthcare";
+  if (hostname.includes("law") || hostname.includes("legal") || hostname.includes("attorney")) return "Legal";
+  if (hostname.includes("school") || hostname.includes("edu") || hostname.includes("university")) return "Education";
+  if (hostname.includes("shop") || hostname.includes("store") || hostname.includes("buy")) return "E-commerce";
+  if (hostname.includes("gov") || hostname.includes("council") || hostname.includes("city")) return "Government";
+  if (hostname.includes("hotel") || hostname.includes("restaurant") || hostname.includes("cafe")) return "Hospitality";
+  if (hostname.includes("real") || hostname.includes("property") || hostname.includes("homes")) return "Real Estate";
+  return "Business Services";
+}
+
 function UpgradeBanner({ message, target }: { message: string; target: string }) {
   return (
     <div className="flex items-center gap-3 p-4 rounded-lg border border-amber-500/30 bg-amber-500/5 backdrop-blur-sm animate-fade-in">
@@ -213,7 +229,6 @@ function ProposalPage() {
   };
   const [autoLoading, setAutoLoading] = useState(false);
   const [certificate, setCertificate] = useState<any>(null);
-  const hasAutoRun = useRef(false);
 
   useEffect(() => {
     const raw = sessionStorage.getItem("proposal_seed");
@@ -230,12 +245,12 @@ function ProposalPage() {
 
       const currentPlan = getPlan((data as any)?.plan, 'srujanshankar64@gmail.com');
       if (
-        !hasAutoRun.current &&
+        !hasAutoRunGlobal &&
         parsedSeed.violations?.length &&
         parsedSeed.auditId &&
         TIER[currentPlan].proposals
       ) {
-        hasAutoRun.current = true;
+        hasAutoRunGlobal = true;
         try {
           autoGenerate(parsedSeed, (data as any)?.agency_name ?? "Your Agency");
         } catch(e) {
@@ -254,7 +269,7 @@ function ProposalPage() {
       const derivedClientName = s.url ? new URL(s.url).hostname.replace(/^www\./, '') : "General Client";
       const out = await proposalFn({ data: {
         auditId: s.auditId, url: s.url, agencyName,
-        clientName: derivedClientName, clientIndustry: "E-commerce",
+        clientName: derivedClientName, clientIndustry: deriveIndustry(s.url ?? ""),
         tone: "professional", priceMin: 2500, priceMax: 8000,
         violations: s.violations ?? [],
         competitorUrl: s.competitorData?.url,
@@ -288,7 +303,7 @@ function ProposalPage() {
       const derivedClientName = client || (seed.url ? new URL(seed.url).hostname.replace(/^www\./, '') : "General Client");
       const out = await proposalFn({ data: {
         auditId: seed.auditId, url: seed.url, agencyName: agency, clientName: derivedClientName,
-        clientIndustry: industry || "E-commerce", tone, priceMin, priceMax,
+        clientIndustry: industry || deriveIndustry(seed.url ?? ""), tone, priceMin, priceMax,
         violations: seed.violations ?? [],
         competitorUrl: seed.competitorData?.url,
         competitorScore: seed.competitorData?.score,

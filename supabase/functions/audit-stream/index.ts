@@ -71,6 +71,29 @@ Deno.serve(async (req) => {
   try {
     const { url, apiKey, plan = "free", multiPageCrawlEnabled, competitorUrl } = await req.json();
     
+    // Plan limit check at the start
+    const authHeader = req.headers.get("Authorization") || "";
+    const userToken = authHeader.replace("Bearer ", "").trim();
+    if (userToken) {
+      const { data: { user } } = await admin.auth.getUser(userToken);
+      if (user?.id) {
+        const { data: settingsData } = await admin
+          .from("settings")
+          .select("audits_used, plan")
+          .eq("user_id", user.id)
+          .maybeSingle();
+        const userPlan = settingsData?.plan ?? "free";
+        const used = settingsData?.audits_used ?? 0;
+        const FREE_LIMIT = 3;
+        if (userPlan === "free" && used >= FREE_LIMIT) {
+          return new Response(
+            JSON.stringify({ error: "Free audit limit reached. Upgrade to Starter ($49/mo) for more audits." }),
+            { status: 403, headers: { ...CORS, "Content-Type": "application/json" } }
+          );
+        }
+      }
+    }
+    
     if (!url) {
       return new Response(JSON.stringify({ error: "URL required" }), {
         status: 400,
@@ -210,6 +233,7 @@ Your final JSON object MUST match this schema and be outputted on a single line 
           const decoder = new TextDecoder();
           let jsonBuffer = "";
           let jsonStarted = false;
+          let sseBuffer = "";
           let buffer = "";
           let terminalSlidingBuffer = "";
 
