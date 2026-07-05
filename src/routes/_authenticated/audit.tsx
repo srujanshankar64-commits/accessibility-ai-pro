@@ -68,11 +68,8 @@ function NewAuditPage() {
   const [streamingMode, setStreamingMode] = useState(false);
   const [streamLogs, setStreamLogs] = useState<string[]>([]);
   const [streamingActive, setStreamingActive] = useState(false);
-  
-  // Refs to prevent re-render issues
-  const auditRunningRef = useRef(false);
   const streamLogsRef = useRef<string[]>([]);
-  const hasStartedRef = useRef(false);
+  const auditRunningRef = useRef(false);
   
   // Async job state
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
@@ -207,9 +204,7 @@ function NewAuditPage() {
       setLoading(false);
       setCurrentJobId(null);
       const preset = new Set<string>(
-        ((status.result.violations as unknown) as Violation[])
-          .filter((v: any) => v.severity === "critical" || v.severity === "serious")
-          .map((v: any) => v.id)
+        ((status.result.violations as unknown) as Violation[]).map((v: any) => v.id)
       );
       setSelected(preset);
       toast.success(`Audit complete — ${status.result.violationsShown ?? (status.result.violations?.length ?? 0)} violations found`);
@@ -243,84 +238,54 @@ function NewAuditPage() {
     setJobError(null);
     setLogMessages([]);
 
-    if (streamingMode) {
-      if (auditRunningRef.current) return;
-      auditRunningRef.current = true;
-      
+      if (streamingMode) {
       setStreamingActive(true);
+      auditRunningRef.current = true;
       setStreamLogs([]);
       streamLogsRef.current = [];
+      setElapsed(0);
       
+      const timerInterval = setInterval(() => {
+        setElapsed(prev => prev + 1);
+      }, 1000);
+
+      // Throttled UI update to prevent freezing React with 1000+ renders/sec
+      const uiFlushInterval = setInterval(() => {
+        setStreamLogs([...streamLogsRef.current]);
+      }, 100);
+
       try {
         const { data: settings } = await supabase.from("settings").select("gemini_api_key, plan").maybeSingle();
         const apiKey = (settings as any)?.gemini_api_key;
         const userPlan = (settings as any)?.plan || "free";
 
-        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-        const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-        const response = await fetch(`${supabaseUrl}/functions/v1/audit-stream`, {
-          method: "POST",
+        const { data: { session } } = await supabase.auth.getSession();
+        const functionUrl = 'https://xyyneqqbncyokeaynebt.supabase.co/functions/v1/audit-stream';
+        const fallbackKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh5eW5lcXFibmN5b2tleWF5bmVidCIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNzgxNjA0ODIzLCJleHAiOjIwOTcyMDA4MjN9.Bq11j-ZptP1rQ01rQzYxXzY1c1c1c1c1c1c1c1c1c1c';
+        
+        const response = await fetch(functionUrl, {
+          method: 'POST',
           headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${supabaseKey}`,
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session?.access_token || fallbackKey}`
           },
-          body: JSON.stringify({ url, apiKey, plan: userPlan, multiPageCrawlEnabled, competitorUrl }),
+          body: JSON.stringify({ url, apiKey, plan: userPlan, multiPageCrawlEnabled, competitorUrl })
         });
 
         if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.error || `Server returned status ${response.status}`);
+           const errText = await response.text();
+           throw new Error(errText);
         }
 
         const reader = response.body?.getReader();
-        if (!reader) throw new Error("No stream reader available - Edge Function returned invalid response");
+        if (!reader) throw new Error("No stream reader available");
 
         const decoder = new TextDecoder();
         let buffer = "";
-        let jsonBuffer = "";
-        let jsonStarted = false;
-        let bufferedViolations: any[] = [];
-        let finalSummary: any = null;
 
         while (true) {
           const { done, value } = await reader.read();
-          if (done) {
-            // Process any remaining buffer before closing
-            if (buffer.trim()) {
-              try {
-                const finalJson = JSON.parse(buffer.trim());
-                if (finalJson.summary && finalJson.violations) {
-                  finalSummary = finalJson.summary;
-                  bufferedViolations = finalJson.violations;
-                }
-              } catch (e) {
-                // Not JSON, just add as final log line
-                if (buffer.trim()) {
-                  streamLogsRef.current.push(buffer.trim());
-                  setStreamLogs([...streamLogsRef.current]);
-                }
-              }
-            }
-            
-            // Only setState once after stream completes
-            if (finalSummary && bufferedViolations.length > 0) {
-              const score = Math.max(0, 100 - (finalSummary.total_violations * 1.5));
-              setAudit({ violations: bufferedViolations, overall_score: Math.round(score) });
-              setProgress(100);
-              setAuditState("COMPLETED");
-              setStreamingActive(false);
-              setLoading(false);
-              setUsed((u) => u + 1);
-              toast.success(`Elite-Stream audit complete — ${finalSummary.total_violations} violations found (Critical: ${finalSummary.priority_distribution.Critical}, Serious: ${finalSummary.priority_distribution.Serious})`);
-              loadRecent();
-            }
-            
-            // Gracefully transition to completed state
-            setStreamingActive(false);
-            setLoading(false);
-            auditRunningRef.current = false;
-            break;
-          }
+          if (done) break;
 
           const chunk = decoder.decode(value, { stream: true });
           buffer += chunk;
@@ -330,53 +295,95 @@ function NewAuditPage() {
 
           for (const line of lines) {
             if (line.trim()) {
-              streamLogsRef.current.push(line);
-              setStreamLogs([...streamLogsRef.current]);
-
-              if (line.trim().startsWith("{") && line.trim().endsWith("}")) {
+              if (line.trim().startsWith("{")) {
                 try {
                   const json = JSON.parse(line.trim());
                   if (json.summary && json.violations) {
-                    // Buffer findings instead of setting state immediately
-                    finalSummary = json.summary;
-                    bufferedViolations = json.violations;
+                    const score = Math.max(0, 100 - (json.summary.total_violations * 1.5));
+                    setAudit({ violations: json.violations, overall_score: Math.round(score) });
+                    setProgress(100);
+                    setAuditState("COMPLETED");
+                    
+                    const preset = new Set<string>(json.violations.map((v: any) => v.id));
+                    setSelected(preset);
+                    
+                    toast.success(`Elite-Stream audit complete — ${json.summary.total_violations} violations found`);
+                    loadRecent();
                   }
                 } catch (e) {
-                  // Not final JSON
+                  streamLogsRef.current.push(line);
                 }
+              } else {
+                streamLogsRef.current.push(line);
               }
             }
           }
         }
-      } catch (err: any) {
-        console.error("Streaming audit failed:", err);
-        toast.error(err?.message || "Streaming audit failed");
+      } catch (streamError: any) {
+        streamLogsRef.current.push(`[ERROR] ${streamError.message}`);
+      } finally {
+        clearInterval(timerInterval);
+        clearInterval(uiFlushInterval);
+        setStreamLogs([...streamLogsRef.current]);
         setStreamingActive(false);
-        setLoading(false);
-        setAuditState("IDLE");
         auditRunningRef.current = false;
+        setLoading(false);
       }
       return;
     }
 
     try {
-      // Background / Non-streaming mode
-      setLogMessages([{ text: "Initializing fast holistic audit...", done: false, active: true }]);
-      setProgress(25);
-      const result = await auditFn({ data: { url, multiPageCrawlEnabled, competitorUrl } });
-      
-      setAudit(result);
-      setProgress(100);
-      setAuditState("COMPLETED");
-      setLoading(false);
-      setUsed((u) => u + 1);
-      toast.success(`Audit complete — ${result.violationsShown ?? result.violations?.length ?? 0} violations found`);
-      loadRecent();
+      // Async job mode: enqueue and let realtime + polling drive the UI
+      setLogMessages([{ text: "Queuing audit job...", done: false, active: true }]);
+      setProgress(5);
+      const { job_id } = await startJobFn({ data: { url, multiPageCrawlEnabled, competitorUrl } });
+      setCurrentJobId(job_id);
+      // Fire-and-forget the worker; do NOT await — the UI will follow via realtime/polling
+      processJobFn({ data: { jobId: job_id } }).catch((err: any) => {
+        console.error("processAuditJob failed:", err);
+      });
     } catch (err: any) {
       toast.error(err?.message ?? "Failed to start audit");
       setLoading(false);
       setAuditState("IDLE");
     }
+  };
+
+  const [elapsed, setElapsed] = useState(0);
+  const terminalRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (terminalRef.current) {
+      terminalRef.current.scrollTo(0, terminalRef.current.scrollHeight);
+    }
+  }, [streamLogs]);
+
+  const renderTerminalLine = (line: string, index: number) => {
+    let className = "text-zinc-300 font-mono text-xs";
+    let bgStyle = {};
+
+    if (line.includes("[FINDING] CRITICAL") || line.includes("[FINDING] | CRITICAL")) {
+      className = "text-red-500 font-bold";
+    } else if (line.includes("[FINDING] SERIOUS") || line.includes("[FINDING] | SERIOUS")) {
+      className = "text-orange-500 font-bold";
+    } else if (line.includes("[FINDING] MODERATE") || line.includes("[FINDING] | MODERATE")) {
+      className = "text-yellow-400 font-semibold";
+    } else if (line.includes("[FINDING] MINOR") || line.includes("[FINDING] | MINOR")) {
+      className = "text-blue-400";
+    } else if (line.startsWith("[STATUS]")) {
+      className = "text-green-400 font-semibold";
+    } else if (line.startsWith("[LOG]")) {
+      className = "text-zinc-400/80";
+    } else if (line.startsWith("[ERROR]")) {
+      className = "text-white font-bold px-1.5 py-0.5 rounded";
+      bgStyle = { backgroundColor: "#ef4444" };
+    }
+
+    return (
+      <div key={index} className={className} style={bgStyle}>
+        {line}
+      </div>
+    );
   };
 
   // Realtime subscription + 3s polling fallback for the active job
@@ -421,6 +428,7 @@ function NewAuditPage() {
       supabase.removeChannel(channel);
     };
   }, [currentJobId]);
+
 
   // Retry function
   const retryAudit = () => {
@@ -693,7 +701,40 @@ function NewAuditPage() {
 
           {/* Terminal for streaming mode */}
           {streamingMode && streamingActive && (
-            <Terminal logs={streamLogs} isActive={streamingActive} />
+            <div className="relative w-full rounded-lg border border-zinc-800 bg-zinc-950 overflow-hidden shadow-2xl">
+              {/* Terminal header */}
+              <div className="flex items-center justify-between px-4 py-2.5 bg-zinc-900/60 border-b border-zinc-850 backdrop-blur-sm">
+                <div className="flex items-center gap-1.5">
+                  <div className="w-2.5 h-2.5 rounded-full bg-[#ff5f56]" />
+                  <div className="w-2.5 h-2.5 rounded-full bg-[#ffbd2e]" />
+                  <div className="w-2.5 h-2.5 rounded-full bg-[#27c93f]" />
+                </div>
+                <div className="flex items-center gap-3.5 text-[11px] font-mono text-zinc-400">
+                  <span className="text-amber-400 font-medium shrink-0">🔍 {streamLogs.filter(line => line.includes("[FINDING]")).length} violations detected</span>
+                  <span className="text-zinc-500">|</span>
+                  <span className="tabular-nums">⏱ {Math.floor(elapsed / 60).toString().padStart(2, "0")}:{(elapsed % 60).toString().padStart(2, "0")} elapsed</span>
+                  <span className="text-zinc-500">|</span>
+                  <span className="text-green-500 font-semibold shrink-0 animate-pulse">● LIVE STREAM</span>
+                </div>
+              </div>
+
+              {/* Terminal content */}
+              <div
+                ref={terminalRef}
+                className="h-80 overflow-y-auto p-4 space-y-1.5 bg-[#0d0e11] text-zinc-300 font-mono text-xs leading-relaxed"
+                style={{
+                  fontFamily: "'Courier New', Courier, monospace",
+                }}
+              >
+                {streamLogs.length === 0 ? (
+                  <div className="text-zinc-500 animate-pulse">
+                    [SYSTEM] Establishing secure connection to target...
+                  </div>
+                ) : (
+                  streamLogs.map((line, index) => renderTerminalLine(line, index))
+                )}
+              </div>
+            </div>
           )}
 
           {/* Log messages for non-streaming mode */}
