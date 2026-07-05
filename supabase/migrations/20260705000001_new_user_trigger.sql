@@ -1,3 +1,6 @@
+-- Add audits_limit column to settings table
+ALTER TABLE public.settings ADD COLUMN IF NOT EXISTS audits_limit integer DEFAULT 3;
+
 -- Create trigger to auto-create settings row for new users
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS trigger AS $$
