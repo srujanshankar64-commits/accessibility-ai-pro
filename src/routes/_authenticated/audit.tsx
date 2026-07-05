@@ -202,6 +202,7 @@ function NewAuditPage() {
         ((status.result.violations as unknown) as Violation[]).map((v: any) => v.id)
       );
       setSelected(preset);
+      auditRunningRef.current = false;
       toast.success(`Audit complete — ${status.result.violationsShown ?? (status.result.violations?.length ?? 0)} violations found`);
       loadRecent();
     }
