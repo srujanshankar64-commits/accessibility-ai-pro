@@ -29,7 +29,7 @@ export const Route = createFileRoute("/_authenticated/proposal")({
 interface Seed { auditId?: string; url?: string; score?: number; violations?: Violation[]; competitorData?: { url?: string; score?: number; violations?: number } }
 
 // Global flag to prevent auto-generate from running multiple times per browser session
-
+let hasAutoRunGlobal = false;
 
 function deriveIndustry(url: string): string {
   if (!url) return "Business Services";
@@ -228,7 +228,6 @@ function ProposalPage() {
     toast.success("Pitch PDF exported!");
   };
   const [autoLoading, setAutoLoading] = useState(false);
-  const hasAutoRunRef = useRef<string | null>(null);
   const [certificate, setCertificate] = useState<any>(null);
 
   useEffect(() => {
@@ -246,12 +245,12 @@ function ProposalPage() {
 
       const currentPlan = getPlan((data as any)?.plan, 'srujanshankar64@gmail.com');
       if (
-        hasAutoRunRef.current !== parsedSeed.auditId &&
+        !hasAutoRunGlobal &&
         parsedSeed.violations?.length &&
         parsedSeed.auditId &&
         TIER[currentPlan].proposals
       ) {
-        hasAutoRunRef.current = parsedSeed.auditId ?? "done";
+        hasAutoRunGlobal = true;
         try {
           autoGenerate(parsedSeed, (data as any)?.agency_name ?? "Your Agency");
         } catch(e) {

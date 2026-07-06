@@ -1,17 +1,15 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import DodoPayments from "dodopayments";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 export const createCheckoutSession = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
   .inputValidator(
     z.object({
       priceId: z.string().min(1),
       tier: z.string().optional(),
     }),
   )
-  .handler(async ({ data, context }) => {
+  .handler(async ({ data }) => {
     try {
       const { priceId, tier } = data;
 
@@ -28,7 +26,7 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
       const checkout = await client.checkoutSessions.create({
         product_cart: [{ product_id: priceId, quantity: 1 }],
         return_url: "https://accessibility-ai-pro.lovable.app/audit?checkout=success",
-        metadata: { tier: tier || "starter", user_id: context.userId },
+        metadata: { tier: tier || "starter" },
       } as any);
 
       return { success: true, checkout_url: (checkout as any).checkout_url ?? (checkout as any).url };
