@@ -44,9 +44,15 @@ serve(async (req) => {
 
     // Use service role to delete the user
     const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-    
+
+    // Delete user data from all tables
+    await adminClient.from('settings').delete().eq('user_id', user.id);
+    await adminClient.from('audits').delete().eq('user_id', user.id);
+    await adminClient.from('proposals').delete().eq('user_id', user.id);
+    await adminClient.from('audit_jobs').delete().eq('user_id', user.id);
+
     const { error: deleteError } = await adminClient.auth.admin.deleteUser(user.id);
-    
+
     if (deleteError) {
       throw deleteError;
     }

@@ -213,10 +213,10 @@ RETURN SCHEMA:
 }
 
 /**
- * Default configuration for elite audits with 26 violations
+ * Default configuration for elite audits with 50 violations
  */
 export const ELITE_AUDIT_CONFIG: AuditPromptConfig = {
-  violationLimit: 26,
+  violationLimit: 50,
   includeCodeFixes: true,
   mode: 'full',
 };

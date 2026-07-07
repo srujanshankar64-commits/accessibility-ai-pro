@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState, useRef } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { runAudit, generateWebsitePitch, startAuditJob, processAuditJob, getAuditJobStatus } from "@/lib/ai.functions";
+import { runAudit, generateWebsitePitch, startAuditJob, getAuditJobStatus, getPlanStatus } from "@/lib/ai.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -9,7 +9,7 @@ import { ScoreGauge } from "@/components/ScoreGauge";
 import { Terminal } from "@/components/Terminal";
 import type { Violation } from "@/lib/audit-types";
 import { toast } from "sonner";
-import { ArrowRight, Loader2, ShieldCheck, ScanLine, Copy, Check, ChevronDown, ChevronUp, Code2, Lock, AlertTriangle, Zap, Upload, Share2, RefreshCw, RotateCcw } from "lucide-react";
+import { ArrowRight, Loader2, ShieldCheck, ScanLine, Copy, Check, ChevronDown, ChevronUp, Code2, Lock, AlertTriangle, Zap, Upload, RefreshCw, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getPlan, TIER } from "@/lib/tier.utils";
 
@@ -49,7 +49,7 @@ function NewAuditPage() {
   const pitchFn = useServerFn(generateWebsitePitch);
   const startJobFn = useServerFn(startAuditJob);
   const getJobStatusFn = useServerFn(getAuditJobStatus);
-  const processJobFn = useServerFn(processAuditJob);
+  const planStatusFn = useServerFn(getPlanStatus);
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [auditState, setAuditState] = useState<AuditState>("IDLE");
@@ -71,45 +71,12 @@ function NewAuditPage() {
   const auditRunningRef = useRef(false);
   const safetyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // No website prospect mode
-  const [noWebsite, setNoWebsite] = useState(false);
-  const [businessName, setBusinessName] = useState("");
-  const [businessIndustry, setBusinessIndustry] = useState("");
-  const [pitchLoading, setPitchLoading] = useState(false);
-  const [pitchResult, setPitchResult] = useState<string | null>(null);
-
-  const [businessCity, setBusinessCity] = useState("");
 
   // Business Elite features
   const [multiPageCrawlEnabled, setMultiPageCrawlEnabled] = useState(false);
   const [competitorUrl, setCompetitorUrl] = useState("");
-  const [crawlProgress, setCrawlProgress] = useState(0);
-  const [crawledPages, setCrawledPages] = useState<string[]>([]);
   const [autoReauditEnabled, setAutoReauditEnabled] = useState(false);
 
-  const generatePitch = async () => {
-    if (!businessName || !businessIndustry) return;
-    setPitchLoading(true);
-    setPitchResult(null);
-    try {
-      const result: any = await pitchFn({
-        data: {
-          businessName,
-          industry: businessIndustry,
-          city: businessCity || "",
-        },
-      });
-      const text =
-        typeof result?.pitch_email === "string"
-          ? result.pitch_email
-          : result?.executive_summary || JSON.stringify(result);
-      setPitchResult(text);
-    } catch (err) {
-      console.error("Pitch generation failed:", err);
-      toast.error(err instanceof Error ? err.message : "Failed to generate pitch");
-    }
-    setPitchLoading(false);
-  };
 
 
   // Bulk CSV state
@@ -135,9 +102,9 @@ function NewAuditPage() {
           await loadRecent();
         }
         if (mounted) {
-          const { data } = await supabase.from("settings").select("plan, audits_used").maybeSingle();
-          if (data && 'plan' in data) setPlan((data as any).plan);
-          if (data && 'audits_used' in data) setUsed((data as any).audits_used);
+          const status = await planStatusFn();
+          setPlan(status.plan);
+          setUsed(status.used);
         }
       } catch (err) {
         console.error("Failed to load initial data:", err);
@@ -256,9 +223,25 @@ function NewAuditPage() {
       const { job_id } = await startJobFn({ data: { url, multiPageCrawlEnabled, competitorUrl } });
       setCurrentJobId(job_id);
       // Fire-and-forget the worker; do NOT await — the UI will follow via realtime/polling
-      processJobFn({ data: { jobId: job_id } }).catch((err: any) => {
-        console.error("processAuditJob failed:", err);
+      setLogMessages((prev) => [
+        ...prev.map((m) => ({ ...m, done: true, active: false })),
+        { text: "[LOG] Dispatching background worker...", done: false, active: true },
+      ]);
+
+      const { error } = await supabase.functions.invoke("audit-worker", {
+        body: { jobId: job_id, multiPageCrawlEnabled, competitorUrl },
       });
+
+      if (error) {
+        await supabase
+          .from("audit_jobs")
+          .update({
+            status: "failed",
+            error_message: `Audit worker unavailable: ${error.message}`,
+          } as any)
+          .eq("id", job_id);
+        throw new Error(`Audit worker unavailable: ${error.message}`);
+      }
     } catch (err: any) {
       if (safetyTimeoutRef.current) clearTimeout(safetyTimeoutRef.current);
       toast.error(err?.message ?? "Failed to start audit");

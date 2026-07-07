@@ -34,8 +34,66 @@ function detectJsRendered(html: string): boolean {
   const bodyContent = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
                           .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '');
   const textContent = bodyContent.replace(/<[^>]+>/g, '').trim();
-  // If less than 500 chars of actual text content, likely JS-rendered
-  return textContent.length < 500;
+  const hasAppShellMarker = /\bid=["']?(root|app|__next|vite-root)\b/i.test(bodyContent);
+  const hasMeaningfulStructure = /<(main|article|nav|header|footer|section|h1|h2|p|a|button|form)\b/i.test(bodyContent);
+
+  return textContent.length < 120 && (hasAppShellMarker || !hasMeaningfulStructure);
+}
+
+// SSRF protection: validate URL and reject private/internal IP ranges
+async function validateUrlForFetch(url: string): Promise<void> {
+  try {
+    const parsed = new URL(url);
+    const hostname = parsed.hostname.toLowerCase();
+
+    // Reject localhost variants
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') {
+      throw new Error('Invalid URL: localhost and loopback addresses are not allowed');
+    }
+
+    // Reject private IP ranges in hostname (basic pattern matching)
+    // Note: Full DNS resolution would require Deno's net module or external service
+    // This is a heuristic check for obvious private IPs in the hostname
+    const privateIpPatterns = [
+      /^10\./,
+      /^172\.(1[6-9]|2[0-9]|3[0-1])\./,
+      /^192\.168\./,
+      /^169\.254\./,
+      /^127\./,
+      /^::1$/,
+      /^fc00:/i,
+      /^fe80:/i,
+    ];
+
+    if (privateIpPatterns.some(pattern => pattern.test(hostname))) {
+      throw new Error('Invalid URL: private IP addresses are not allowed');
+    }
+
+    // Reject non-HTTP/HTTPS protocols
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      throw new Error('Invalid URL: only HTTP and HTTPS protocols are allowed');
+    }
+
+    // Reject internal network hostnames
+    const internalHostnames = [
+      'local',
+      'internal',
+      'intranet',
+      'localhost',
+      'home',
+      'lan',
+      'localdomain',
+    ];
+
+    if (internalHostnames.some(internal => hostname.includes(internal))) {
+      throw new Error('Invalid URL: internal network hostnames are not allowed');
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith('Invalid URL')) {
+      throw error;
+    }
+    throw new Error('Invalid URL format');
+  }
 }
 
 async function pushLog(
@@ -45,22 +103,13 @@ async function pushLog(
   step: string,
   logLine: string
 ) {
-  const { data } = await supabase
-    .from("audit_jobs")
-    .select("progress_log")
-    .eq("id", jobId)
-    .single();
-
-  const existing = Array.isArray(data?.progress_log) ? data.progress_log : [];
-
-  await supabase
-    .from("audit_jobs")
-    .update({
-      progress_percent: percent,
-      current_step: step,
-      progress_log: [...existing, { message: logLine, ts: new Date().toISOString() }],
-    })
-    .eq("id", jobId);
+  const entry = JSON.stringify({ message: logLine, ts: new Date().toISOString() });
+  await supabase.rpc('append_audit_log', {
+    job_id: jobId,
+    percent,
+    step,
+    log_entry: entry
+  });
 }
 
 // Removed module-level circuit breaker state for serverless compatibility
@@ -68,7 +117,8 @@ async function callGemini(
   systemPrompt: string,
   userPrompt: string,
   userApiKey?: string,
-  model = "gemini-2.5-flash"
+  model = "gemini-2.5-flash",
+  maxOutputTokens = 8192
 ): Promise<string> {
   const apiKey = (userApiKey || process.env.GOOGLE_GEMINI_API_KEY)?.trim();
   if (!apiKey) throw new Error("AI service unavailable. Add your Gemini API key in Settings.");
@@ -90,7 +140,7 @@ async function callGemini(
         config: {
           responseMimeType: "application/json",
           temperature: 0.2,
-          maxOutputTokens: 65536,
+          maxOutputTokens,
         },
       });
 
@@ -182,13 +232,58 @@ function cleanHtml(html: string): string {
   return cleaned;
 }
 
+function isCurrentAuditPeriod(periodStart?: string | null): boolean {
+  if (!periodStart) return false;
+  const now = new Date();
+  const period = new Date(periodStart);
+  return now.getUTCFullYear() === period.getUTCFullYear() &&
+    now.getUTCMonth() === period.getUTCMonth();
+}
+
 async function getUserSettings(supabase: any, userId: string) {
   const { data } = await supabase
     .from("settings")
-    .select("plan, audits_used, audits_limit, agency_name, agency_logo_url, brand_color, gemini_api_key")
+    .select("plan, audits_used, audits_limit, audit_period_start, agency_name, agency_logo_url, brand_color, gemini_api_key")
     .eq("user_id", userId)
     .maybeSingle();
+
+  if (!data) {
+    const { data: created } = await supabase
+      .from("settings")
+      .upsert({
+        user_id: userId,
+      })
+      .select("plan, audits_used, audits_limit, audit_period_start, agency_name, agency_logo_url, brand_color, gemini_api_key")
+      .single();
+    return created ?? { plan: "free", audits_used: 0, audits_limit: TIER.free.audits, audit_period_start: new Date().toISOString() };
+  }
+
+  if (!isCurrentAuditPeriod(data.audit_period_start)) {
+    const resetStartedAt = new Date().toISOString();
+    const { data: reset } = await supabase
+      .from("settings")
+      .update({ audits_used: 0, audit_period_start: resetStartedAt })
+      .eq("user_id", userId)
+      .select("plan, audits_used, audits_limit, audit_period_start, agency_name, agency_logo_url, brand_color, gemini_api_key")
+      .single();
+    return reset ?? { ...data, audits_used: 0, audit_period_start: resetStartedAt };
+  }
+
   return data;
+}
+
+async function incrementAuditUsage(supabase: any, userId: string, currentUsed: number) {
+  await supabase
+    .from("settings")
+    .update({
+      audits_used: currentUsed + 1,
+      audit_period_start: new Date().toISOString(),
+    })
+    .eq("user_id", userId);
+}
+
+function getAuditPromptViolationTarget(plan: keyof typeof TIER): number {
+  return plan === "free" ? TIER.free.violations : 50;
 }
 
 export const runAudit = createServerFn({ method: "POST" })
@@ -216,12 +311,14 @@ const plan = getPlan(settings?.plan, 'srujanshankar64@gmail.com');
 
     let pageSnippet = "";
     try {
+      await validateUrlForFetch(url);
       const fetchController = new AbortController();
-      setTimeout(() => fetchController.abort(), 20000);
+      const fetchTimer = setTimeout(() => fetchController.abort(), 20000);
       const r = await fetch(url, {
         headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 AccessAuditAI/2.0 (WCAG Compliance Scanner)" },
         signal: fetchController.signal,
       });
+      clearTimeout(fetchTimer);
       const html = await r.text();
       const cleanedHtml = cleanHtml(html);
       pageSnippet = cleanedHtml.slice(0, 35000);
@@ -252,6 +349,7 @@ const plan = getPlan(settings?.plan, 'srujanshankar64@gmail.com');
     const includeCodeFixes = TIER[plan].codeFixes;
     const isFree = plan === "free";
     const violationLimit = TIER[plan].violations;
+    const promptViolationTarget = getAuditPromptViolationTarget(plan);
 
     console.log(`[SYSTEM_PROMPT_CONFIGURED] Full audit mode, Violation Limit: ${violationLimit}, Code Fixes: ${includeCodeFixes}`);
 
@@ -259,7 +357,7 @@ const plan = getPlan(settings?.plan, 'srujanshankar64@gmail.com');
     
     const systemPrompt = isFree 
         ? buildFreeAuditPrompt()
-        : getAuditSystemPrompt({ violationLimit, includeCodeFixes, mode: 'full' });
+        : getAuditSystemPrompt({ violationLimit: promptViolationTarget, includeCodeFixes, mode: 'full' });
 
     let userPrompt = isJsRendered
         ? `Audit this website for WCAG 2.1 AA compliance. 
@@ -295,7 +393,7 @@ const plan = getPlan(settings?.plan, 'srujanshankar64@gmail.com');
       userPrompt += `\n\nCOMPETITOR URL: ${competitorUrl}\n\nCOMPETITOR HTML (for benchmarking):\n${competitorSnippet}`;
     }
 
-    const raw = await callGemini(systemPrompt, userPrompt, settings?.gemini_api_key);
+    const raw = await callGemini(systemPrompt, userPrompt, settings?.gemini_api_key, "gemini-2.5-flash", 65536);
     const result = parseJSON(raw);
 
     let allViolations = result.violations ?? [];
@@ -311,11 +409,6 @@ const plan = getPlan(settings?.plan, 'srujanshankar64@gmail.com');
       ? allViolations.slice(0, violationLimit)
       : allViolations;
 
-    await (context.supabase as any)
-      .from("settings")
-      .update({ audits_used: usedThisMonth + 1 })
-      .eq("user_id", context.userId);
-
     const auditData: any = {
       user_id: context.userId,
       url,
@@ -323,7 +416,7 @@ const plan = getPlan(settings?.plan, 'srujanshankar64@gmail.com');
       category_scores: result.category_scores ?? {},
       violations: limitedViolations,
     };
-    
+
     if (result.competitor_benchmark && competitorUrl) {
       auditData.has_competitor_benchmark = true;
       auditData.competitor_url = competitorUrl;
@@ -345,6 +438,9 @@ const plan = getPlan(settings?.plan, 'srujanshankar64@gmail.com');
       .select()
       .single();
     if (error) throw error;
+
+    // Only increment audits_used after successful insert
+    await incrementAuditUsage(context.supabase, context.userId, usedThisMonth);
 
     return {
       ...(inserted as any),
@@ -371,6 +467,7 @@ export const generateProposal = createServerFn({ method: "POST" })
       competitorUrl: z.string().optional(),
       competitorScore: z.number().optional(),
       competitorViolations: z.number().optional(),
+      score: z.number().optional(),
     }),
   )
   .handler(async ({ data, context }) => {
@@ -381,9 +478,9 @@ export const generateProposal = createServerFn({ method: "POST" })
       throw new Error(`Upgrade to Starter ($${PLAN_PRICES.starter}/mo) to generate client proposals.`);
     }
 
-    let score = 50;
+    let score = data.score ?? 50;
     let competitorData = null;
-    
+
     if (data.auditId) {
       const { data: audit } = await (context.supabase as any).from("audits").select("overall_score, competitor_audit_id, competitor_url, has_competitor_benchmark").eq("id", data.auditId).maybeSingle();
       if (audit && audit.overall_score != null) score = audit.overall_score;
@@ -483,7 +580,7 @@ Price range: $${data.priceMin} - $${data.priceMax}${competitiveAnalysis}
 Violations:
 ${data.violations.slice(0, 15).map((v: any, i: number) => `${i + 1}. [${v.severity?.toUpperCase()}] ${v.name} (${v.wcag_criterion}) - ${v.description} | Fix: ${v.fix_instructions} | Time: ${v.estimated_fix_time ?? "2 hours"}`).join("\n")}${data.violations.length > 15 ? `\n...and ${data.violations.length - 15} more systemic issues.` : ""}`;
 
-    const raw = await callGemini(system, user, settings?.gemini_api_key);
+    const raw = await callGemini(system, user, settings?.gemini_api_key, "gemini-2.5-flash", 8192);
     return parseJSON(raw);
   });
 
@@ -537,7 +634,7 @@ Actual Compliance Score: ${data.score}/100
 Raw Violations List:
 ${topCritical.map((v: any) => `- ${v.name}: ${v.description} (${v.wcag_criterion})`).join("\n")}`;
 
-    const raw = await callGemini(system, user, settings?.gemini_api_key);
+    const raw = await callGemini(system, user, settings?.gemini_api_key, "gemini-2.5-flash", 1024);
     return parseJSON(raw);
   });
 
@@ -620,7 +717,7 @@ Industry: ${data.industry}
 Agency: ${data.agencyName}
 Price Range: ${data.priceMin} - ${data.priceMax}`;
 
-    const raw = await callGemini(system, user, settings?.gemini_api_key);
+    const raw = await callGemini(system, user, settings?.gemini_api_key, "gemini-2.5-flash", 8192);
     return parseJSON(raw);
   });
 
@@ -684,6 +781,7 @@ export const processAuditJob = createServerFn({ method: "POST" })
 
       // Fetch HTML with hard 15s timeout
       let html = "";
+      let pageSnippet = "";
       try {
         await pushLog(sb, jobId, 8, "Establishing connection...", "[LOG] Establishing HTTPS connection...");
         const fetchController = new AbortController();
@@ -697,15 +795,17 @@ export const processAuditJob = createServerFn({ method: "POST" })
         });
         clearTimeout(t);
         html = await r.text();
+
+        const cleanedHtml = cleanHtml(html);
+        const snippetLength = isFree ? 8000 : 20000;
+        pageSnippet = cleanedHtml.slice(0, snippetLength);
+
+        await pushLog(sb, jobId, 15, "Parsing HTML...", `[LOG] Fetched ${Math.round(html.length/1024)}kb of HTML — using first ${Math.round(snippetLength/1024)}KB`);
       } catch (fetchError) {
-        throw new Error(`Could not fetch ${job.url}. Ensure the URL is accessible.`);
+        await pushLog(sb, jobId, 15, "Fetch failed — theoretical audit",
+          "[WARN] Could not fetch page directly — performing pattern-based WCAG audit");
+        pageSnippet = `(Could not fetch ${job.url}. Perform theoretical WCAG audit for: ${new URL(job.url).hostname})`;
       }
-
-      const cleanedHtml = cleanHtml(html);
-      const snippetLength = isFree ? 8000 : 20000;
-      let pageSnippet = cleanedHtml.slice(0, snippetLength);
-
-      await pushLog(sb, jobId, 15, "Parsing HTML...", `[LOG] Fetched ${Math.round(html.length/1024)}kb of HTML — using first ${Math.round(snippetLength/1024)}KB`);
 
       const isJsRendered = detectJsRendered(pageSnippet);
       if (isJsRendered) {
@@ -721,7 +821,7 @@ export const processAuditJob = createServerFn({ method: "POST" })
       const includeCodeFixes = TIER[plan].codeFixes;
       const systemPrompt = isFree 
         ? buildFreeAuditPrompt()
-        : getAuditSystemPrompt({ violationLimit: TIER[plan].violations, includeCodeFixes, mode: 'full' });
+        : getAuditSystemPrompt({ violationLimit: getAuditPromptViolationTarget(plan), includeCodeFixes, mode: 'full' });
 
       const userPrompt = isJsRendered
         ? `Audit this website for WCAG 2.1 AA compliance. 
@@ -753,7 +853,7 @@ export const processAuditJob = createServerFn({ method: "POST" })
      HTML content:
      ${pageSnippet}`;
 
-      const raw = await callGemini(systemPrompt, userPrompt, settings?.gemini_api_key);
+      const raw = await callGemini(systemPrompt, userPrompt, settings?.gemini_api_key, "gemini-2.5-flash", 65536);
       await pushLog(sb, jobId, 72, "AI analysis complete", "[LOG] AI analysis complete — parsing violation inventory...");
 
       const result = parseJSON(raw);
@@ -769,11 +869,6 @@ export const processAuditJob = createServerFn({ method: "POST" })
 
       const limitedViolations = plan === "free" ? allViolations.slice(0, TIER[plan].violations) : allViolations;
 
-      await sb
-        .from("settings")
-        .update({ audits_used: (settings?.audits_used ?? 0) + 1 })
-        .eq("user_id", context.userId);
-
       const { data: inserted, error: insertError } = await sb
         .from("audits")
         .insert({
@@ -787,6 +882,9 @@ export const processAuditJob = createServerFn({ method: "POST" })
         .single();
 
       if (insertError) throw insertError;
+
+      // Only increment audits_used after successful insert
+      await incrementAuditUsage(sb, context.userId, settings?.audits_used ?? 0);
 
       const finalResult = {
         ...(inserted as any),
@@ -904,16 +1002,17 @@ export const searchLeads = createServerFn({ method: "POST" })
     if (realBusinesses.length >= 3) {
       try {
         const system = `For each business in the JSON array, add a realistic common_flaw based on typical WCAG issues for that business type. Return the SAME array with common_flaw filled in. Return ONLY valid JSON array.`;
-        const raw = await callGemini(system, JSON.stringify(realBusinesses), undefined);
+        const raw = await callGemini(system, JSON.stringify(realBusinesses), undefined, "gemini-2.5-flash", 2048);
         const parsed = parseJSON(raw);
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       } catch (error) {
-        throw new Error(`Failed to enrich business data with AI: ${error instanceof Error ? error.message : "Unknown error"}`);
+        console.warn('Enrichment failed, falling through to AI generation:', error);
+        // don't throw — let execution continue to AI generation fallback
       }
     }
     try {
       const system = `Generate 8 realistic local businesses for ${industry} in ${location} with poor web accessibility. Return ONLY a JSON array: [{"id":"string","name":"string","website":"string","ranking":"string","common_flaw":"string"}]`;
-      const raw = await callGemini(system, `Industry: ${industry}\nLocation: ${location}`, undefined);
+      const raw = await callGemini(system, `Industry: ${industry}\nLocation: ${location}`, undefined, "gemini-2.5-flash", 2048);
       const parsed = parseJSON(raw);
       return Array.isArray(parsed) ? parsed : (parsed.leads ?? []);
     } catch (error) {

@@ -93,7 +93,6 @@ function ProposalPage() {
   const proposalFn = useServerFn(generateProposal);
   const emailFn = useServerFn(generateColdEmail);
   const certificateFn = useServerFn(generateCertificate);
-  const planStatusFn = useServerFn(getPlanStatus);
 
   const [seed, setSeed] = useState<Seed>({});
   const [agency, setAgency] = useState("Your Agency");
@@ -750,7 +749,7 @@ ${(content.follow_up_email as any)?.body || ""}` : (content.follow_up_email || "
           </div>
 
           <h2 className="text-2xl font-bold tracking-tight text-zinc-900 leading-tight">Website Accessibility Compliance Report</h2>
-          <p className="text-sm text-zinc-500 mt-1.5 font-medium">Prepared exclusively for: <span className="text-zinc-800 underline decoration-zinc-200 underline-offset-4">{client || "Unspecified Entity"}</span></p>
+          <p className="text-sm text-zinc-500 mt-1.5 font-medium">Prepared exclusively for: <span className="text-zinc-800 underline decoration-zinc-200 underline-offset-4">{client || (seed.url ? new URL(seed.url).hostname.replace(/^www\./, '') : "Your Client")}</span></p>
           <p className="text-xs text-zinc-400 mt-1 font-mono">{seed.url ? `${seed.url} — Core Score Vector: ${seed.score ?? 0}/100` : "No baseline audit metrics contextualized."}</p>
 
           {!hasContent && !isLoading && (
