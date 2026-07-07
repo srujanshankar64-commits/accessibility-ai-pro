@@ -153,7 +153,8 @@ function SettingsPage() {
         throw new Error(`Missing VITE_DODO_${tierName.toUpperCase()}_PRODUCT_ID environment variable`);
       }
 
-      const result = await checkoutFn({ data: { priceId, tier: tierName } });
+      const { data: { user } } = await supabase.auth.getUser();
+      const result = await checkoutFn({ data: { priceId, tier: tierName, userId: user?.id || "" } });
       
       if (result.success && result.checkout_url) {
         window.location.href = result.checkout_url;

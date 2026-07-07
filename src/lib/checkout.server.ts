@@ -7,11 +7,12 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
     z.object({
       priceId: z.string().min(1),
       tier: z.string().optional(),
+      userId: z.string().optional(),
     }),
   )
   .handler(async ({ data }) => {
     try {
-      const { priceId, tier } = data;
+      const { priceId, tier, userId } = data;
 
       const apiKey = process.env.DODO_PAYMENTS_API_KEY || process.env.VITE_DODO_PAYMENTS_API_KEY;
       if (!apiKey) {
@@ -26,7 +27,7 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
       const checkout = await client.checkoutSessions.create({
         product_cart: [{ product_id: priceId, quantity: 1 }],
         return_url: "https://accessibility-ai-pro.lovable.app/audit?checkout=success",
-        metadata: { tier: tier || "starter" },
+        metadata: { tier: tier || "starter", user_id: userId || "" },
       } as any);
 
       return { success: true, checkout_url: (checkout as any).checkout_url ?? (checkout as any).url };
