@@ -71,6 +71,21 @@ function NewAuditPage() {
   const auditRunningRef = useRef(false);
   const safetyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    let timerInterval: NodeJS.Timeout;
+    if (loading) {
+      setElapsed(0);
+      timerInterval = setInterval(() => {
+        setElapsed(prev => prev + 1);
+      }, 1000);
+    } else {
+      setElapsed(0);
+    }
+    return () => clearInterval(timerInterval);
+  }, [loading]);
+
 
   // Business Elite features
   const [multiPageCrawlEnabled, setMultiPageCrawlEnabled] = useState(false);
@@ -258,32 +273,35 @@ function NewAuditPage() {
     }
   }, [logMessages]);
 
-  const renderTerminalLine = (line: string, index: number) => {
-    let className = "text-zinc-300 font-mono text-xs";
+  const renderTerminalLine = (msg: { text: string; done: boolean; active: boolean }, index: number) => {
+    let line = msg.text;
+    let className = "text-zinc-300 font-mono text-xs flex items-start gap-1.5";
     let bgStyle = {};
 
     if (line.includes("[FINDING] CRITICAL") || line.includes("[FINDING] | CRITICAL")) {
-      className = "text-red-500 font-bold";
+      className += " text-red-500 font-bold";
     } else if (line.includes("[FINDING] SERIOUS") || line.includes("[FINDING] | SERIOUS")) {
-      className = "text-orange-500 font-bold";
+      className += " text-orange-500 font-bold";
     } else if (line.includes("[FINDING] MODERATE") || line.includes("[FINDING] | MODERATE")) {
-      className = "text-yellow-400 font-semibold";
+      className += " text-yellow-400 font-semibold";
     } else if (line.includes("[FINDING] MINOR") || line.includes("[FINDING] | MINOR")) {
-      className = "text-blue-400";
+      className += " text-blue-400";
     } else if (line.startsWith("[STATUS]")) {
-      className = "text-green-400 font-semibold";
+      className += " text-green-400 font-semibold";
     } else if (line.startsWith("[LOG]")) {
-      className = "text-zinc-400/80";
+      className += " text-zinc-400/80";
     } else if (line.startsWith("[ERROR]")) {
-      className = "text-white font-bold px-1.5 py-0.5 rounded";
+      className += " text-white font-bold px-1.5 py-0.5 rounded";
       bgStyle = { backgroundColor: "#ef4444" };
     } else if (line.startsWith("[WARN]")) {
-      className = "text-yellow-400 font-bold px-1.5 py-0.5 rounded bg-yellow-500/20";
+      className += " text-yellow-400 font-bold px-1.5 py-0.5 rounded bg-yellow-500/20";
     }
 
     return (
       <div key={index} className={className} style={bgStyle}>
-        {line}
+        {msg.done && <span className="text-zinc-600 mt-0.5">✓</span>}
+        <span className="flex-1 whitespace-pre-wrap">{line}</span>
+        {msg.active && <span className="animate-pulse inline-block bg-zinc-400 w-1.5 h-3.5 mt-0.5" />}
       </div>
     );
   };
@@ -622,6 +640,9 @@ function NewAuditPage() {
                 </div>
                 <div className="flex items-center gap-3.5 text-[11px] font-mono text-zinc-400">
                   <span className="text-amber-400 font-medium shrink-0">🔍 {logMessages.filter(msg => msg.text.includes("[FINDING]")).length} violations detected</span>
+                  <span className="text-zinc-500">|</span>
+                  <span className="tabular-nums">⏱ {Math.floor(elapsed / 60).toString().padStart(2, "0")}:{(elapsed % 60).toString().padStart(2, "0")} elapsed</span>
+                  <span className="text-zinc-500">|</span>
                   <span className="text-green-500 font-semibold shrink-0 animate-pulse">● LIVE AUDIT</span>
                 </div>
               </div>
@@ -634,7 +655,7 @@ function NewAuditPage() {
                   fontFamily: "'Courier New', Courier, monospace",
                 }}
               >
-                {logMessages.map((msg, index) => renderTerminalLine(msg.text, index))}
+                {logMessages.map((msg, index) => renderTerminalLine(msg, index))}
               </div>
             </div>
           )}
