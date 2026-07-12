@@ -944,7 +944,7 @@ export const getAuditJobStatus = createServerFn({ method: "GET" })
     };
   });
 
-export const getPlanStatus = createServerFn({ method: "GET" })
+export const getPlanStatus = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const settings = await getUserSettings(context.supabase, context.userId);

@@ -63,6 +63,7 @@ function NewAuditPage() {
   const [plan, setPlan] = useState("free");
   const [showUpsell, setShowUpsell] = useState(false);
   const [used, setUsed] = useState(0);
+  const [fakeLogs, setFakeLogs] = useState<string[]>([]);
   
   // Async job state
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
@@ -92,7 +93,32 @@ function NewAuditPage() {
   const [competitorUrl, setCompetitorUrl] = useState("");
   const [autoReauditEnabled, setAutoReauditEnabled] = useState(false);
 
-
+  // Simulated AI logs to prevent the UI from feeling stuck
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    const activeMsg = logMessages.find(m => m.active)?.text;
+    
+    if (loading && activeMsg?.includes("holistic single-pass AI audit engine")) {
+      const steps = [
+        "[LOG] Scanning DOM tree structure...",
+        "[LOG] Evaluating contrast ratios on visible elements...",
+        "[LOG] Checking ARIA landmark regions...",
+        "[LOG] Verifying form input labels and tab indices...",
+        "[LOG] Cross-referencing WCAG 2.1 AA guidelines...",
+        "[LOG] Analyzing image alt-text context...",
+      ];
+      let i = 0;
+      interval = setInterval(() => {
+        if (i < steps.length) {
+          setFakeLogs(prev => [...prev, steps[i]]);
+          i++;
+        }
+      }, 1500);
+    } else {
+      setFakeLogs([]);
+    }
+    return () => clearInterval(interval);
+  }, [loading, logMessages]);
 
   // Bulk CSV state
   const [bulkUrls, setBulkUrls] = useState<string[]>([]);
@@ -117,9 +143,21 @@ function NewAuditPage() {
           await loadRecent();
         }
         if (mounted) {
-          const status = await planStatusFn();
-          setPlan(status.plan);
-          setUsed(status.used);
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) {
+            const { data: settings } = await supabase
+              .from("settings")
+              .select("plan, audits_used")
+              .eq("user_id", user.id)
+              .maybeSingle();
+            
+            setPlan((settings?.plan as string) || "free");
+            setUsed(settings?.audits_used || 0);
+          } else {
+            const status = await planStatusFn();
+            setPlan(status.plan);
+            setUsed(status.used);
+          }
         }
       } catch (err) {
         console.error("Failed to load initial data:", err);
@@ -655,7 +693,21 @@ function NewAuditPage() {
                   fontFamily: "'Courier New', Courier, monospace",
                 }}
               >
-                {logMessages.map((msg, index) => renderTerminalLine(msg, index))}
+                {logMessages.map((msg, index) => {
+                  const isLastReal = index === logMessages.length - 1;
+                  const showFakes = isLastReal && fakeLogs.length > 0;
+                  
+                  return (
+                    <React.Fragment key={index}>
+                      {renderTerminalLine({ ...msg, active: msg.active && fakeLogs.length === 0 }, index)}
+                      
+                      {showFakes && fakeLogs.map((fakeText, fIdx) => {
+                        const isLastFake = fIdx === fakeLogs.length - 1;
+                        return renderTerminalLine({ text: fakeText, done: !isLastFake, active: isLastFake }, parseInt(`9999${fIdx}`));
+                      })}
+                    </React.Fragment>
+                  );
+                })}
               </div>
             </div>
           )}
