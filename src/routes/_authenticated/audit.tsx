@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { runAudit, generateWebsitePitch, startAuditJob, getAuditJobStatus, getPlanStatus } from "@/lib/ai.functions";
 import { supabase } from "@/integrations/supabase/client";
