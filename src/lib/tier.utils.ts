@@ -10,13 +10,9 @@ export const TIER = {
 } as const;
 
 /**
- * Gets the current plan for a user. 
- * If the email matches the admin email from env var, it forces 'business' for testing.
+ * Gets the current plan for a user.
  */
-export function getPlan(raw: string | null | undefined, email?: string): Plan {
-  const adminEmail = process.env.ADMIN_EMAIL;
-  if (adminEmail && email === adminEmail) return 'business';
-  
+export function getPlan(raw: string | null | undefined): Plan {
   if (raw === "starter" || raw === "agency" || raw === "business") return raw;
   return "free";
 }

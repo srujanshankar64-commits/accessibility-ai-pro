@@ -242,7 +242,7 @@ function ProposalPage() {
       if (data && 'brand_color' in data) setBrandColor((data as any).brand_color);
       if (data && 'plan' in data) setPlan((data as any).plan ?? "free");
 
-      const currentPlan = getPlan((data as any)?.plan, 'srujanshankar64@gmail.com');
+      const currentPlan = getPlan((data as any)?.plan);
       if (
         !hasAutoRunGlobal &&
         parsedSeed.violations?.length &&
@@ -325,7 +325,7 @@ function ProposalPage() {
   };
 
   const exportPDF = async () => {
-    const currentPlan = getPlan(plan, 'srujanshankar64@gmail.com');
+    const currentPlan = getPlan(plan);
     const isWhiteLabel = TIER[currentPlan].whiteLabelPdf;
     const { jsPDF } = await import("jspdf");
     const doc = new jsPDF({ unit: "pt", format: "a4" });
@@ -479,7 +479,7 @@ ${(content.follow_up_email as any)?.body || ""}` : (content.follow_up_email || "
     } finally { setBusy(false); }
   };
 
-  const currentPlan = getPlan(plan, 'srujanshankar64@gmail.com');
+  const currentPlan = getPlan(plan);
   const canPropose = TIER[currentPlan].proposals;
   const canWhiteLabel = TIER[currentPlan].whiteLabelPdf;
   const canColdEmail = TIER[currentPlan].coldEmail;
