@@ -72,7 +72,7 @@ function ComplianceCalculator() {
                 <span className="font-bold text-muted-foreground">${legacyCost.toLocaleString()}/mo</span>
               </div>
               <div className="flex justify-between mb-3 border-b border-white/5 pb-3">
-                <span className="text-stone-400 text-sm">ARCH.AI Infrastructure (Agency Tier)</span>
+                <span className="text-stone-400 text-sm">AccessAudit AI Infrastructure (Agency Tier)</span>
                 <span className="font-bold text-white">${newCost.toLocaleString()}/mo</span>
               </div>
               <div className="flex justify-between pt-2">
@@ -248,7 +248,7 @@ function Landing() {
                   <p className="pl-8 text-accent">{"position: 'bottom-right'"}</p>
                   <p className="pl-4">{'};'}</p>
                   <p className="text-primary font-bold">{'</script>'}</p>
-                  <p className="text-primary font-bold">{'<script src="https://cdn.arch.ai/shield.js" async></script>'}</p>
+                  <p className="text-primary font-bold">{'<script src="https://cdn.accessaudit.ai/shield.js" async></script>'}</p>
                 </div>
               </div>
             </div>
@@ -352,7 +352,7 @@ function Landing() {
             </div>
           </div>
           <div className="pt-8 border-t border-white/10 flex flex-col md:flex-row items-center justify-between gap-4 text-xs">
-            <p className="font-mono">ARCH.AI | SECURE DATA TERMINAL | VERSION 2.0.26</p>
+            <p className="font-mono">AccessAudit AI | SECURE DATA TERMINAL | VERSION 2.0.26</p>
             <div className="flex gap-4">
               <a href="#" className="hover:text-white">Privacy Policy</a>
               <a href="#" className="hover:text-white">Terms of Service</a>
