@@ -43,8 +43,8 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
-  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-mono: "SF Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", SFMono-Regular, Menlo, Monaco, monospace;
 }
 
 :root {
@@ -148,7 +148,63 @@
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 8px; }
   ::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.28); }
+
+  /* iOS-grade interaction defaults */
+  html, body {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    text-rendering: optimizeLegibility;
+  }
+  button, a, [role="button"], .tap {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    transition: transform 180ms var(--ease-standard), background-color 180ms var(--ease-standard), opacity 180ms var(--ease-standard), box-shadow 180ms var(--ease-standard);
+  }
+  /* iOS-style press feedback */
+  button:active, a:active, [role="button"]:active, .tap:active {
+    transform: scale(0.96);
+  }
+  @media (hover: hover) {
+    button:hover, a:hover, [role="button"]:hover, .tap:hover { opacity: 0.9; }
+  }
+  /* Smooth momentum scrolling */
+  main, .scroll-y { -webkit-overflow-scrolling: touch; }
+  /* iOS input reset */
+  input, textarea, select { font-size: 16px; -webkit-appearance: none; appearance: none; }
+  /* Respect iPhone safe areas */
+  .safe-top    { padding-top: env(safe-area-inset-top); }
+  .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
 }
+
+/* iOS bottom tab bar */
+.ios-tabbar {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 1000;
+  background: rgba(255,255,255,0.82);
+  backdrop-filter: saturate(180%) blur(24px);
+  -webkit-backdrop-filter: saturate(180%) blur(24px);
+  border-top: 0.5px solid var(--border);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.ios-tabbar-inner {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  height: 52px;
+}
+.ios-tab {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px;
+  color: var(--text-2);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+  transition: color 160ms var(--ease-standard);
+}
+.ios-tab[data-active="true"] { color: var(--blue); }
+.ios-tab:active { transform: scale(0.92); }
+.ios-tab svg { height: 22px; width: 22px; }
 
 @utility card-elevated {
   background-color: var(--surface);
