@@ -58,17 +58,23 @@ export type Database = {
       }
       audits: {
         Row: {
+          auto_reaudit_enabled: boolean | null
           category_scores: Json | null
           competitor_audit_id: string | null
           competitor_url: string | null
           created_at: string | null
           has_competitor_benchmark: boolean | null
+          has_proposal: boolean | null
           id: string
           is_parent: boolean | null
+          last_reaudited_at: string | null
           overall_score: number | null
           parent_audit_id: string | null
+          previous_score: number | null
           raw_html: string | null
+          reaudit_frequency_days: number | null
           remediation_roadmap: Json | null
+          score_drop_threshold: number | null
           status: string | null
           total_pages: number | null
           url: string
@@ -76,17 +82,23 @@ export type Database = {
           violations: Json | null
         }
         Insert: {
+          auto_reaudit_enabled?: boolean | null
           category_scores?: Json | null
           competitor_audit_id?: string | null
           competitor_url?: string | null
           created_at?: string | null
           has_competitor_benchmark?: boolean | null
+          has_proposal?: boolean | null
           id?: string
           is_parent?: boolean | null
+          last_reaudited_at?: string | null
           overall_score?: number | null
           parent_audit_id?: string | null
+          previous_score?: number | null
           raw_html?: string | null
+          reaudit_frequency_days?: number | null
           remediation_roadmap?: Json | null
+          score_drop_threshold?: number | null
           status?: string | null
           total_pages?: number | null
           url: string
@@ -94,17 +106,23 @@ export type Database = {
           violations?: Json | null
         }
         Update: {
+          auto_reaudit_enabled?: boolean | null
           category_scores?: Json | null
           competitor_audit_id?: string | null
           competitor_url?: string | null
           created_at?: string | null
           has_competitor_benchmark?: boolean | null
+          has_proposal?: boolean | null
           id?: string
           is_parent?: boolean | null
+          last_reaudited_at?: string | null
           overall_score?: number | null
           parent_audit_id?: string | null
+          previous_score?: number | null
           raw_html?: string | null
+          reaudit_frequency_days?: number | null
           remediation_roadmap?: Json | null
+          score_drop_threshold?: number | null
           status?: string | null
           total_pages?: number | null
           url?: string
@@ -318,6 +336,7 @@ export type Database = {
         Row: {
           agency_logo_url: string | null
           agency_name: string | null
+          audits_limit: number | null
           audits_used: number | null
           brand_color: string | null
           created_at: string | null
@@ -329,6 +348,7 @@ export type Database = {
         Insert: {
           agency_logo_url?: string | null
           agency_name?: string | null
+          audits_limit?: number | null
           audits_used?: number | null
           brand_color?: string | null
           created_at?: string | null
@@ -340,6 +360,7 @@ export type Database = {
         Update: {
           agency_logo_url?: string | null
           agency_name?: string | null
+          audits_limit?: number | null
           audits_used?: number | null
           brand_color?: string | null
           created_at?: string | null
