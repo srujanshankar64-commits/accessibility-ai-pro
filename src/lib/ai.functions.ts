@@ -3,7 +3,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { getPlan, TIER, canRunAudit, PLAN_PRICES } from "@/lib/tier.utils";
 import { GoogleGenAI } from "@google/genai";
-import { getAuditSystemPrompt, ELITE_AUDIT_CONFIG, FREE_AUDIT_CONFIG } from "@/lib/audit-prompt";
+import { getAuditSystemPrompt } from "@/lib/audit-prompt";
 
 function buildFreeAuditPrompt(): string {
   return `You are a WCAG 2.1 AA accessibility auditor. Find the TOP 8 most critical violations only.

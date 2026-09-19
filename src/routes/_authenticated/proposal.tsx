@@ -236,7 +236,7 @@ function ProposalPage() {
       try { parsedSeed = JSON.parse(raw); setSeed(parsedSeed); } catch {}
     }
 
-    supabase.from("settings").select("agency_name, agency_logo_url, brand_color, plan").maybeSingle().then(({ data }) => {
+    supabase.from("settings").select("agency_name, agency_logo_url, brand_color, plan").maybeSingle().then(async ({ data }) => {
       if (data && 'agency_name' in data) setAgency((data as any).agency_name);
       if (data && 'agency_logo_url' in data) setAgencyLogo((data as any).agency_logo_url);
       if (data && 'brand_color' in data) setBrandColor((data as any).brand_color);

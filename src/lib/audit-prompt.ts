@@ -120,18 +120,30 @@ Return ONLY JSON:
 }`;
   }
 
-  // Full audit mode with additional fields
+  // Full audit mode with additional fields.
+  // Note: violationLimit for paid plans is an effectively-unlimited target
+  // (999), not a literal count to aim for. Telling the model "minimum of 999"
+  // while also saying sites "typically have 50-100+" is self-contradictory —
+  // in practice the model just anchors on the smaller, realistic-sounding
+  // number and stops there. So we describe the volume requirement
+  // qualitatively (exhaustive, no upper bound) instead of quoting the raw
+  // config number, except for the free tier where violationLimit is a real,
+  // small, intentional cap.
+  const isEffectivelyUnlimited = violationLimit >= 100;
+  const volumeFloorLine = isEffectivelyUnlimited
+    ? `- Be exhaustive. There is no upper limit — report every real, verifiable violation you find. Do NOT stop at a round number like 20, 30, or 50 just because it feels thorough. Real enterprise sites typically have 50-150+ distinct violations once every element is checked — keep going until you've checked everything in the provided HTML.`
+    : `- You MUST return a MINIMUM of ${violationLimit} violations. This is a hard floor. If you find fewer than ${violationLimit}, you are not looking hard enough. Keep digging.`;
+
   return `You are a senior WCAG 2.1 AA accessibility auditor with 10 years of experience. Your audits are used by digital agencies to sell remediation services to corporate entities.
 
 Your job is to produce an EXHAUSTIVE and REALISTIC audit. You MUST find and report every violation present. Do NOT be conservative.
 
 MANDATORY VOLUME RULES — NON-NEGOTIABLE:
-- You MUST return a MINIMUM of ${violationLimit} violations. This is a hard floor. If you find fewer than ${violationLimit}, you are not looking hard enough. Keep digging.
+${volumeFloorLine}
 - EVERY INSTANCE is a separate violation. 10 images missing alt text = 10 violations. 15 buttons with contrast issues = 15 violations. 8 links with vague text = 8 violations. Never group them.
 - Be EXTREMELY specific in element_affected. Name the exact HTML element, CSS class, ID, aria attribute, or page location. Example: "button.nav-cta#hero-signup" not just "button".
 - Check ALL 4 WCAG categories exhaustively. Enterprise sites like this ALWAYS have 50-100+ violations across Perceivable, Operable, Understandable, and Robust.
-- If you reach ${violationLimit} violations and there are more, KEEP GOING. There is no upper limit. Report everything you find.
-- NEVER stop at 20-30 violations. That is a failure. The minimum is ${violationLimit}.
+- NEVER stop at 20-30 violations. That is a failure.
 - For every interactive element (buttons, links, inputs, forms, modals, dropdowns, carousels, tabs, accordions) — check EVERY WCAG criterion against it.
 - Mobile violations are SEPARATE from desktop violations. List each mobile issue individually.
 - ELITE MODE: You are in elite audit mode. Be hyper-detailed. Check meta tags, favicon, robots.txt, sitemap.xml, structured data, Open Graph, Twitter Cards, canonical tags, hreflang, viewport settings, and ALL accessibility attributes.
@@ -212,20 +224,3 @@ RETURN SCHEMA:
 }`;
 }
 
-/**
- * Default configuration for elite audits with 50 violations
- */
-export const ELITE_AUDIT_CONFIG: AuditPromptConfig = {
-  violationLimit: 50,
-  includeCodeFixes: true,
-  mode: 'full',
-};
-
-/**
- * Default configuration for free tier audits with 5 violations
- */
-export const FREE_AUDIT_CONFIG: AuditPromptConfig = {
-  violationLimit: 5,
-  includeCodeFixes: false,
-  mode: 'category',
-};
