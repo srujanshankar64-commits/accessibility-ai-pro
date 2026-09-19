@@ -33,9 +33,33 @@ function cleanHtml(html: string) {
 }
 
 function parseJSON(s: string) {
-  try { return JSON.parse(s); } catch {}
-  const m = s.match(/\{[\s\S]*\}/);
-  if (m) { try { return JSON.parse(m[0]); } catch {} }
+  if (!s || typeof s !== "string") return {};
+  const trimmed = s.trim();
+  if (!trimmed) return {};
+
+  try { return JSON.parse(trimmed); } catch {}
+
+  const m = trimmed.match(/\{[\s\S]*\}/);
+  if (m) {
+    try { return JSON.parse(m[0]); } catch {}
+  }
+
+  // Attempt to repair common truncation / formatting issues (trailing commas,
+  // unquoted keys) before giving up.
+  try {
+    const cleaned = trimmed
+      .replace(/,\s*([}\]])/g, "$1")
+      .replace(/([{,]\s*)([a-zA-Z_][\w]*)\s*:/g, '$1"$2":');
+    return JSON.parse(cleaned);
+  } catch {}
+
+  const start = trimmed.indexOf("{");
+  const end = trimmed.lastIndexOf("}");
+  if (start !== -1 && end > start) {
+    try { return JSON.parse(trimmed.slice(start, end + 1)); } catch {}
+  }
+
+  console.error("[audit-worker] parseJSON: all parse strategies failed");
   return {};
 }
 
@@ -56,7 +80,7 @@ async function callGeminiWithRetry(systemPrompt: string, userPrompt: string, api
           generationConfig: {
             responseMimeType: "application/json",
             temperature: 0.2,
-            maxOutputTokens: 81920,
+            maxOutputTokens: 65536,
           },
         }),
       });
@@ -69,16 +93,28 @@ async function callGeminiWithRetry(systemPrompt: string, userPrompt: string, api
         }
         return text;
       }
-      
-      if (i < retries - 1 && (r.status === 429 || r.status === 503)) {
+
+      const txt = await r.text();
+      const isRetryable = r.status === 429 || r.status === 503;
+
+      // Non-retryable errors (bad API key, invalid request, etc) should fail
+      // immediately with the real error message instead of being retried
+      // blindly and masked behind a generic "failed after all retries".
+      if (!isRetryable) {
+        throw new Error(`Gemini ${r.status}: ${txt.slice(0, 200)}`);
+      }
+
+      if (i < retries - 1) {
         await delay(2000 * Math.pow(2, i)); // Exponential backoff
         continue;
       }
-      
-      const txt = await r.text();
+
       throw new Error(`Gemini ${r.status}: ${txt.slice(0, 200)}`);
     } catch (error: any) {
       if (i === retries - 1) throw error;
+      // Only swallow-and-loop for errors we've explicitly marked retryable above
+      // (network errors thrown by fetch itself land here too — retry those).
+      if (error?.message?.startsWith("Gemini ")) throw error;
     }
   }
   throw new Error(`Gemini API failed after all retries`);
@@ -95,9 +131,60 @@ async function pushLog(jobId: string, message: string, percent: number, step: st
   await updateJob(jobId, { progress_log: log, progress_percent: percent, current_step: step });
 }
 
-function getHolisticSystemPrompt(includeCodeFixes: boolean, violationLimit: number, multiPageCrawlEnabled: boolean, competitorUrl: string): string {
+function isCurrentAuditPeriod(periodStart?: string | null): boolean {
+  if (!periodStart) return false;
+  const now = new Date();
+  const period = new Date(periodStart);
+  return now.getUTCFullYear() === period.getUTCFullYear() &&
+    now.getUTCMonth() === period.getUTCMonth();
+}
+
+async function getMonthlySettings(userId: string) {
+  const { data: settings } = await admin
+    .from("settings")
+    .select("plan, audits_used, audit_period_start, gemini_api_key")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (!settings) {
+    // No settings row yet for this user (e.g. their very first audit).
+    // Create one so usage tracking (audits_used) has a row to update against —
+    // otherwise the later `.update().eq("user_id", userId)` silently matches
+    // zero rows and the free-tier monthly quota never actually increments.
+    const { data: created } = await admin
+      .from("settings")
+      .upsert({ user_id: userId })
+      .select("plan, audits_used, audit_period_start, gemini_api_key")
+      .maybeSingle();
+    return created ?? { plan: "free", audits_used: 0, audit_period_start: new Date().toISOString(), gemini_api_key: "" };
+  }
+
+  if (!isCurrentAuditPeriod((settings as any).audit_period_start)) {
+    const resetStartedAt = new Date().toISOString();
+    const { data: reset } = await admin
+      .from("settings")
+      .update({ audits_used: 0, audit_period_start: resetStartedAt })
+      .eq("user_id", userId)
+      .select("plan, audits_used, audit_period_start, gemini_api_key")
+      .maybeSingle();
+    return reset ?? { ...(settings as any), audits_used: 0, audit_period_start: resetStartedAt };
+  }
+
+  return settings as any;
+}
+
+function getHolisticSystemPrompt(includeCodeFixes: boolean, isFree: boolean, multiPageCrawlEnabled: boolean, competitorUrl: string): string {
   const codeFixesSection = includeCodeFixes ? `,\n      "code_fix": "exact code snippet"` : '';
-  
+
+  // Free tier gets a small, fixed sample; paid tiers get an exhaustive audit
+  // with no artificial ceiling — the model should report EVERY violation it
+  // finds, not stop at a round number.
+  const volumeRules = isFree
+    ? `- Find the TOP 5 most critical violations only. Quality over quantity.`
+    : `- You MUST be exhaustive. Do NOT be conservative and do NOT stop at a round number like 20, 30, or 50 — real enterprise sites typically have 50-150+ distinct violations across all 4 categories. Keep looking until you have checked every element in the provided HTML.
+- EVERY INSTANCE is a separate violation. 10 images missing alt text = 10 separate violations, not one grouped entry. Never group repeated issues into a single entry.
+- There is no upper limit on the violation count. Report everything you find that is real and verifiable from the HTML provided.`;
+
   return `You are an expert accessibility audit engine. Your task is to perform a high-precision, holistic WCAG 2.1 AA audit across ALL 4 CATEGORIES simultaneously.
 
 Format: Output ONLY raw, minified JSON. No Markdown, no prose, no explanations.
@@ -105,7 +192,7 @@ ${multiPageCrawlEnabled ? "MULTI-PAGE SYSTEMIC MODE: Treat structural flaws as s
 ${competitorUrl ? "COMPETITOR BENCHMARK: A competitor URL is provided. Briefly analyze their accessibility and assign them a score to include in the output." : ""}
 
 MANDATORY RULES:
-- Return exactly ${violationLimit} violations. Every instance is a separate violation.
+${volumeRules}
 - Be extremely specific in "element_affected" (selector, class, id, aria attribute).
 - Escalate severity for transactional elements (CTAs, forms, checkout) by one level.
 - Include mobile-specific issues as [MOBILE] prefixed entries when relevant.
@@ -149,13 +236,13 @@ async function runAuditWork(jobId: string, multiPageCrawlEnabled: boolean = fals
     const userId = (job as any).user_id as string;
     const url = (job as any).url as string;
 
-    const { data: settings } = await admin.from("settings").select("plan, audits_used, gemini_api_key").eq("user_id", userId).maybeSingle();
+    const settings = await getMonthlySettings(userId);
 
     const plan = ((settings as any)?.plan as string) || "free";
     const userApiKey = ((settings as any)?.gemini_api_key as string) || "";
-    const includeCodeFixes = plan !== "free";
-    const violationCap = plan === "free" ? 5 : Infinity;
-    const violationLimit = plan === "free" ? 5 : 26;
+    const isFree = plan === "free";
+    const includeCodeFixes = !isFree;
+    const violationCap = isFree ? 5 : Infinity;
 
     await updateJob(jobId, { status: "processing" });
     await pushLog(jobId, `Starting fast holistic audit for ${url}`, 5, "Initializing audit...");
@@ -178,7 +265,10 @@ async function runAuditWork(jobId: string, multiPageCrawlEnabled: boolean = fals
           });
           clearTimeout(timer);
           const html = await r.text();
-          pageSnippet = cleanHtml(html).slice(0, 30000);
+          // Free tier gets a smaller snippet (matches its 5-violation sample);
+          // paid tiers get much more HTML so the "exhaustive" audit actually
+          // has enough of the page to find 50-150+ real violations in.
+          pageSnippet = cleanHtml(html).slice(0, plan === "free" ? 8000 : 45000);
           await pushLog(jobId, `Fetched main HTML (${pageSnippet.length} chars)`, 15, "Parsing HTML...");
         } catch (e) {
           pageSnippet = `(Could not fetch ${url}. Theoretical structural audit applied.)`;
@@ -228,7 +318,7 @@ async function runAuditWork(jobId: string, multiPageCrawlEnabled: boolean = fals
       userPrompt += `\n\nCOMPETITOR URL: ${competitorUrl}\n\nCOMPETITOR HTML (for benchmarking):\n${competitorSnippet}`;
     }
 
-    const systemPrompt = getHolisticSystemPrompt(includeCodeFixes, violationLimit, multiPageCrawlEnabled, competitorUrl);
+    const systemPrompt = getHolisticSystemPrompt(includeCodeFixes, isFree, multiPageCrawlEnabled, competitorUrl);
     
     const raw = await callGeminiWithRetry(systemPrompt, userPrompt, userApiKey, 3);
     const parsed = parseJSON(raw);
@@ -236,6 +326,9 @@ async function runAuditWork(jobId: string, multiPageCrawlEnabled: boolean = fals
     await pushLog(jobId, "Aggregating findings and computing scores", 88, "Processing results...");
 
     let allViolations = parsed.violations || [];
+    if (!Array.isArray(allViolations) || allViolations.length === 0) {
+      throw new Error("AI audit returned no violations. This indicates a system error — please try again.");
+    }
     const seen = new Set<string>();
     allViolations = allViolations.map((v: any, i: number) => {
       let id = v.id || `${v.severity || "minor"}-${i}`;
@@ -250,7 +343,10 @@ async function runAuditWork(jobId: string, multiPageCrawlEnabled: boolean = fals
 
     await pushLog(jobId, `Saving audit (${limited.length} violations, score ${overall_score}/100)`, 94, "Saving results...");
 
-    await admin.from("settings").update({ audits_used: ((settings as any)?.audits_used ?? 0) + 1 }).eq("user_id", userId);
+    // Use the atomic DB function instead of a read-then-write update — avoids
+    // a race condition where two audits started close together both read the
+    // same audits_used value and one increment gets lost.
+    await admin.rpc("increment_audits_used", { user_id: userId });
     
     // Add competitor audit id if applicable (mocking the insertion of a competitor audit row for simplicity, or just embedding it)
     const auditData: any = {

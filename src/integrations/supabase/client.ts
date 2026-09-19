@@ -5,12 +5,8 @@ import type { Database } from './types';
 const SUPABASE_URL = "https://xyyneqqbncyokeaynebt.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh5eW5lcXFibmN5b2tlYXluZWJ0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA5NzQ0ODAsImV4cCI6MjA5NjU1MDQ4MH0.BCPWQSaWF7ACxBl9s3sDnM84ovAX6SeQ87nft4-q7Qw";
 
-// Import the supabase client like this:
-// import { supabase } from "@/integrations/supabase/client";
-
 function getBrowserStorage(): Storage | undefined {
   if (typeof globalThis.window === "undefined") return undefined;
-
   try {
     return globalThis.window.localStorage;
   } catch {

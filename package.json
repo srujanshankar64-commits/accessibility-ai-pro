@@ -12,9 +12,7 @@
     "format": "prettier --write ."
   },
   "dependencies": {
-    "@google-cloud/aiplatform": "^6.8.1",
     "@google/genai": "^2.8.0",
-    "@google/generative-ai": "^0.24.1",
     "@hookform/resolvers": "^5.2.2",
     "@lovable.dev/mcp-js": "^0.20.0",
     "@radix-ui/react-accordion": "^1.2.12",

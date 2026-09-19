@@ -4,7 +4,12 @@ import { supabase } from "@/integrations/supabase/client";
  * Generate a referral code from user email
  */
 export function generateReferralCode(email: string): string {
-  return btoa(email).slice(0, 8).toUpperCase();
+  let hash = 5381;
+  for (const char of email.trim().toLowerCase()) {
+    hash = ((hash << 5) + hash) ^ char.charCodeAt(0);
+  }
+
+  return Math.abs(hash).toString(36).slice(0, 8).toUpperCase().padEnd(8, "0");
 }
 
 /**
@@ -171,13 +176,13 @@ async function grantReferrerFreeMonth(referrerId: string): Promise<void> {
  * Get referral stats for a user
  */
 export async function getReferralStats(userId: string): Promise<{ clicks: number; signups: number; earned: number }> {
-  const { data: referral } = await (supabase as any)
+  const { data: referral, error } = await (supabase as any)
     .from('referrals')
     .select('*')
     .eq('referrer_id', userId)
-    .single();
+    .maybeSingle();
   
-  if (!referral) {
+  if (error || !referral) {
     return { clicks: 0, signups: 0, earned: 0 };
   }
   

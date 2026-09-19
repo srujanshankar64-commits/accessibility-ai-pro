@@ -10,12 +10,9 @@ export const TIER = {
 } as const;
 
 /**
- * Gets the current plan for a user. 
- * If the email matches yours, it forces 'business' for testing.
+ * Gets the current plan for a user.
  */
-export function getPlan(raw: string | null | undefined, email?: string): Plan {
-  if (email === 'srujanshankar64@gmail.com') return 'business';
-  
+export function getPlan(raw: string | null | undefined): Plan {
   if (raw === "starter" || raw === "agency" || raw === "business") return raw;
   return "free";
 }

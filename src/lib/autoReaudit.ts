@@ -32,13 +32,16 @@ export async function reauditWebsite(auditId: string): Promise<void> {
   // Store previous score
   const previousScore = audit.overall_score ?? 0;
   
-  // Run new audit
+  // Run new audit. runAudit is a server function called directly (not via
+  // useServerFn), so it resolves to the audit result object itself — not a
+  // { data: ... } wrapper. Reading result.data here always returned
+  // undefined, silently skipping the update below on every re-audit run.
   const result = await runAudit({ data: { url: audit.url } });
-  
-  if (result.data) {
-    const newScore = result.data.overall_score;
+
+  if (result) {
+    const newScore = result.overall_score;
     const scoreDrop = previousScore - newScore;
-    
+
     // Update audit with new data
     await supabase
       .from('audits')
@@ -46,8 +49,8 @@ export async function reauditWebsite(auditId: string): Promise<void> {
         overall_score: newScore,
         previous_score: previousScore,
         last_reaudited_at: new Date().toISOString(),
-        violations: result.data.violations,
-        category_scores: result.data.category_scores,
+        violations: result.violations,
+        category_scores: result.category_scores,
       } as any)
       .eq('id', auditId);
     
