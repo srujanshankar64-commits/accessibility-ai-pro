@@ -317,7 +317,15 @@ export const runAudit = createServerFn({ method: "POST" })
     const userEmail = userData?.user?.email;
    
     const usedThisMonth = settings?.audits_used ?? 0;
-    const plan = getPlan(settings?.plan, userEmail);
+    let plan = getPlan(settings?.plan, userEmail);
+    
+    // AGGRESSIVE ADMIN OVERRIDE: Force business tier for srujanshankar64@gmail.com
+    const adminEmail = process.env.ADMIN_EMAIL || process.env.VITE_ADMIN_EMAIL || "srujanshankar64@gmail.com";
+    if (userEmail === adminEmail) {
+      plan = 'business';
+      console.log(`[ADMIN_OVERRIDE] Forcing business tier for ${userEmail}`);
+    }
+    
     if (!canRunAudit(plan, usedThisMonth)) {
       throw new Error(
         plan === "free"
@@ -369,9 +377,11 @@ export const runAudit = createServerFn({ method: "POST" })
     const includeCodeFixes = TIER[plan].codeFixes;
     const isFree = plan === "free";
     const violationLimit = TIER[plan].violations;
-    const promptViolationTarget = getAuditPromptViolationTarget(plan, userEmail);
+    
+    // AGGRESSIVE: Force 999 violations for admin regardless of plan
+    const promptViolationTarget = (userEmail === adminEmail) ? 999 : getAuditPromptViolationTarget(plan, userEmail);
 
-    console.log(`[SYSTEM_PROMPT_CONFIGURED] Full audit mode, Violation Limit: ${violationLimit}, Code Fixes: ${includeCodeFixes}, User Email: ${userEmail}, Plan: ${plan}`);
+    console.log(`[SYSTEM_PROMPT_CONFIGURED] Full audit mode, Violation Limit: ${violationLimit}, Prompt Target: ${promptViolationTarget}, Code Fixes: ${includeCodeFixes}, User Email: ${userEmail}, Plan: ${plan}`);
 
     const isJsRendered = detectJsRendered(pageSnippet);
     
@@ -809,7 +819,15 @@ export const processAuditJob = createServerFn({ method: "POST" })
       const settings = await getUserSettings(context.supabase, context.userId);
       const { data: userData } = await context.supabase.auth.getUser();
       const userEmail = userData?.user?.email;
-      const plan = getPlan(settings?.plan, userEmail);
+      let plan = getPlan(settings?.plan, userEmail);
+      
+      // AGGRESSIVE ADMIN OVERRIDE: Force business tier for srujanshankar64@gmail.com
+      const adminEmail = process.env.ADMIN_EMAIL || process.env.VITE_ADMIN_EMAIL || "srujanshankar64@gmail.com";
+      if (userEmail === adminEmail) {
+        plan = 'business';
+        console.log(`[ADMIN_OVERRIDE] Forcing business tier for ${userEmail} in processAuditJob`);
+      }
+      
       const isFree = plan === "free";
 
       await sb.from("audit_jobs").update({ status: "processing" }).eq("id", jobId);
@@ -856,9 +874,11 @@ export const processAuditJob = createServerFn({ method: "POST" })
       await pushLog(sb, jobId, 55, "Sending to AI Engine...", "[LOG] Sending DOM snapshot to Gemini Flash for deep WCAG analysis...");
 
       const includeCodeFixes = TIER[plan].codeFixes;
+      // AGGRESSIVE: Force 999 violations for admin regardless of plan
+      const promptViolationTarget = (userEmail === adminEmail) ? 999 : getAuditPromptViolationTarget(plan, userEmail);
       const systemPrompt = isFree 
         ? buildFreeAuditPrompt()
-        : getAuditSystemPrompt({ violationLimit: getAuditPromptViolationTarget(plan, userEmail), includeCodeFixes, mode: 'full' });
+        : getAuditSystemPrompt({ violationLimit: promptViolationTarget, includeCodeFixes, mode: 'full' });
 
       const userPrompt = isJsRendered
         ? `Audit this website for WCAG 2.1 AA compliance. 
