@@ -296,7 +296,10 @@ async function checkRateLimit(supabase: any, userId: string, endpoint: string, m
   }
 }
 
-function getAuditPromptViolationTarget(plan: keyof typeof TIER): number {
+function getAuditPromptViolationTarget(plan: keyof typeof TIER, email?: string): number {
+  const adminEmail = process.env.ADMIN_EMAIL || process.env.VITE_ADMIN_EMAIL || "srujanshankar64@gmail.com";
+  // Force 999 violations for admin regardless of plan
+  if (adminEmail && email === adminEmail) return 999;
   return plan === "free" ? TIER.free.violations : TIER[plan].violations;
 }
 
@@ -366,9 +369,9 @@ export const runAudit = createServerFn({ method: "POST" })
     const includeCodeFixes = TIER[plan].codeFixes;
     const isFree = plan === "free";
     const violationLimit = TIER[plan].violations;
-    const promptViolationTarget = getAuditPromptViolationTarget(plan);
+    const promptViolationTarget = getAuditPromptViolationTarget(plan, userEmail);
 
-    console.log(`[SYSTEM_PROMPT_CONFIGURED] Full audit mode, Violation Limit: ${violationLimit}, Code Fixes: ${includeCodeFixes}`);
+    console.log(`[SYSTEM_PROMPT_CONFIGURED] Full audit mode, Violation Limit: ${violationLimit}, Code Fixes: ${includeCodeFixes}, User Email: ${userEmail}, Plan: ${plan}`);
 
     const isJsRendered = detectJsRendered(pageSnippet);
     
@@ -855,7 +858,7 @@ export const processAuditJob = createServerFn({ method: "POST" })
       const includeCodeFixes = TIER[plan].codeFixes;
       const systemPrompt = isFree 
         ? buildFreeAuditPrompt()
-        : getAuditSystemPrompt({ violationLimit: getAuditPromptViolationTarget(plan), includeCodeFixes, mode: 'full' });
+        : getAuditSystemPrompt({ violationLimit: getAuditPromptViolationTarget(plan, userEmail), includeCodeFixes, mode: 'full' });
 
       const userPrompt = isJsRendered
         ? `Audit this website for WCAG 2.1 AA compliance. 

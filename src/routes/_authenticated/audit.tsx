@@ -158,7 +158,11 @@ function NewAuditPage() {
               .eq("user_id", user.id)
               .maybeSingle();
             
-            setPlan((settings?.plan as string) || "free");
+            const { data: userData } = await supabase.auth.getUser();
+            const userEmail = userData?.user?.email;
+            const rawPlan = (settings?.plan as string) || "free";
+            const actualPlan = getPlan(rawPlan, userEmail);
+            setPlan(actualPlan);
             setUsed(settings?.audits_used || 0);
           } else {
             const status = await planStatusFn();
