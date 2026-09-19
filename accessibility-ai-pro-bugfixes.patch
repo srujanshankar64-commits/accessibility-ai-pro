@@ -1,0 +1,304 @@
+diff --git a/src/lib/ai.functions.ts b/src/lib/ai.functions.ts
+index cbe0065..da5ccb2 100644
+--- a/src/lib/ai.functions.ts
++++ b/src/lib/ai.functions.ts
+@@ -3,7 +3,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+ import { z } from "zod";
+ import { getPlan, TIER, canRunAudit, PLAN_PRICES } from "@/lib/tier.utils";
+ import { GoogleGenAI } from "@google/genai";
+-import { getAuditSystemPrompt, ELITE_AUDIT_CONFIG, FREE_AUDIT_CONFIG } from "@/lib/audit-prompt";
++import { getAuditSystemPrompt } from "@/lib/audit-prompt";
+ 
+ function buildFreeAuditPrompt(): string {
+   return `You are a WCAG 2.1 AA accessibility auditor. Find the TOP 8 most critical violations only.
+diff --git a/src/lib/audit-prompt.ts b/src/lib/audit-prompt.ts
+index 2693814..3b75dbf 100644
+--- a/src/lib/audit-prompt.ts
++++ b/src/lib/audit-prompt.ts
+@@ -120,18 +120,30 @@ Return ONLY JSON:
+ }`;
+   }
+ 
+-  // Full audit mode with additional fields
++  // Full audit mode with additional fields.
++  // Note: violationLimit for paid plans is an effectively-unlimited target
++  // (999), not a literal count to aim for. Telling the model "minimum of 999"
++  // while also saying sites "typically have 50-100+" is self-contradictory —
++  // in practice the model just anchors on the smaller, realistic-sounding
++  // number and stops there. So we describe the volume requirement
++  // qualitatively (exhaustive, no upper bound) instead of quoting the raw
++  // config number, except for the free tier where violationLimit is a real,
++  // small, intentional cap.
++  const isEffectivelyUnlimited = violationLimit >= 100;
++  const volumeFloorLine = isEffectivelyUnlimited
++    ? `- Be exhaustive. There is no upper limit — report every real, verifiable violation you find. Do NOT stop at a round number like 20, 30, or 50 just because it feels thorough. Real enterprise sites typically have 50-150+ distinct violations once every element is checked — keep going until you've checked everything in the provided HTML.`
++    : `- You MUST return a MINIMUM of ${violationLimit} violations. This is a hard floor. If you find fewer than ${violationLimit}, you are not looking hard enough. Keep digging.`;
++
+   return `You are a senior WCAG 2.1 AA accessibility auditor with 10 years of experience. Your audits are used by digital agencies to sell remediation services to corporate entities.
+ 
+ Your job is to produce an EXHAUSTIVE and REALISTIC audit. You MUST find and report every violation present. Do NOT be conservative.
+ 
+ MANDATORY VOLUME RULES — NON-NEGOTIABLE:
+-- You MUST return a MINIMUM of ${violationLimit} violations. This is a hard floor. If you find fewer than ${violationLimit}, you are not looking hard enough. Keep digging.
++${volumeFloorLine}
+ - EVERY INSTANCE is a separate violation. 10 images missing alt text = 10 violations. 15 buttons with contrast issues = 15 violations. 8 links with vague text = 8 violations. Never group them.
+ - Be EXTREMELY specific in element_affected. Name the exact HTML element, CSS class, ID, aria attribute, or page location. Example: "button.nav-cta#hero-signup" not just "button".
+ - Check ALL 4 WCAG categories exhaustively. Enterprise sites like this ALWAYS have 50-100+ violations across Perceivable, Operable, Understandable, and Robust.
+-- If you reach ${violationLimit} violations and there are more, KEEP GOING. There is no upper limit. Report everything you find.
+-- NEVER stop at 20-30 violations. That is a failure. The minimum is ${violationLimit}.
++- NEVER stop at 20-30 violations. That is a failure.
+ - For every interactive element (buttons, links, inputs, forms, modals, dropdowns, carousels, tabs, accordions) — check EVERY WCAG criterion against it.
+ - Mobile violations are SEPARATE from desktop violations. List each mobile issue individually.
+ - ELITE MODE: You are in elite audit mode. Be hyper-detailed. Check meta tags, favicon, robots.txt, sitemap.xml, structured data, Open Graph, Twitter Cards, canonical tags, hreflang, viewport settings, and ALL accessibility attributes.
+@@ -212,20 +224,3 @@ RETURN SCHEMA:
+ }`;
+ }
+ 
+-/**
+- * Default configuration for elite audits with 50 violations
+- */
+-export const ELITE_AUDIT_CONFIG: AuditPromptConfig = {
+-  violationLimit: 50,
+-  includeCodeFixes: true,
+-  mode: 'full',
+-};
+-
+-/**
+- * Default configuration for free tier audits with 5 violations
+- */
+-export const FREE_AUDIT_CONFIG: AuditPromptConfig = {
+-  violationLimit: 5,
+-  includeCodeFixes: false,
+-  mode: 'category',
+-};
+diff --git a/src/lib/autoReaudit.ts b/src/lib/autoReaudit.ts
+index 33b564e..e0affa2 100644
+--- a/src/lib/autoReaudit.ts
++++ b/src/lib/autoReaudit.ts
+@@ -32,13 +32,16 @@ export async function reauditWebsite(auditId: string): Promise<void> {
+   // Store previous score
+   const previousScore = audit.overall_score ?? 0;
+   
+-  // Run new audit
++  // Run new audit. runAudit is a server function called directly (not via
++  // useServerFn), so it resolves to the audit result object itself — not a
++  // { data: ... } wrapper. Reading result.data here always returned
++  // undefined, silently skipping the update below on every re-audit run.
+   const result = await runAudit({ data: { url: audit.url } });
+-  
+-  if (result.data) {
+-    const newScore = result.data.overall_score;
++
++  if (result) {
++    const newScore = result.overall_score;
+     const scoreDrop = previousScore - newScore;
+-    
++
+     // Update audit with new data
+     await supabase
+       .from('audits')
+@@ -46,8 +49,8 @@ export async function reauditWebsite(auditId: string): Promise<void> {
+         overall_score: newScore,
+         previous_score: previousScore,
+         last_reaudited_at: new Date().toISOString(),
+-        violations: result.data.violations,
+-        category_scores: result.data.category_scores,
++        violations: result.violations,
++        category_scores: result.category_scores,
+       } as any)
+       .eq('id', auditId);
+     
+diff --git a/src/routes/_authenticated/proposal.tsx b/src/routes/_authenticated/proposal.tsx
+index 6cfb205..064880d 100644
+--- a/src/routes/_authenticated/proposal.tsx
++++ b/src/routes/_authenticated/proposal.tsx
+@@ -236,7 +236,7 @@ function ProposalPage() {
+       try { parsedSeed = JSON.parse(raw); setSeed(parsedSeed); } catch {}
+     }
+ 
+-    supabase.from("settings").select("agency_name, agency_logo_url, brand_color, plan").maybeSingle().then(({ data }) => {
++    supabase.from("settings").select("agency_name, agency_logo_url, brand_color, plan").maybeSingle().then(async ({ data }) => {
+       if (data && 'agency_name' in data) setAgency((data as any).agency_name);
+       if (data && 'agency_logo_url' in data) setAgencyLogo((data as any).agency_logo_url);
+       if (data && 'brand_color' in data) setBrandColor((data as any).brand_color);
+diff --git a/supabase/functions/audit-worker/index.ts b/supabase/functions/audit-worker/index.ts
+index a947aeb..3af9ea6 100644
+--- a/supabase/functions/audit-worker/index.ts
++++ b/supabase/functions/audit-worker/index.ts
+@@ -33,9 +33,33 @@ function cleanHtml(html: string) {
+ }
+ 
+ function parseJSON(s: string) {
+-  try { return JSON.parse(s); } catch {}
+-  const m = s.match(/\{[\s\S]*\}/);
+-  if (m) { try { return JSON.parse(m[0]); } catch {} }
++  if (!s || typeof s !== "string") return {};
++  const trimmed = s.trim();
++  if (!trimmed) return {};
++
++  try { return JSON.parse(trimmed); } catch {}
++
++  const m = trimmed.match(/\{[\s\S]*\}/);
++  if (m) {
++    try { return JSON.parse(m[0]); } catch {}
++  }
++
++  // Attempt to repair common truncation / formatting issues (trailing commas,
++  // unquoted keys) before giving up.
++  try {
++    const cleaned = trimmed
++      .replace(/,\s*([}\]])/g, "$1")
++      .replace(/([{,]\s*)([a-zA-Z_][\w]*)\s*:/g, '$1"$2":');
++    return JSON.parse(cleaned);
++  } catch {}
++
++  const start = trimmed.indexOf("{");
++  const end = trimmed.lastIndexOf("}");
++  if (start !== -1 && end > start) {
++    try { return JSON.parse(trimmed.slice(start, end + 1)); } catch {}
++  }
++
++  console.error("[audit-worker] parseJSON: all parse strategies failed");
+   return {};
+ }
+ 
+@@ -69,16 +93,28 @@ async function callGeminiWithRetry(systemPrompt: string, userPrompt: string, api
+         }
+         return text;
+       }
+-      
+-      if (i < retries - 1 && (r.status === 429 || r.status === 503)) {
++
++      const txt = await r.text();
++      const isRetryable = r.status === 429 || r.status === 503;
++
++      // Non-retryable errors (bad API key, invalid request, etc) should fail
++      // immediately with the real error message instead of being retried
++      // blindly and masked behind a generic "failed after all retries".
++      if (!isRetryable) {
++        throw new Error(`Gemini ${r.status}: ${txt.slice(0, 200)}`);
++      }
++
++      if (i < retries - 1) {
+         await delay(2000 * Math.pow(2, i)); // Exponential backoff
+         continue;
+       }
+-      
+-      const txt = await r.text();
++
+       throw new Error(`Gemini ${r.status}: ${txt.slice(0, 200)}`);
+     } catch (error: any) {
+       if (i === retries - 1) throw error;
++      // Only swallow-and-loop for errors we've explicitly marked retryable above
++      // (network errors thrown by fetch itself land here too — retry those).
++      if (error?.message?.startsWith("Gemini ")) throw error;
+     }
+   }
+   throw new Error(`Gemini API failed after all retries`);
+@@ -111,7 +147,16 @@ async function getMonthlySettings(userId: string) {
+     .maybeSingle();
+ 
+   if (!settings) {
+-    return { plan: "free", audits_used: 0, audit_period_start: new Date().toISOString(), gemini_api_key: "" };
++    // No settings row yet for this user (e.g. their very first audit).
++    // Create one so usage tracking (audits_used) has a row to update against —
++    // otherwise the later `.update().eq("user_id", userId)` silently matches
++    // zero rows and the free-tier monthly quota never actually increments.
++    const { data: created } = await admin
++      .from("settings")
++      .upsert({ user_id: userId })
++      .select("plan, audits_used, audit_period_start, gemini_api_key")
++      .maybeSingle();
++    return created ?? { plan: "free", audits_used: 0, audit_period_start: new Date().toISOString(), gemini_api_key: "" };
+   }
+ 
+   if (!isCurrentAuditPeriod((settings as any).audit_period_start)) {
+@@ -128,9 +173,18 @@ async function getMonthlySettings(userId: string) {
+   return settings as any;
+ }
+ 
+-function getHolisticSystemPrompt(includeCodeFixes: boolean, violationLimit: number, multiPageCrawlEnabled: boolean, competitorUrl: string): string {
++function getHolisticSystemPrompt(includeCodeFixes: boolean, isFree: boolean, multiPageCrawlEnabled: boolean, competitorUrl: string): string {
+   const codeFixesSection = includeCodeFixes ? `,\n      "code_fix": "exact code snippet"` : '';
+-  
++
++  // Free tier gets a small, fixed sample; paid tiers get an exhaustive audit
++  // with no artificial ceiling — the model should report EVERY violation it
++  // finds, not stop at a round number.
++  const volumeRules = isFree
++    ? `- Find the TOP 5 most critical violations only. Quality over quantity.`
++    : `- You MUST be exhaustive. Do NOT be conservative and do NOT stop at a round number like 20, 30, or 50 — real enterprise sites typically have 50-150+ distinct violations across all 4 categories. Keep looking until you have checked every element in the provided HTML.
++- EVERY INSTANCE is a separate violation. 10 images missing alt text = 10 separate violations, not one grouped entry. Never group repeated issues into a single entry.
++- There is no upper limit on the violation count. Report everything you find that is real and verifiable from the HTML provided.`;
++
+   return `You are an expert accessibility audit engine. Your task is to perform a high-precision, holistic WCAG 2.1 AA audit across ALL 4 CATEGORIES simultaneously.
+ 
+ Format: Output ONLY raw, minified JSON. No Markdown, no prose, no explanations.
+@@ -138,7 +192,7 @@ ${multiPageCrawlEnabled ? "MULTI-PAGE SYSTEMIC MODE: Treat structural flaws as s
+ ${competitorUrl ? "COMPETITOR BENCHMARK: A competitor URL is provided. Briefly analyze their accessibility and assign them a score to include in the output." : ""}
+ 
+ MANDATORY RULES:
+-- Return exactly ${violationLimit} violations. Every instance is a separate violation.
++${volumeRules}
+ - Be extremely specific in "element_affected" (selector, class, id, aria attribute).
+ - Escalate severity for transactional elements (CTAs, forms, checkout) by one level.
+ - Include mobile-specific issues as [MOBILE] prefixed entries when relevant.
+@@ -186,9 +240,9 @@ async function runAuditWork(jobId: string, multiPageCrawlEnabled: boolean = fals
+ 
+     const plan = ((settings as any)?.plan as string) || "free";
+     const userApiKey = ((settings as any)?.gemini_api_key as string) || "";
+-    const includeCodeFixes = plan !== "free";
+-    const violationCap = plan === "free" ? 5 : Infinity;
+-    const violationLimit = plan === "free" ? 5 : 50;
++    const isFree = plan === "free";
++    const includeCodeFixes = !isFree;
++    const violationCap = isFree ? 5 : Infinity;
+ 
+     await updateJob(jobId, { status: "processing" });
+     await pushLog(jobId, `Starting fast holistic audit for ${url}`, 5, "Initializing audit...");
+@@ -211,7 +265,10 @@ async function runAuditWork(jobId: string, multiPageCrawlEnabled: boolean = fals
+           });
+           clearTimeout(timer);
+           const html = await r.text();
+-          pageSnippet = cleanHtml(html).slice(0, 30000);
++          // Free tier gets a smaller snippet (matches its 5-violation sample);
++          // paid tiers get much more HTML so the "exhaustive" audit actually
++          // has enough of the page to find 50-150+ real violations in.
++          pageSnippet = cleanHtml(html).slice(0, plan === "free" ? 8000 : 45000);
+           await pushLog(jobId, `Fetched main HTML (${pageSnippet.length} chars)`, 15, "Parsing HTML...");
+         } catch (e) {
+           pageSnippet = `(Could not fetch ${url}. Theoretical structural audit applied.)`;
+@@ -261,7 +318,7 @@ async function runAuditWork(jobId: string, multiPageCrawlEnabled: boolean = fals
+       userPrompt += `\n\nCOMPETITOR URL: ${competitorUrl}\n\nCOMPETITOR HTML (for benchmarking):\n${competitorSnippet}`;
+     }
+ 
+-    const systemPrompt = getHolisticSystemPrompt(includeCodeFixes, violationLimit, multiPageCrawlEnabled, competitorUrl);
++    const systemPrompt = getHolisticSystemPrompt(includeCodeFixes, isFree, multiPageCrawlEnabled, competitorUrl);
+     
+     const raw = await callGeminiWithRetry(systemPrompt, userPrompt, userApiKey, 3);
+     const parsed = parseJSON(raw);
+@@ -269,6 +326,9 @@ async function runAuditWork(jobId: string, multiPageCrawlEnabled: boolean = fals
+     await pushLog(jobId, "Aggregating findings and computing scores", 88, "Processing results...");
+ 
+     let allViolations = parsed.violations || [];
++    if (!Array.isArray(allViolations) || allViolations.length === 0) {
++      throw new Error("AI audit returned no violations. This indicates a system error — please try again.");
++    }
+     const seen = new Set<string>();
+     allViolations = allViolations.map((v: any, i: number) => {
+       let id = v.id || `${v.severity || "minor"}-${i}`;
+@@ -283,10 +343,10 @@ async function runAuditWork(jobId: string, multiPageCrawlEnabled: boolean = fals
+ 
+     await pushLog(jobId, `Saving audit (${limited.length} violations, score ${overall_score}/100)`, 94, "Saving results...");
+ 
+-    await admin
+-      .from("settings")
+-      .update({ audits_used: ((settings as any)?.audits_used ?? 0) + 1, audit_period_start: new Date().toISOString() })
+-      .eq("user_id", userId);
++    // Use the atomic DB function instead of a read-then-write update — avoids
++    // a race condition where two audits started close together both read the
++    // same audits_used value and one increment gets lost.
++    await admin.rpc("increment_audits_used", { user_id: userId });
+     
+     // Add competitor audit id if applicable (mocking the insertion of a competitor audit row for simplicity, or just embedding it)
+     const auditData: any = {
