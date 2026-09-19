@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { runAudit, generateWebsitePitch, startAuditJob, getAuditJobStatus, getPlanStatus } from "@/lib/ai.functions";
 import { supabase } from "@/integrations/supabase/client";
@@ -65,6 +65,7 @@ function NewAuditPage() {
   const [recent, setRecent] = useState<RecentRow[]>([]);
   const [showUpsell, setShowUpsell] = useState(false);
   const [used, setUsed] = useState(0);
+  const [fakeLogs, setFakeLogs] = useState<string[]>([]);
   
   // Async job state
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
@@ -72,6 +73,7 @@ function NewAuditPage() {
   const terminalRef = useRef<HTMLDivElement>(null);
   const auditRunningRef = useRef(false);
   const safetyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
     (async () => {
@@ -80,11 +82,50 @@ function NewAuditPage() {
     })();
   }, []);
 
+  useEffect(() => {
+    let timerInterval: NodeJS.Timeout;
+    if (loading) {
+      setElapsed(0);
+      timerInterval = setInterval(() => {
+        setElapsed(prev => prev + 1);
+      }, 1000);
+    } else {
+      setElapsed(0);
+    }
+    return () => clearInterval(timerInterval);
+  }, [loading]);
+
   // Business Elite features
   const [multiPageCrawlEnabled, setMultiPageCrawlEnabled] = useState(false);
   const [competitorUrl, setCompetitorUrl] = useState("");
   const [autoReauditEnabled, setAutoReauditEnabled] = useState(false);
 
+  // Simulated AI logs to prevent the UI from feeling stuck
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    const activeMsg = logMessages.find(m => m.active)?.text;
+    
+    if (loading && activeMsg?.includes("holistic single-pass AI audit engine")) {
+      const steps = [
+        "[LOG] Scanning DOM tree structure...",
+        "[LOG] Evaluating contrast ratios on visible elements...",
+        "[LOG] Checking ARIA landmark regions...",
+        "[LOG] Verifying form input labels and tab indices...",
+        "[LOG] Cross-referencing WCAG 2.1 AA guidelines...",
+        "[LOG] Analyzing image alt-text context...",
+      ];
+      let i = 0;
+      interval = setInterval(() => {
+        if (i < steps.length) {
+          setFakeLogs(prev => [...prev, steps[i]]);
+          i++;
+        }
+      }, 1500);
+    } else {
+      setFakeLogs([]);
+    }
+    return () => clearInterval(interval);
+  }, [loading, logMessages]);
 
   // Bulk CSV state
   const [bulkUrls, setBulkUrls] = useState<string[]>([]);
@@ -109,9 +150,21 @@ function NewAuditPage() {
           await loadRecent();
         }
         if (mounted) {
-          const status = await planStatusFn();
-          setPlan(status.plan);
-          setUsed(status.used);
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) {
+            const { data: settings } = await supabase
+              .from("settings")
+              .select("plan, audits_used")
+              .eq("user_id", user.id)
+              .maybeSingle();
+            
+            setPlan((settings?.plan as string) || "free");
+            setUsed(settings?.audits_used || 0);
+          } else {
+            const status = await planStatusFn();
+            setPlan(status.plan);
+            setUsed(status.used);
+          }
         }
       } catch (err) {
         console.error("Failed to load initial data:", err);
@@ -265,32 +318,35 @@ function NewAuditPage() {
     }
   }, [logMessages]);
 
-  const renderTerminalLine = (line: string, index: number) => {
-    let className = "text-zinc-300 font-mono text-xs";
+  const renderTerminalLine = (msg: { text: string; done: boolean; active: boolean }, index: number) => {
+    let line = msg.text;
+    let className = "text-zinc-300 font-mono text-xs flex items-start gap-1.5";
     let bgStyle = {};
 
     if (line.includes("[FINDING] CRITICAL") || line.includes("[FINDING] | CRITICAL")) {
-      className = "text-red-500 font-bold";
+      className += " text-red-500 font-bold";
     } else if (line.includes("[FINDING] SERIOUS") || line.includes("[FINDING] | SERIOUS")) {
-      className = "text-orange-500 font-bold";
+      className += " text-orange-500 font-bold";
     } else if (line.includes("[FINDING] MODERATE") || line.includes("[FINDING] | MODERATE")) {
-      className = "text-yellow-400 font-semibold";
+      className += " text-yellow-400 font-semibold";
     } else if (line.includes("[FINDING] MINOR") || line.includes("[FINDING] | MINOR")) {
-      className = "text-blue-400";
+      className += " text-blue-400";
     } else if (line.startsWith("[STATUS]")) {
-      className = "text-green-400 font-semibold";
+      className += " text-green-400 font-semibold";
     } else if (line.startsWith("[LOG]")) {
-      className = "text-zinc-400/80";
+      className += " text-zinc-400/80";
     } else if (line.startsWith("[ERROR]")) {
-      className = "text-white font-bold px-1.5 py-0.5 rounded";
+      className += " text-white font-bold px-1.5 py-0.5 rounded";
       bgStyle = { backgroundColor: "#ef4444" };
     } else if (line.startsWith("[WARN]")) {
-      className = "text-yellow-400 font-bold px-1.5 py-0.5 rounded bg-yellow-500/20";
+      className += " text-yellow-400 font-bold px-1.5 py-0.5 rounded bg-yellow-500/20";
     }
 
     return (
       <div key={index} className={className} style={bgStyle}>
-        {line}
+        {msg.done && <span className="text-zinc-600 mt-0.5">✓</span>}
+        <span className="flex-1 whitespace-pre-wrap">{line}</span>
+        {msg.active && <span className="animate-pulse inline-block bg-zinc-400 w-1.5 h-3.5 mt-0.5" />}
       </div>
     );
   };
@@ -629,6 +685,9 @@ function NewAuditPage() {
                 </div>
                 <div className="flex items-center gap-3.5 text-[11px] font-mono text-zinc-400">
                   <span className="text-amber-400 font-medium shrink-0">🔍 {logMessages.filter(msg => msg.text.includes("[FINDING]")).length} violations detected</span>
+                  <span className="text-zinc-500">|</span>
+                  <span className="tabular-nums">⏱ {Math.floor(elapsed / 60).toString().padStart(2, "0")}:{(elapsed % 60).toString().padStart(2, "0")} elapsed</span>
+                  <span className="text-zinc-500">|</span>
                   <span className="text-green-500 font-semibold shrink-0 animate-pulse">● LIVE AUDIT</span>
                 </div>
               </div>
@@ -641,7 +700,21 @@ function NewAuditPage() {
                   fontFamily: "'Courier New', Courier, monospace",
                 }}
               >
-                {logMessages.map((msg, index) => renderTerminalLine(msg.text, index))}
+                {logMessages.map((msg, index) => {
+                  const isLastReal = index === logMessages.length - 1;
+                  const showFakes = isLastReal && fakeLogs.length > 0;
+                  
+                  return (
+                    <React.Fragment key={index}>
+                      {renderTerminalLine({ ...msg, active: msg.active && fakeLogs.length === 0 }, index)}
+                      
+                      {showFakes && fakeLogs.map((fakeText, fIdx) => {
+                        const isLastFake = fIdx === fakeLogs.length - 1;
+                        return renderTerminalLine({ text: fakeText, done: !isLastFake, active: isLastFake }, parseInt(`9999${fIdx}`));
+                      })}
+                    </React.Fragment>
+                  );
+                })}
               </div>
             </div>
           )}
