@@ -41,8 +41,16 @@ function HistoryPage() {
   const [selectedUrl, setSelectedUrl] = useState<string | null>(null);
   const [scoreHistory, setScoreHistory] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
   const navigate = useNavigate();
   const proposalFn = useServerFn(generateProposal);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.auth.getUser();
+      setUserEmail(data.user?.email ?? null);
+    })();
+  }, []);
 
   const shareAudit = async (auditId: string) => {
     const shareUrl = `${window.location.origin}/share/${auditId}`;
@@ -55,7 +63,7 @@ function HistoryPage() {
   };
 
   const loadScoreHistory = async (url: string) => {
-    if (!TIER[getPlan(plan)].complianceVelocity) return;
+    if (!TIER[getPlan(plan, userEmail)].complianceVelocity) return;
     
     setLoadingHistory(true);
     try {
@@ -93,7 +101,7 @@ function HistoryPage() {
     });
   }, []);
 
-  const currentPlan = getPlan(plan);
+  const currentPlan = getPlan(plan, userEmail);
   const canBulkProposal = TIER[currentPlan].bulkCsv; // reuse bulkCsv flag = Business tier
 
   const cutoff = range === "all" ? 0 : Date.now() - parseInt(range) * 86400000;

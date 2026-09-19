@@ -10,16 +10,19 @@ CREATE POLICY "Users can view own settings"
   USING (auth.uid() = user_id);
 
 -- Create policy to allow users to update ONLY safe columns (not plan or audits_used)
+-- Service role bypasses this restriction for admin functions
 CREATE POLICY "Users can update safe columns"
   ON public.settings
   FOR UPDATE
   USING (auth.uid() = user_id)
   WITH CHECK (
-    auth.uid() = user_id AND
+    -- Service role can bypass restrictions (for admin functions)
+    (auth.role() = 'service_role') OR
+    (auth.uid() = user_id AND
     -- Prevent changing plan or audits_used
     (plan IS NULL OR plan = (SELECT plan FROM public.settings WHERE user_id = auth.uid())) AND
     (audits_used IS NULL OR audits_used = (SELECT audits_used FROM public.settings WHERE user_id = auth.uid())) AND
-    (audits_limit IS NULL OR audits_limit = (SELECT audits_limit FROM public.settings WHERE user_id = auth.uid()))
+    (audits_limit IS NULL OR audits_limit = (SELECT audits_limit FROM public.settings WHERE user_id = auth.uid())))
   );
 
 -- Create policy to allow users to insert their own settings (for new user trigger)

@@ -60,7 +60,9 @@ function NewAuditPage() {
   const [rows, setRows] = useState<RecentRow[]>([]);
   const [expandedViolationId, setExpandedViolationId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [plan, setPlan] = useState("free");
+  const [plan, setPlan] = useState<"free" | "starter" | "agency" | "business">("free");
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [recent, setRecent] = useState<RecentRow[]>([]);
   const [showUpsell, setShowUpsell] = useState(false);
   const [used, setUsed] = useState(0);
   
@@ -71,12 +73,17 @@ function NewAuditPage() {
   const auditRunningRef = useRef(false);
   const safetyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.auth.getUser();
+      setUserEmail(data.user?.email ?? null);
+    })();
+  }, []);
 
   // Business Elite features
   const [multiPageCrawlEnabled, setMultiPageCrawlEnabled] = useState(false);
   const [competitorUrl, setCompetitorUrl] = useState("");
   const [autoReauditEnabled, setAutoReauditEnabled] = useState(false);
-
 
 
   // Bulk CSV state
@@ -118,7 +125,7 @@ function NewAuditPage() {
     };
   }, []);
 
-  const currentPlan = getPlan(plan);
+  const currentPlan = getPlan(plan, userEmail);
   const canCodeFix = TIER[currentPlan].codeFixes;
   const canBulkCsv = TIER[currentPlan].bulkCsv;
   const canMultiPageCrawl = TIER[currentPlan].multiPageCrawl;

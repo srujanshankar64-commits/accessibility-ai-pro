@@ -5,7 +5,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 
-const ADMIN_EMAIL = "srujanshankar64@gmail.com";
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || process.env.VITE_ADMIN_EMAIL || "srujanshankar64@gmail.com";
 
 /**
  * Check if a user is an admin

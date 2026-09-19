@@ -46,6 +46,14 @@ function SettingsPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.auth.getUser();
+      setUserEmail(data.user?.email ?? null);
+    })();
+  }, []);
 
   const changePassword = async () => {
     if (newPassword !== confirmPassword) { toast.error("Passwords don't match"); return; }
@@ -169,7 +177,7 @@ function SettingsPage() {
     }
   };
 
-  const currentPlan = getPlan(plan);
+  const currentPlan = getPlan(plan, userEmail);
   const config = TIER[currentPlan];
   const auditLimit = config.audits;
   const isUnlimited = auditLimit >= 999999;

@@ -14,7 +14,7 @@ export const TIER = {
  * If the email matches the admin email from env var, it forces 'business' for testing.
  */
 export function getPlan(raw: string | null | undefined, email?: string): Plan {
-  const adminEmail = process.env.ADMIN_EMAIL;
+  const adminEmail = process.env.ADMIN_EMAIL || process.env.VITE_ADMIN_EMAIL;
   if (adminEmail && email === adminEmail) return 'business';
   
   if (raw === "starter" || raw === "agency" || raw === "business") return raw;

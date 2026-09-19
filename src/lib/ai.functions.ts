@@ -272,18 +272,32 @@ async function getUserSettings(supabase: any, userId: string) {
   return data;
 }
 
-async function incrementAuditUsage(supabase: any, userId: string, currentUsed: number) {
-  await supabase
-    .from("settings")
-    .update({
-      audits_used: currentUsed + 1,
-      audit_period_start: new Date().toISOString(),
-    })
-    .eq("user_id", userId);
+async function incrementAuditUsage(supabase: any, userId: string) {
+  await supabase.rpc('increment_audits_used', { user_id: userId });
+}
+
+async function checkRateLimit(supabase: any, userId: string, endpoint: string, maxRequests: number, windowHours: number = 1): Promise<void> {
+  const { data, error } = await supabase.rpc('check_and_increment_rate_limit', {
+    p_user_id: userId,
+    p_endpoint: endpoint,
+    p_max_requests: maxRequests,
+    p_window_hours: windowHours
+  });
+
+  if (error) {
+    console.error('Rate limit check failed:', error);
+    // Allow request if rate limit check fails (fail open)
+    return;
+  }
+
+  if (data && !data.allowed) {
+    const resetAt = new Date(data.reset_at);
+    throw new Error(`Rate limit exceeded for ${endpoint}. Please try again after ${resetAt.toLocaleString()}.`);
+  }
 }
 
 function getAuditPromptViolationTarget(plan: keyof typeof TIER): number {
-  return plan === "free" ? TIER.free.violations : 50;
+  return plan === "free" ? TIER.free.violations : TIER[plan].violations;
 }
 
 export const runAudit = createServerFn({ method: "POST" })
@@ -296,9 +310,11 @@ export const runAudit = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { url, multiPageCrawlEnabled, competitorUrl } = data;
     const settings = await getUserSettings(context.supabase, context.userId);
+    const { data: userData } = await context.supabase.auth.getUser();
+    const userEmail = userData?.user?.email;
    
     const usedThisMonth = settings?.audits_used ?? 0;
-const plan = getPlan(settings?.plan, 'srujanshankar64@gmail.com');
+    const plan = getPlan(settings?.plan, userEmail);
     if (!canRunAudit(plan, usedThisMonth)) {
       throw new Error(
         plan === "free"
@@ -336,6 +352,7 @@ const plan = getPlan(settings?.plan, 'srujanshankar64@gmail.com');
     let competitorSnippet = "";
     if (competitorUrl && plan !== "free") {
       try {
+        await validateUrlForFetch(competitorUrl);
         const fetchController = new AbortController();
         setTimeout(() => fetchController.abort(), 15000);
         const r = await fetch(competitorUrl, { headers: { "User-Agent": "Mozilla/5.0" }, signal: fetchController.signal });
@@ -440,7 +457,7 @@ const plan = getPlan(settings?.plan, 'srujanshankar64@gmail.com');
     if (error) throw error;
 
     // Only increment audits_used after successful insert
-    await incrementAuditUsage(context.supabase, context.userId, usedThisMonth);
+    await incrementAuditUsage(context.supabase, context.userId);
 
     return {
       ...(inserted as any),
@@ -471,8 +488,12 @@ export const generateProposal = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data, context }) => {
+    await checkRateLimit(context.supabase, context.userId, 'generateProposal', 30, 1);
+
     const settings = await getUserSettings(context.supabase, context.userId);
-    const plan = getPlan(settings?.plan, 'srujanshankar64@gmail.com');
+    const { data: userData } = await context.supabase.auth.getUser();
+    const userEmail = userData?.user?.email;
+    const plan = getPlan(settings?.plan, userEmail);
 
     if (!TIER[plan].proposals) {
       throw new Error(`Upgrade to Starter ($${PLAN_PRICES.starter}/mo) to generate client proposals.`);
@@ -596,8 +617,12 @@ export const generateColdEmail = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data, context }) => {
+    await checkRateLimit(context.supabase, context.userId, 'generateColdEmail', 30, 1);
+
     const settings = await getUserSettings(context.supabase, context.userId);
-    const plan = getPlan(settings?.plan, 'srujanshankar64@gmail.com');
+    const { data: userData } = await context.supabase.auth.getUser();
+    const userEmail = userData?.user?.email;
+    const plan = getPlan(settings?.plan, userEmail);
 
     if (!TIER[plan].coldEmail) {
       throw new Error(`Upgrade to Starter ($${PLAN_PRICES.starter}/mo) to generate cold email drafts.`);
@@ -651,7 +676,9 @@ export const generateCertificate = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const settings = await getUserSettings(context.supabase, context.userId);
-    const plan = getPlan(settings?.plan, 'srujanshankar64@gmail.com');
+    const { data: userData } = await context.supabase.auth.getUser();
+    const userEmail = userData?.user?.email;
+    const plan = getPlan(settings?.plan, userEmail);
 
     if (!TIER[plan].certificate) {
       throw new Error(`Upgrade to Agency ($${PLAN_PRICES.agency}/mo) to generate compliance certificates.`);
@@ -686,6 +713,8 @@ export const generateWebsitePitch = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data, context }) => {
+    await checkRateLimit(context.supabase, context.userId, 'generateWebsitePitch', 30, 1);
+
     const settings = await getUserSettings(context.supabase, context.userId);
 
     const system = `You are an elite B2B digital agency consultant writing a website creation proposal for a business with NO online presence. Write in a professional, consultative tone that educates the prospect on what they are missing and positions the agency as the expert solution.
@@ -731,8 +760,10 @@ export const startAuditJob = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { url } = data;
     const settings = await getUserSettings(context.supabase, context.userId);
+    const { data: userData } = await context.supabase.auth.getUser();
+    const userEmail = userData?.user?.email;
     const usedThisMonth = settings?.audits_used ?? 0;
-    const plan = getPlan(settings?.plan, 'srujanshankar64@gmail.com');
+    const plan = getPlan(settings?.plan, userEmail);
     
     if (!canRunAudit(plan, usedThisMonth)) {
       throw new Error(
@@ -773,7 +804,9 @@ export const processAuditJob = createServerFn({ method: "POST" })
       if (!job) throw new Error("Job not found");
 
       const settings = await getUserSettings(context.supabase, context.userId);
-      const plan = getPlan(settings?.plan, "srujanshankar64@gmail.com");
+      const { data: userData } = await context.supabase.auth.getUser();
+      const userEmail = userData?.user?.email;
+      const plan = getPlan(settings?.plan, userEmail);
       const isFree = plan === "free";
 
       await sb.from("audit_jobs").update({ status: "processing" }).eq("id", jobId);
@@ -783,6 +816,7 @@ export const processAuditJob = createServerFn({ method: "POST" })
       let html = "";
       let pageSnippet = "";
       try {
+        await validateUrlForFetch(job.url);
         await pushLog(sb, jobId, 8, "Establishing connection...", "[LOG] Establishing HTTPS connection...");
         const fetchController = new AbortController();
         const t = setTimeout(() => fetchController.abort(), 15000);
@@ -884,7 +918,7 @@ export const processAuditJob = createServerFn({ method: "POST" })
       if (insertError) throw insertError;
 
       // Only increment audits_used after successful insert
-      await incrementAuditUsage(sb, context.userId, settings?.audits_used ?? 0);
+      await incrementAuditUsage(sb, context.userId);
 
       const finalResult = {
         ...(inserted as any),
@@ -948,7 +982,9 @@ export const getPlanStatus = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const settings = await getUserSettings(context.supabase, context.userId);
-    const plan = getPlan(settings?.plan, 'srujanshankar64@gmail.com');
+    const { data: userData } = await context.supabase.auth.getUser();
+    const userEmail = userData?.user?.email;
+    const plan = getPlan(settings?.plan, userEmail);
     const used = settings?.audits_used ?? 0;
     const tier = TIER[plan];
 
