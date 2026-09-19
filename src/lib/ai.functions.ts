@@ -5,154 +5,169 @@ import { getPlan, TIER, canRunAudit, PLAN_PRICES } from "@/lib/tier.utils";
 import { GoogleGenAI } from "@google/genai";
 import { getAuditSystemPrompt, ELITE_AUDIT_CONFIG, FREE_AUDIT_CONFIG } from "@/lib/audit-prompt";
 
-// Circuit breaker state
-let circuitBreakerOpen = false;
-let circuitBreakerOpenTime = 0;
-let failureCount = 0;
-const CIRCUIT_BREAKER_THRESHOLD = 5;
-const CIRCUIT_BREAKER_TIMEOUT = 60000; // 1 minute
-
-// Elite rate-limiter: Track last call time to enforce RPM limit
-let lastGeminiCall = 0;
-const MIN_CALL_INTERVAL = 3500; // 3.5 seconds = ~17 RPM max
-
-// Helper: Throttle requests to stay under 20 RPM
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-// Helper: Exponential backoff with jitter to prevent thundering herd
-function getBackoffWithJitter(attempt: number): number {
-  const baseDelay = 2000; // 2 seconds initial
-  const multiplier = Math.pow(2, attempt); // 2x multiplier: 2s, 4s, 8s, 16s, 32s
-  const jitter = Math.random() * 1000; // 0-1 seconds random jitter
-  return baseDelay * multiplier + jitter;
-}
-
-function resetCircuitBreaker() {
-  circuitBreakerOpen = false;
-  failureCount = 0;
-  circuitBreakerOpenTime = 0;
-  console.log('[CircuitBreaker] Reset');
-}
-
-function checkCircuitBreaker(): boolean {
-  if (circuitBreakerOpen) {
-    const timeSinceOpen = Date.now() - circuitBreakerOpenTime;
-    if (timeSinceOpen > CIRCUIT_BREAKER_TIMEOUT) {
-      resetCircuitBreaker();
-      return false;
-    }
-    console.warn('[CircuitBreaker] Circuit is open, blocking request');
-    return true;
-  }
-  return false;
-}
-
-function recordFailure() {
-  failureCount++;
-  if (failureCount >= CIRCUIT_BREAKER_THRESHOLD) {
-    circuitBreakerOpen = true;
-    circuitBreakerOpenTime = Date.now();
-    console.error('[CircuitBreaker] Circuit opened due to repeated failures');
-  }
-}
-
-function recordSuccess() {
-  failureCount = 0;
-  if (circuitBreakerOpen) {
-    resetCircuitBreaker();
-  }
-}
-
-async function callGemini(systemPrompt: string, userPrompt: string, userApiKey?: string, model: string = "gemini-2.5-flash"): Promise<string> {
-  // Check circuit breaker before making request
-  if (checkCircuitBreaker()) {
-    throw new Error("AI service is temporarily unavailable due to repeated failures. Please wait 1 minute and try again.");
-  }
-
-  const apiKey = (process.env.GOOGLE_GEMINI_API_KEY || userApiKey)?.trim();
-  if (!apiKey) {
-    throw new Error("AI service unavailable. Please add your Gemini API key in Settings or configure GOOGLE_GEMINI_API_KEY.");
-  }
-  const ai = new GoogleGenAI({ apiKey });
-  const maxRetries = 5;
-  let lastError: any = null;
-  let currentModel = model;
+function buildFreeAuditPrompt(): string {
+  return `You are a WCAG 2.1 AA accessibility auditor. Find the TOP 8 most critical violations only.
   
+Focus only on: missing alt text, missing form labels, contrast failures on CTAs, missing page title, missing lang attribute, missing skip link, keyboard inaccessible elements, missing ARIA landmarks.
+
+Return ONLY valid JSON:
+{
+  "overall_score": number,
+  "category_scores": { "perceivable": number, "operable": number, "understandable": number, "robust": number },
+  "violations": [
+    {
+      "id": "string",
+      "severity": "critical"|"serious"|"moderate"|"minor",
+      "name": "string",
+      "wcag_criterion": "string",
+      "description": "string",
+      "element_affected": "string",
+      "legal_impact": "string",
+      "fix_instructions": "string",
+      "estimated_fix_time": "string"
+    }
+  ]
+}`;
+}
+
+function detectJsRendered(html: string): boolean {
+  const bodyContent = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+                          .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '');
+  const textContent = bodyContent.replace(/<[^>]+>/g, '').trim();
+  const hasAppShellMarker = /\bid=["']?(root|app|__next|vite-root)\b/i.test(bodyContent);
+  const hasMeaningfulStructure = /<(main|article|nav|header|footer|section|h1|h2|p|a|button|form)\b/i.test(bodyContent);
+
+  return textContent.length < 120 && (hasAppShellMarker || !hasMeaningfulStructure);
+}
+
+// SSRF protection: validate URL and reject private/internal IP ranges
+async function validateUrlForFetch(url: string): Promise<void> {
+  try {
+    const parsed = new URL(url);
+    const hostname = parsed.hostname.toLowerCase();
+
+    // Reject localhost variants
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') {
+      throw new Error('Invalid URL: localhost and loopback addresses are not allowed');
+    }
+
+    // Reject private IP ranges in hostname (basic pattern matching)
+    // Note: Full DNS resolution would require Deno's net module or external service
+    // This is a heuristic check for obvious private IPs in the hostname
+    const privateIpPatterns = [
+      /^10\./,
+      /^172\.(1[6-9]|2[0-9]|3[0-1])\./,
+      /^192\.168\./,
+      /^169\.254\./,
+      /^127\./,
+      /^::1$/,
+      /^fc00:/i,
+      /^fe80:/i,
+    ];
+
+    if (privateIpPatterns.some(pattern => pattern.test(hostname))) {
+      throw new Error('Invalid URL: private IP addresses are not allowed');
+    }
+
+    // Reject non-HTTP/HTTPS protocols
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      throw new Error('Invalid URL: only HTTP and HTTPS protocols are allowed');
+    }
+
+    // Reject internal network hostnames
+    const internalHostnames = [
+      'local',
+      'internal',
+      'intranet',
+      'localhost',
+      'home',
+      'lan',
+      'localdomain',
+    ];
+
+    if (internalHostnames.some(internal => hostname.includes(internal))) {
+      throw new Error('Invalid URL: internal network hostnames are not allowed');
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith('Invalid URL')) {
+      throw error;
+    }
+    throw new Error('Invalid URL format');
+  }
+}
+
+async function pushLog(
+  supabase: any,
+  jobId: string,
+  percent: number,
+  step: string,
+  logLine: string
+) {
+  const entry = JSON.stringify({ message: logLine, ts: new Date().toISOString() });
+  await supabase.rpc('append_audit_log', {
+    job_id: jobId,
+    percent,
+    step,
+    log_entry: entry
+  });
+}
+
+// Removed module-level circuit breaker state for serverless compatibility
+async function callGemini(
+  systemPrompt: string,
+  userPrompt: string,
+  userApiKey?: string,
+  model = "gemini-2.5-flash",
+  maxOutputTokens = 8192
+): Promise<string> {
+  const apiKey = (userApiKey || process.env.GOOGLE_GEMINI_API_KEY)?.trim();
+  if (!apiKey) throw new Error("AI service unavailable. Add your Gemini API key in Settings.");
+
+  const ai = new GoogleGenAI({ apiKey });
+  const maxRetries = 3;
+
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
-      // Rate limit: Enforce minimum time between calls
-      const now = Date.now();
-      const timeSinceLastCall = now - lastGeminiCall;
-      if (timeSinceLastCall < MIN_CALL_INTERVAL) {
-        const waitTime = MIN_CALL_INTERVAL - timeSinceLastCall;
-        console.log(`[RateLimiter] Waiting ${waitTime}ms to respect RPM limit`);
-        await delay(waitTime);
+      // Small initial delay on retries only (not first attempt)
+      if (attempt > 0) {
+        const backoff = 1000 * Math.pow(2, attempt) + Math.random() * 500;
+        await new Promise(r => setTimeout(r, backoff));
       }
-      
-      // Update last call time
-      lastGeminiCall = Date.now();
-      
+
       const response = await ai.models.generateContent({
-        model: currentModel,
+        model,
         contents: `${systemPrompt}\n\n${userPrompt}`,
         config: {
           responseMimeType: "application/json",
           temperature: 0.2,
-          maxOutputTokens: 81920,
+          maxOutputTokens,
         },
       });
+
       const text = response.text ?? "{}";
-      if (!text || text.trim() === "{}") {
-        throw new Error("Empty response from AI");
-      }
-      recordSuccess();
+      if (!text || text.trim() === "{}") throw new Error("Empty response from AI");
       return text;
+
     } catch (error: any) {
-      lastError = error;
       const msg = error?.message || "";
-      const is503 = msg.includes("503") || msg.includes("UNAVAILABLE") || msg.includes("overloaded");
-      const is429 = msg.includes("429") || msg.includes("quota") || msg.includes("rate limit");
-      console.error(`[Gemini] API error (attempt ${attempt + 1}/${maxRetries}) with model ${currentModel}:`, msg);
+      const isRetryable = msg.includes("503") || msg.includes("UNAVAILABLE") || 
+                          msg.includes("429") || msg.includes("quota") ||
+                          msg.includes("overloaded") || msg.includes("rate limit");
       
-      if (is429 && attempt < maxRetries - 1) {
-        // Rate limit hit - exponential backoff with jitter
-        const waitTime = getBackoffWithJitter(attempt);
-        console.warn(`[RateLimiter] 429 rate limit hit, retrying in ${Math.round(waitTime)}ms with jitter`);
-        await delay(waitTime);
-        continue;
-      }
+      console.error(`[Gemini] attempt ${attempt + 1}/${maxRetries}:`, msg);
       
-      if (is503 && attempt < maxRetries - 1) {
-        // Model fallback: if using pro model and getting 503, switch to flash
-        if (currentModel === "gemini-2.5-pro" && attempt === 2) {
-          console.warn(`[ModelFallback] Switching from gemini-2.5-pro to gemini-2.5-flash due to 503 errors`);
-          currentModel = "gemini-2.5-flash";
-          continue;
+      if (!isRetryable || attempt === maxRetries - 1) {
+        if (msg.includes("503") || msg.includes("UNAVAILABLE") || msg.includes("overloaded")) {
+          throw new Error("Google AI is overloaded. Please wait 30 seconds and try again.");
         }
-        
-        // Exponential backoff with jitter
-        const waitTime = getBackoffWithJitter(attempt);
-        console.warn(`[Retry] 503 service unavailable, retrying in ${Math.round(waitTime)}ms with jitter`);
-        await delay(waitTime);
-        continue;
+        if (msg.includes("429") || msg.includes("quota") || msg.includes("rate limit")) {
+          throw new Error("Google AI rate limit reached. Please wait 1 minute.");
+        }
+        throw new Error(`AI service error: ${msg || "Unknown"}`);
       }
-      
-      // Record failure for circuit breaker
-      if (attempt === maxRetries - 1) {
-        recordFailure();
-      }
-      break;
     }
   }
-  
-  const lastMsg = lastError?.message || "";
-  if (lastMsg.includes("503") || lastMsg.includes("UNAVAILABLE") || lastMsg.includes("overloaded")) {
-    throw new Error("Google AI is experiencing high demand right now. We retried 5 times automatically — please wait 30 seconds and try again.");
-  }
-  if (lastMsg.includes("429") || lastMsg.includes("quota") || lastMsg.includes("rate limit")) {
-    throw new Error("Google AI rate limit reached. We retried 5 times automatically — please wait 1 minute and try again.");
-  }
-  throw new Error(`AI service temporarily unavailable. ${lastMsg || "Unknown error"}`);
+  throw new Error("AI service temporarily unavailable after 3 attempts.");
 }
 
 function parseJSON(s: string): any {
@@ -217,13 +232,75 @@ function cleanHtml(html: string): string {
   return cleaned;
 }
 
+function isCurrentAuditPeriod(periodStart?: string | null): boolean {
+  if (!periodStart) return false;
+  const now = new Date();
+  const period = new Date(periodStart);
+  return now.getUTCFullYear() === period.getUTCFullYear() &&
+    now.getUTCMonth() === period.getUTCMonth();
+}
+
 async function getUserSettings(supabase: any, userId: string) {
   const { data } = await supabase
     .from("settings")
-    .select("plan, audits_used, audits_limit, agency_name, agency_logo_url, brand_color, gemini_api_key")
+    .select("plan, audits_used, audits_limit, audit_period_start, agency_name, agency_logo_url, brand_color, gemini_api_key")
     .eq("user_id", userId)
     .maybeSingle();
+
+  if (!data) {
+    const { data: created } = await supabase
+      .from("settings")
+      .upsert({
+        user_id: userId,
+      })
+      .select("plan, audits_used, audits_limit, audit_period_start, agency_name, agency_logo_url, brand_color, gemini_api_key")
+      .single();
+    return created ?? { plan: "free", audits_used: 0, audits_limit: TIER.free.audits, audit_period_start: new Date().toISOString() };
+  }
+
+  if (!isCurrentAuditPeriod(data.audit_period_start)) {
+    const resetStartedAt = new Date().toISOString();
+    const { data: reset } = await supabase
+      .from("settings")
+      .update({ audits_used: 0, audit_period_start: resetStartedAt })
+      .eq("user_id", userId)
+      .select("plan, audits_used, audits_limit, audit_period_start, agency_name, agency_logo_url, brand_color, gemini_api_key")
+      .single();
+    return reset ?? { ...data, audits_used: 0, audit_period_start: resetStartedAt };
+  }
+
   return data;
+}
+
+async function incrementAuditUsage(supabase: any, userId: string) {
+  await supabase.rpc('increment_audits_used', { user_id: userId });
+}
+
+async function checkRateLimit(supabase: any, userId: string, endpoint: string, maxRequests: number, windowHours: number = 1): Promise<void> {
+  const { data, error } = await supabase.rpc('check_and_increment_rate_limit', {
+    p_user_id: userId,
+    p_endpoint: endpoint,
+    p_max_requests: maxRequests,
+    p_window_hours: windowHours
+  });
+
+  if (error) {
+    console.error('Rate limit check failed:', error);
+    // Allow request if rate limit check fails (fail open)
+    return;
+  }
+
+  if (data && !data.allowed) {
+    const resetAt = new Date(data.reset_at);
+    throw new Error(`Rate limit exceeded for ${endpoint}. Please try again after ${resetAt.toLocaleString()}.`);
+  }
+}
+
+function getAuditPromptViolationTarget(plan: keyof typeof TIER, email?: string): number {
+  const adminEmail = process.env.ADMIN_EMAIL || process.env.VITE_ADMIN_EMAIL || "srujanshankar64@gmail.com";
+  // Force 999 violations for admin regardless of plan
+  if (adminEmail && email === adminEmail) return 999;
+  return plan === "free" ? TIER.free.violations : TIER[plan].violations;
 }
 
 export const runAudit = createServerFn({ method: "POST" })
@@ -236,9 +313,19 @@ export const runAudit = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { url, multiPageCrawlEnabled, competitorUrl } = data;
     const settings = await getUserSettings(context.supabase, context.userId);
+    const { data: userData } = await context.supabase.auth.getUser();
+    const userEmail = userData?.user?.email;
    
     const usedThisMonth = settings?.audits_used ?? 0;
-const plan = getPlan(settings?.plan, 'srujanshankar64@gmail.com');
+    let plan = getPlan(settings?.plan, userEmail);
+    
+    // AGGRESSIVE ADMIN OVERRIDE: Force business tier for srujanshankar64@gmail.com
+    const adminEmail = process.env.ADMIN_EMAIL || process.env.VITE_ADMIN_EMAIL || "srujanshankar64@gmail.com";
+    if (userEmail === adminEmail) {
+      plan = 'business';
+      console.log(`[ADMIN_OVERRIDE] Forcing business tier for ${userEmail}`);
+    }
+    
     if (!canRunAudit(plan, usedThisMonth)) {
       throw new Error(
         plan === "free"
@@ -251,12 +338,14 @@ const plan = getPlan(settings?.plan, 'srujanshankar64@gmail.com');
 
     let pageSnippet = "";
     try {
+      await validateUrlForFetch(url);
       const fetchController = new AbortController();
-      setTimeout(() => fetchController.abort(), 20000);
+      const fetchTimer = setTimeout(() => fetchController.abort(), 20000);
       const r = await fetch(url, {
         headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 AccessAuditAI/2.0 (WCAG Compliance Scanner)" },
         signal: fetchController.signal,
       });
+      clearTimeout(fetchTimer);
       const html = await r.text();
       const cleanedHtml = cleanHtml(html);
       pageSnippet = cleanedHtml.slice(0, 35000);
@@ -274,6 +363,7 @@ const plan = getPlan(settings?.plan, 'srujanshankar64@gmail.com');
     let competitorSnippet = "";
     if (competitorUrl && plan !== "free") {
       try {
+        await validateUrlForFetch(competitorUrl);
         const fetchController = new AbortController();
         setTimeout(() => fetchController.abort(), 15000);
         const r = await fetch(competitorUrl, { headers: { "User-Agent": "Mozilla/5.0" }, signal: fetchController.signal });
@@ -285,191 +375,55 @@ const plan = getPlan(settings?.plan, 'srujanshankar64@gmail.com');
     }
 
     const includeCodeFixes = TIER[plan].codeFixes;
-    const violationLimit = plan === "free" ? 5 : 26;
+    const isFree = plan === "free";
+    const violationLimit = TIER[plan].violations;
+    
+    // AGGRESSIVE: Force 999 violations for admin regardless of plan
+    const promptViolationTarget = (userEmail === adminEmail) ? 999 : getAuditPromptViolationTarget(plan, userEmail);
 
-    console.log(`[SYSTEM_PROMPT_CONFIGURED] Full audit mode, Violation Limit: ${violationLimit}, Code Fixes: ${includeCodeFixes}`);
+    console.log(`[SYSTEM_PROMPT_CONFIGURED] Full audit mode, Violation Limit: ${violationLimit}, Prompt Target: ${promptViolationTarget}, Code Fixes: ${includeCodeFixes}, User Email: ${userEmail}, Plan: ${plan}`);
 
-    const system = `You are a senior WCAG 2.1 AA accessibility auditor with 10 years of experience. Your audits are used by digital agencies to sell remediation services to corporate entities.
+    const isJsRendered = detectJsRendered(pageSnippet);
+    
+    const systemPrompt = isFree 
+        ? buildFreeAuditPrompt()
+        : getAuditSystemPrompt({ violationLimit: promptViolationTarget, includeCodeFixes, mode: 'full' });
 
-Your job is to produce an EXHAUSTIVE and REALISTIC audit. Return all violations found.
+    let userPrompt = isJsRendered
+        ? `Audit this website for WCAG 2.1 AA compliance. 
+     
+     IMPORTANT: This appears to be a JavaScript-rendered Single Page Application (SPA). 
+     The raw HTML fetch returned minimal content because the page requires JavaScript to render.
+     
+     URL: ${url}
+     
+     For this SPA audit, focus on:
+     1. Analyze the URL structure and domain to determine site type and likely content
+     2. Audit the visible HTML skeleton for any real violations present
+     3. For SPA-specific violations, flag them clearly as "SPA Architecture Issue" 
+     4. Common SPA violations to check: missing lang attribute, missing title, missing meta viewport, 
+        missing skip links, missing ARIA landmarks in the shell, iframes without titles
+     5. Do NOT fabricate violations about content you cannot see
+     6. Do NOT add "(potential)" violations based on assumptions about dynamic content
+     7. Only report violations you can CONFIRM from the actual HTML provided
+     8. Be honest about the limitation — note in the audit that this is a server-side HTML snapshot
+     
+     Available HTML snapshot:
+     ${pageSnippet}${multiPageContext}
+     
+     Minimum violations to find: Report only REAL confirmed violations. Quality over quantity for SPAs.`
+        : `Audit this website for WCAG 2.1 AA compliance. Be exhaustive. Find every violation.
+     
+     URL: ${url}
+     
+     HTML content:
+     ${pageSnippet}${multiPageContext}`;
 
-RULES:
-- EVERY INSTANCE is a separate violation.
-- Be EXTREMELY specific in element_affected. Name the exact HTML element, CSS class, ID, aria attribute, or page location.
-- Check ALL 4 WCAG categories exhaustively.
-- For every interactive element — check EVERY WCAG criterion against it.
-- Mobile violations are SEPARATE from desktop violations. List each mobile issue individually.
-- Each individual instance of each issue MUST be a separate violation entry.
-
-SEVERITY ESCALATION RULES:
-- Any violation with direct legal exposure (missing alt text, missing labels, contrast failures on CTAs) MUST be rated critical or serious. Never rate legally-exposed violations as moderate or minor.
-- If a violation affects a transactional element (button, form, checkout, CTA) escalate severity by one level automatically.
-
-ADDITIONAL REQUIRED FIELDS PER VIOLATION:
-- "revenue_impact": "Estimate how this specific violation affects conversions or excludes users. Example: 8-12% of visually impaired users cannot complete this interaction, representing significant lost revenue potential."
-- "fix_difficulty": "easy" | "medium" | "hard" — easy = under 1 hour, medium = 1-4 hours, hard = 4+ hours or requires architectural change.
-
-MOBILE-SPECIFIC AUDIT (run separately and add as additional violations):
-After completing the desktop audit, run a dedicated mobile check for:
-- Touch targets smaller than 44x44px on all interactive elements
-- Viewport meta tag missing or incorrectly configured
-- Font sizes below 16px on body text causing readability issues
-- Horizontal scroll triggered on mobile viewports
-- Pinch-to-zoom disabled via user-scalable=no
-- Tap targets too close together (less than 8px spacing)
-- Mobile keyboard not triggering correct input types
-Report each mobile violation as a separate entry with element_affected prefixed with [MOBILE].
-
-COMPETITIVE BENCHMARK:
-In the overall audit result, add a field:
-"industry_benchmark": "The average WCAG compliance score across audited platforms in this industry is 71/100. This site scores X/100 — placing it below the industry average and at competitive disadvantage."
-
-RETURN SCHEMA UPDATE — add these fields to each violation object:
-"revenue_impact": string,
-"fix_difficulty": "easy" | "medium" | "hard"
-
-SYSTEMIC ISSUE DETECTION:
-After listing all violations, analyze patterns. If the same violation type appears 3+ times, flag it as systemic. Add a top-level field to the JSON:
-"systemic_issues": [
-  {
-    "pattern": "Short name of the pattern",
-    "count": number,
-    "description": "This indicates a design system level problem, not isolated fixes. Requires a full design audit.",
-    "impact": "High/Medium/Low"
-  }
-]
-
-URGENCY SCORE:
-Add a top-level field:
-"urgency_score": number between 1-10. Calculate based on: number of critical violations (each = +1.5), jurisdiction deadline proximity (.com.au +2, .com +1.5, .co.uk +1), total violations above 20 (+1). Cap at 10. Add "urgency_reason": one sentence explaining the score.
-
-SCREENSHOT SELECTORS:
-Add to each violation object:
-"screenshot_selector": "The exact CSS selector or XPath of the affected element for automated screenshot capture. Example: button#submit, .nav-menu a, input[type=email]"
-
-SCORE TREND PREDICTION:
-Add top-level field:
-"score_prediction": {
-  "current": number,
-  "projected_after_remediation": number (always between 91-97),
-  "timeline": "4 weeks",
-  "trend_without_remediation": "Projected to decline as browser accessibility enforcement increases"
-}
-
-DEV HOURS BREAKDOWN:
-Add top-level field:
-"hours_breakdown": {
-  "critical_fixes": number,
-  "serious_fixes": number,
-  "mobile_fixes": number,
-  "testing_and_certification": 2,
-  "total": number
-}
-Calculate each category from the violations estimated_fix_time fields.
-
-ARIA WIDGET DEEP AUDIT:
-Specifically audit every interactive widget found on the page:
-- Modals/dialogs: missing role=dialog, aria-modal, aria-labelledby, focus trap
-- Dropdowns/selects: missing aria-expanded, aria-haspopup, keyboard arrow navigation
-- Carousels/sliders: missing aria-live, aria-label, prev/next button labels
-- Tabs: missing role=tablist, role=tab, aria-selected, aria-controls
-- Tooltips: missing role=tooltip, aria-describedby
-- Accordions: missing aria-expanded, aria-controls on triggers
-Each missing ARIA attribute on each widget = a SEPARATE violation entry.
-
-UPDATED RETURN SCHEMA — top level JSON must include:
-"overall_score": number,
-"category_scores": object,
-"violations": array,
-"systemic_issues": array,
-"urgency_score": number,
-"urgency_reason": string,
-"score_prediction": object,
-"hours_breakdown": object,
-"industry_benchmark": string
-
-MANDATORY CHECKS:
-
-PERCEIVABLE (score out of 25):
-1. Images missing alt attributes or with empty/meaningless alt text (WCAG 1.1.1)
-2. Videos or audio missing captions or transcripts (WCAG 1.2.1, 1.2.2)
-3. Text with insufficient color contrast ratio below 4.5:1 (WCAG 1.4.3)
-4. UI components with insufficient contrast (WCAG 1.4.11)
-5. Information conveyed by color alone (WCAG 1.4.1)
-6. Text that cannot be resized up to 200% (WCAG 1.4.4)
-7. Content that breaks on small viewports (WCAG 1.4.10)
-8. Missing prefers-reduced-motion support (WCAG 2.3.3)
-
-OPERABLE (score out of 25):
-9. Interactive elements not reachable by keyboard (WCAG 2.1.1)
-10. Illogical focus order (WCAG 2.4.3)
-11. Missing or weak focus indicator (WCAG 2.4.7)
-12. No skip navigation link (WCAG 2.4.1)
-13. Links with vague text like "click here" or "read more" (WCAG 2.4.6)
-14. Touch targets smaller than 44x44px (WCAG 2.5.5)
-15. Keyboard traps (WCAG 2.1.2)
-16. Auto-playing media with no pause control (WCAG 2.2.2)
-17. Session timeouts with no warning (WCAG 2.2.1)
-
-UNDERSTANDABLE (score out of 25):
-18. Missing lang attribute on HTML element (WCAG 3.1.1)
-19. Form inputs without associated labels (WCAG 1.3.1, 3.3.2)
-20. Form validation errors not described in text (WCAG 3.3.1)
-21. Instructions relying solely on sensory characteristics (WCAG 1.3.3)
-22. Inconsistent navigation across pages (WCAG 3.2.3)
-23. Unexplained abbreviations or jargon (WCAG 3.1.5)
-
-ROBUST (score out of 25):
-24. Missing or incorrect ARIA roles (WCAG 4.1.2)
-25. Missing ARIA landmark regions (WCAG 1.3.6)
-26. Broken or invalid HTML structure (WCAG 4.1.1)
-27. Missing or empty page title (WCAG 2.4.2)
-28. Incorrect heading hierarchy (WCAG 1.3.1)
-29. Custom widgets without keyboard or ARIA support (WCAG 4.1.2)
-30. iFrames without title attributes (WCAG 4.1.2)
-
-SCORING RULES:
-- Start each category at 25. Subtract per violation: Critical = 6-8pts, Serious = 3-5pts, Moderate = 2-3pts, Minor = 1pt.
-- overall_score = sum of all four category scores (max 100).
-
-CRITICAL INSTRUCTION FOR VIOLATIONS ARRAY:
-Return a comprehensive list of violations. Make sure to capture as many real issues as possible to provide a thorough audit.
-
-` + (includeCodeFixes
-  ? `For each violation, include a "code_fix" field with the exact HTML/CSS/JavaScript code snippet that fixes the issue. Make it copy-paste ready for a developer.`
-  : `Do NOT include a "code_fix" field in the output.`) + `
-
-Return ONLY valid JSON with EXACTLY this schema:
-{
-  "overall_score": number,
-  "category_scores": {
-    "perceivable": number,
-    "operable": number,
-    "understandable": number,
-    "robust": number
-  },
-  "violations": [
-    {
-      "id": "kebab-case-id",
-      "severity": "critical" | "serious" | "moderate" | "minor",
-      "name": "Short descriptive title",
-      "wcag_criterion": "WCAG X.X.X",
-      "description": "Plain English explanation of the exact problem",
-      "element_affected": "Specific element or area affected",
-      "legal_impact": "Specific legal exposure under EU EAA, ADA, AODA, UK Equality Act",
-      "fix_instructions": "Concrete plain-English fix description",
-      "estimated_fix_time": "X hours"` + (includeCodeFixes ? `,
-      "code_fix": "exact code snippet"` : "") + `
-    }
-  ]
-}`;
-
-    let userPrompt = `TARGET URL: ${url}\n\nTARGET HTML:\n${pageSnippet}${multiPageContext}`;
     if (competitorSnippet) {
       userPrompt += `\n\nCOMPETITOR URL: ${competitorUrl}\n\nCOMPETITOR HTML (for benchmarking):\n${competitorSnippet}`;
     }
 
-    const raw = await callGemini(system, userPrompt, settings?.gemini_api_key);
+    const raw = await callGemini(systemPrompt, userPrompt, settings?.gemini_api_key, "gemini-2.5-flash", 65536);
     const result = parseJSON(raw);
 
     let allViolations = result.violations ?? [];
@@ -485,11 +439,6 @@ Return ONLY valid JSON with EXACTLY this schema:
       ? allViolations.slice(0, violationLimit)
       : allViolations;
 
-    await (context.supabase as any)
-      .from("settings")
-      .update({ audits_used: usedThisMonth + 1 })
-      .eq("user_id", context.userId);
-
     const auditData: any = {
       user_id: context.userId,
       url,
@@ -497,7 +446,7 @@ Return ONLY valid JSON with EXACTLY this schema:
       category_scores: result.category_scores ?? {},
       violations: limitedViolations,
     };
-    
+
     if (result.competitor_benchmark && competitorUrl) {
       auditData.has_competitor_benchmark = true;
       auditData.competitor_url = competitorUrl;
@@ -519,6 +468,9 @@ Return ONLY valid JSON with EXACTLY this schema:
       .select()
       .single();
     if (error) throw error;
+
+    // Only increment audits_used after successful insert
+    await incrementAuditUsage(context.supabase, context.userId);
 
     return {
       ...(inserted as any),
@@ -545,19 +497,24 @@ export const generateProposal = createServerFn({ method: "POST" })
       competitorUrl: z.string().optional(),
       competitorScore: z.number().optional(),
       competitorViolations: z.number().optional(),
+      score: z.number().optional(),
     }),
   )
   .handler(async ({ data, context }) => {
+    await checkRateLimit(context.supabase, context.userId, 'generateProposal', 30, 1);
+
     const settings = await getUserSettings(context.supabase, context.userId);
-    const plan = getPlan(settings?.plan, 'srujanshankar64@gmail.com');
+    const { data: userData } = await context.supabase.auth.getUser();
+    const userEmail = userData?.user?.email;
+    const plan = getPlan(settings?.plan, userEmail);
 
     if (!TIER[plan].proposals) {
       throw new Error(`Upgrade to Starter ($${PLAN_PRICES.starter}/mo) to generate client proposals.`);
     }
 
-    let score = 50;
+    let score = data.score ?? 50;
     let competitorData = null;
-    
+
     if (data.auditId) {
       const { data: audit } = await (context.supabase as any).from("audits").select("overall_score, competitor_audit_id, competitor_url, has_competitor_benchmark").eq("id", data.auditId).maybeSingle();
       if (audit && audit.overall_score != null) score = audit.overall_score;
@@ -585,32 +542,21 @@ export const generateProposal = createServerFn({ method: "POST" })
 
     const system = `You are a senior B2B sales consultant writing a corporate compliance proposal on behalf of a digital agency.
 
-CRITICAL RULES:
-1. INDUSTRY: Read the website URL and context to determine industry. If uncertain, ALWAYS use 'prominent digital platform' or 'online brand presence'. NEVER guess 'e-commerce' or 'retail' unless explicitly confirmed.
-2. SCORE PERCENTILE: After mentioning the compliance score, calculate (100 minus the actual score number) and add exactly: 'This score places [domain] in the bottom [calculated number]% of audited platforms in our database.' Example: if score is 58, write 'bottom 42% of audited platforms'.
-3. COMPETITOR HOOK: Include in executive_summary: 'Sites achieving WCAG AA compliance typically rank 2-3 positions higher for the same keywords than non-compliant competitors in your industry.'
-4. JURISDICTION DEADLINE: Detect from URL TLD and add to compliance_risk:
-   - .com.au = 'Australian DDA compliance expected'
-   - .co.uk = 'UK Equality Act enforcement active — no SMB exemptions'
-   - .com = 'ADA Title II deadline: April 2026 — 3,117 lawsuits filed in 2025'
-   - EU = 'EU Accessibility Act enforced June 2025'
-   - Unknown = use US fallback
-5. NO EU FINES: Never mention 'EU fines', 'EU Act €100,000', or '€100,000'. Replace with 'costly private ADA demand letters, brand reputation damages, and legal cost avoidance'.
-6. REMEDIATION PLAN: Always output this EXACT static text for remediation_plan: 'A complete inventory of production-ready HTML/CSS code patches has been compiled for all detected violations. These copy-and-paste assets are hosted live on your secure AccessAudit Agency Dashboard for immediate deployment by your engineering team.'
-7. FOLLOW-UP EMAIL: Open with the single most critical violation found. State the jurisdiction-specific legal deadline. Reference the exact dollar range from investment. End with: 'I have 2 slots open this week for a 15-minute call. Reply with a time that works.' Sign off with agency name.
-8. COMPETITIVE GAP ANALYSIS (Business Elite): If competitor benchmark data is provided, include a dedicated 'competitive_gap_analysis' section that:
-   - Compares the client's score directly against the competitor's score
-   - Frames the remediation as a strategic move to neutralize the competitor's advantage
-   - Explicitly mentions the competitor's name/URL for strategic relevance
-   - Quantifies the gap in points and what it means for market position
-   - If client is behind: Frame as urgent market risk requiring immediate action
-   - If client is ahead: Frame as competitive advantage to maintain and expand
+CRITICAL RULES & STRICT GUARDRAILS:
+1. MATHEMATICAL CONSISTENCY (NO SCORE CONTRADICTIONS): You must use the exact string '${score}/100' everywhere a score is mentioned. NEVER hallucinate, approximate, or change this number in the body text.
+2. LEGAL ACCURACY (DYNAMIC ADA CONDITIONING): Check the BUSINESS_TYPE variable before writing any legal risk sections. IF TYPE IS 'Government/Public Education/Municipality': Use ADA Title II framework and mention the strict compliance deadline of April 2026. IF TYPE IS 'Private/SaaS/E-commerce': Use ADA Title III (Public Accommodations) framework. Do NOT mention an April 2026 deadline. Instead, emphasize the continuous surge in private Title III predatory lawsuits, demand letters, and brand reputation risks.
+3. CONTEXTUAL SANITY (TECHNICAL FALSE-POSITIVE PROTECTION): If the Violations List contains both "Missing DOCTYPE/HTML/BODY tags" AND highly specific nested elements (e.g. specific classes or ids), DO NOT write that the company "forgot basic HTML tags." Instead, accurately frame it as a "Client-Side Rendering/SPA Hydration or Scraper Blockage issue that severely hinders search engine crawlers from reading the page structure."
+4. VALUE PROPOSITION ALIGNMENT: Match the pitch to the scale of the company. For major SaaS or custom applications (based on URL/Industry), do not promise "copy-and-paste dashboard code patches". Instead, pitch "production-ready component remediation guidelines and expert engineering advisory".
+5. INDUSTRY: Read the website URL and context to determine industry. If uncertain, ALWAYS use 'prominent digital platform' or 'online brand presence'.
+6. SCORE PERCENTILE: After mentioning the compliance score, calculate (100 minus ${score}) and add exactly: 'This score places [domain] in the bottom [calculated number]% of audited platforms in our database.'
+7. COMPETITOR HOOK: Include in executive_summary: 'Sites achieving WCAG AA compliance typically rank 2-3 positions higher for the same keywords than non-compliant competitors in your industry.'
+8. COMPETITIVE GAP ANALYSIS (Business Elite): If competitor benchmark data is provided, explicitly compare scores, frame remediation as a strategic move to neutralize competitor advantage, and quantify the gap in points.
 
 The proposal must:
 1. Start with SEO and accessibility analysis - explain how their current accessibility issues are directly hurting their search rankings, organic traffic, and user experience. Mention specific SEO factors affected: crawlability, mobile usability, Core Web Vitals, and user engagement metrics.
 2. Connect accessibility improvements to tangible SEO benefits: higher rankings, increased organic traffic, better conversion rates, and improved brand perception.
 3. Then transition to compliance liability - cross-reference specific legal mandates: EU Accessibility Act, US ADA Title II, UK Equality Act.
-4. Present ALL violations found in detail - do not summarize or group them. List each specific violation with its impact and priority level.
+4. Summarize the top 5 most critical violations in detail. Group the remaining issues by category to save space and time. Keep this highly concise and punchy.
 5. Frame remediation as a dual investment: legal compliance protection AND significant SEO/traffic growth.
 6. Present pricing as a professional engineering project quote with clear deliverables.
 7. Close with a clear corporate action plan and timeline.
@@ -624,13 +570,13 @@ Output STRICTLY JSON:
   "executive_summary": "4-5 sentences. Start with SEO impact, then transition to accessibility compliance. Name the client, reference their industry using the Company Profile Logic. State total violations found. Inject this exact static line: 'Sites achieving WCAG AA compliance typically rank 2–3 positions higher for the same keywords than non-compliant competitors in your industry.' Below the score, generate one dynamic sentence: 'This score places [site domain] in the bottom ${100 - score}% of audited platforms in our database.'",
   "seo_analysis": "3-4 paragraphs directly linking accessibility to Google mobile-first indexing, Core Web Vitals, and reducing bounce rates. Include specific examples from their actual violations.",
   "compliance_risk": "2-3 paragraphs focusing on costly private ADA demand letters, brand reputation damages, and legal cost avoidance. Do NOT use aggressive scare tactics or mention EU Act €100,000 fines. Add a compliance deadline sentence at the end of this field: Detect country from URL TLD or page context (.com.au = 'Australian DDA compliance expected', .co.uk = 'UK Equality Act enforcement active — no SMB exemptions', .com = 'ADA Title II deadline: April 2026 — 3,117 lawsuits in 2025', EU = 'EU Accessibility Act enforced June 2025', fallback to US).",
-  "violation_summary": "Detailed breakdown of ALL violations found. Group by severity but list each one specifically. For critical/serious violations, explain the direct business impact. Do not summarize - be comprehensive.",
+  "violation_summary": "Detailed breakdown of the top 5 critical violations. Briefly summarize the remaining issues by category. Keep it extremely concise and punchy. Maximum 150 words.",
   "systemic_issues_summary": "List all detected systemic patterns. Explain each one as a design-system-level problem requiring architectural fixes, not just individual patches. Frame as additional scope beyond basic remediation.",
   "urgency_statement": "State the urgency_score out of 10 and the urgency_reason. Add: Without immediate action, [client] risks both legal enforcement and continued SEO underperformance.",
   "score_projection": "State current score, projected score after remediation (91-97/100), and timeline. Add: Competitors who remediate first will capture the SEO advantage permanently.",
   "hours_breakdown_statement": "Present the dev hours breakdown by category in a clear format. Critical fixes: X hrs, Serious fixes: X hrs, Mobile fixes: X hrs, Testing & certification: 2 hrs. Total: X hrs.",
   "competitor_teaser": "We also performed a preliminary scan of 3 of your top competitors in this space. Their average WCAG compliance score is 78/100. A full competitive accessibility analysis — including their violation breakdown and your relative positioning — is available as part of our Agency Growth Package. Agencies that benchmark against competitors consistently close 40% more remediation contracts.",
-  "remediation_plan": "Output exactly this static text: 'A complete inventory of production-ready HTML/CSS code patches has been compiled for all detected violations. These copy-and-paste assets are hosted live on your secure AccessAudit Agency Dashboard for immediate deployment by your engineering team.'",
+  "remediation_plan": "Condition output based on VALUE PROPOSITION ALIGNMENT guardrail. If SaaS/Custom, offer expert engineering advisory. Otherwise, output this static text: 'A complete inventory of production-ready HTML/CSS code patches has been compiled for all detected violations. These copy-and-paste assets are hosted live on your secure AccessAudit Agency Dashboard for immediate deployment by your engineering team.'",
   "investment": "Professional price range statement referencing the estimated work hours (${totalFixTime} hours). Break down by phase if relevant. Emphasize this is an investment with measurable ROI.",
   "roi_statement": "3-4 sentences on ROI. Quantify where possible: potential SEO traffic increase (15-30% typical), conversion rate improvement, legal cost avoidance, market expansion to 1.3 billion people with disabilities. Frame as competitive advantage.",
   "next_steps": "4-step CTA: (1) approve proposal, (2) kickoff call within 48 hours, (3) technical audit kickoff, (4) compliance certificate delivery in 4 weeks.",
@@ -652,19 +598,23 @@ Gap: Your client is ${Math.abs(scoreGap)} points ${gapDirection} the competitor
 ${scoreGap < 0 ? "MARKET RISK: Your client lags behind competitor on accessibility, creating legal and competitive disadvantage." : "COMPETITIVE ADVANTAGE: Your client leads competitor on accessibility compliance."}`;
     }
 
-    const user = `Agency: ${data.agencyName}
-Client: ${data.clientName}
+    const isGovOrEdu = data.clientIndustry?.toLowerCase().includes("gov") || data.clientIndustry?.toLowerCase().includes("edu") || data.clientIndustry?.toLowerCase().includes("public");
+    const businessType = isGovOrEdu ? "Government/Public Education/Municipality" : "Private/SaaS/E-commerce";
+
+    const user = `Agency Name: ${data.agencyName}
+Company Name: ${data.clientName}
 Industry: ${data.clientIndustry}
-Website: ${data.url ?? ""}
-Score: ${score}/100
+BUSINESS_TYPE: ${businessType}
+Website URL: ${data.url ?? ""}
+Actual Compliance Score: ${score}/100
 Violations: ${data.violations.length} total, ${criticalViolations.length} critical/serious
 Estimated fix time: ${totalFixTime} hours
 Price range: $${data.priceMin} - $${data.priceMax}${competitiveAnalysis}
 
 Violations:
-${data.violations.map((v: any, i: number) => `${i + 1}. [${v.severity?.toUpperCase()}] ${v.name} (${v.wcag_criterion}) - ${v.description} | Fix: ${v.fix_instructions} | Time: ${v.estimated_fix_time ?? "2 hours"}`).join("\n")}`;
+${data.violations.slice(0, 15).map((v: any, i: number) => `${i + 1}. [${v.severity?.toUpperCase()}] ${v.name} (${v.wcag_criterion}) - ${v.description} | Fix: ${v.fix_instructions} | Time: ${v.estimated_fix_time ?? "2 hours"}`).join("\n")}${data.violations.length > 15 ? `\n...and ${data.violations.length - 15} more systemic issues.` : ""}`;
 
-    const raw = await callGemini(system, user, settings?.gemini_api_key);
+    const raw = await callGemini(system, user, settings?.gemini_api_key, "gemini-2.5-flash", 8192);
     return parseJSON(raw);
   });
 
@@ -680,8 +630,12 @@ export const generateColdEmail = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data, context }) => {
+    await checkRateLimit(context.supabase, context.userId, 'generateColdEmail', 30, 1);
+
     const settings = await getUserSettings(context.supabase, context.userId);
-    const plan = getPlan(settings?.plan, 'srujanshankar64@gmail.com');
+    const { data: userData } = await context.supabase.auth.getUser();
+    const userEmail = userData?.user?.email;
+    const plan = getPlan(settings?.plan, userEmail);
 
     if (!TIER[plan].coldEmail) {
       throw new Error(`Upgrade to Starter ($${PLAN_PRICES.starter}/mo) to generate cold email drafts.`);
@@ -707,14 +661,18 @@ The email must:
 Return JSON: { "subject": string, "body": string }
 Do NOT include conversational filler like "I hope this email finds you well", "touching base", "reaching out", "checking in", or any generic sales phrases. Be direct, specific, and helpful.`;
 
-    const user = `Agency: ${data.agencyName}
-Prospect: ${data.clientName}
-Website: ${data.url}
-Compliance score: ${data.score}/100
-Top issues:
+    const isGovOrEdu = data.clientName?.toLowerCase().includes("gov") || data.clientName?.toLowerCase().includes("school") || data.url?.includes(".edu") || data.url?.includes(".gov");
+    const businessType = isGovOrEdu ? "Government/Public Education/Municipality" : "Private/SaaS/E-commerce";
+
+    const user = `Agency Name: ${data.agencyName}
+Company Name: ${data.clientName}
+BUSINESS_TYPE: ${businessType}
+Website URL: ${data.url}
+Actual Compliance Score: ${data.score}/100
+Raw Violations List:
 ${topCritical.map((v: any) => `- ${v.name}: ${v.description} (${v.wcag_criterion})`).join("\n")}`;
 
-    const raw = await callGemini(system, user, settings?.gemini_api_key);
+    const raw = await callGemini(system, user, settings?.gemini_api_key, "gemini-2.5-flash", 1024);
     return parseJSON(raw);
   });
 
@@ -731,7 +689,9 @@ export const generateCertificate = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const settings = await getUserSettings(context.supabase, context.userId);
-    const plan = getPlan(settings?.plan, 'srujanshankar64@gmail.com');
+    const { data: userData } = await context.supabase.auth.getUser();
+    const userEmail = userData?.user?.email;
+    const plan = getPlan(settings?.plan, userEmail);
 
     if (!TIER[plan].certificate) {
       throw new Error(`Upgrade to Agency ($${PLAN_PRICES.agency}/mo) to generate compliance certificates.`);
@@ -766,6 +726,8 @@ export const generateWebsitePitch = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data, context }) => {
+    await checkRateLimit(context.supabase, context.userId, 'generateWebsitePitch', 30, 1);
+
     const settings = await getUserSettings(context.supabase, context.userId);
 
     const system = `You are an elite B2B digital agency consultant writing a website creation proposal for a business with NO online presence. Write in a professional, consultative tone that educates the prospect on what they are missing and positions the agency as the expert solution.
@@ -797,7 +759,7 @@ Industry: ${data.industry}
 Agency: ${data.agencyName}
 Price Range: ${data.priceMin} - ${data.priceMax}`;
 
-    const raw = await callGemini(system, user, settings?.gemini_api_key);
+    const raw = await callGemini(system, user, settings?.gemini_api_key, "gemini-2.5-flash", 8192);
     return parseJSON(raw);
   });
 
@@ -811,8 +773,10 @@ export const startAuditJob = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { url } = data;
     const settings = await getUserSettings(context.supabase, context.userId);
+    const { data: userData } = await context.supabase.auth.getUser();
+    const userEmail = userData?.user?.email;
     const usedThisMonth = settings?.audits_used ?? 0;
-    const plan = getPlan(settings?.plan, 'srujanshankar64@gmail.com');
+    const plan = getPlan(settings?.plan, userEmail);
     
     if (!canRunAudit(plan, usedThisMonth)) {
       throw new Error(
@@ -848,45 +812,33 @@ export const processAuditJob = createServerFn({ method: "POST" })
     const { jobId } = data;
     const sb = context.supabase as any;
 
-    // Append a structured entry to progress_log (real-time visible via realtime channel)
-    const appendLog = async (
-      message: string,
-      status: "running" | "failed" | "completed" = "running",
-      extras: Record<string, any> = {},
-    ) => {
-      try {
-        const { data: row } = await sb
-          .from("audit_jobs")
-          .select("progress_log")
-          .eq("id", jobId)
-          .single();
-        const existing = Array.isArray(row?.progress_log) ? row.progress_log : [];
-        const next = [
-          ...existing,
-          { timestamp: new Date().toISOString(), status, message },
-        ];
-        await sb.from("audit_jobs").update({ progress_log: next, ...extras }).eq("id", jobId);
-      } catch (e) {
-        console.error("[processAuditJob] appendLog failed:", e);
-      }
-    };
-
-    await sb
-      .from("audit_jobs")
-      .update({ status: "processing", progress_percent: 5, current_step: "Fetching website content..." })
-      .eq("id", jobId);
-    await appendLog("Job started — fetching target URL");
-
     try {
       const { data: job } = await sb.from("audit_jobs").select("*").eq("id", jobId).single();
       if (!job) throw new Error("Job not found");
 
       const settings = await getUserSettings(context.supabase, context.userId);
-      const plan = getPlan(settings?.plan, "srujanshankar64@gmail.com");
+      const { data: userData } = await context.supabase.auth.getUser();
+      const userEmail = userData?.user?.email;
+      let plan = getPlan(settings?.plan, userEmail);
+      
+      // AGGRESSIVE ADMIN OVERRIDE: Force business tier for srujanshankar64@gmail.com
+      const adminEmail = process.env.ADMIN_EMAIL || process.env.VITE_ADMIN_EMAIL || "srujanshankar64@gmail.com";
+      if (userEmail === adminEmail) {
+        plan = 'business';
+        console.log(`[ADMIN_OVERRIDE] Forcing business tier for ${userEmail} in processAuditJob`);
+      }
+      
+      const isFree = plan === "free";
 
-      // Fetch HTML with hard 15s timeout so we never stall
+      await sb.from("audit_jobs").update({ status: "processing" }).eq("id", jobId);
+      await pushLog(sb, jobId, 3, "Starting audit engine...", "[LOG] Audit engine starting...");
+
+      // Fetch HTML with hard 15s timeout
+      let html = "";
       let pageSnippet = "";
       try {
+        await validateUrlForFetch(job.url);
+        await pushLog(sb, jobId, 8, "Establishing connection...", "[LOG] Establishing HTTPS connection...");
         const fetchController = new AbortController();
         const t = setTimeout(() => fetchController.abort(), 15000);
         const r = await fetch(job.url, {
@@ -897,74 +849,82 @@ export const processAuditJob = createServerFn({ method: "POST" })
           signal: fetchController.signal,
         });
         clearTimeout(t);
-        const html = await r.text();
-        pageSnippet = cleanHtml(html).slice(0, 35000);
-        await appendLog(`Fetched ${html.length} bytes — parsing HTML`, "running", {
-          progress_percent: 25,
-          current_step: "Parsing HTML structure...",
-        });
+        html = await r.text();
+
+        const cleanedHtml = cleanHtml(html);
+        const snippetLength = isFree ? 8000 : 20000;
+        pageSnippet = cleanedHtml.slice(0, snippetLength);
+
+        await pushLog(sb, jobId, 15, "Parsing HTML...", `[LOG] Fetched ${Math.round(html.length/1024)}kb of HTML — using first ${Math.round(snippetLength/1024)}KB`);
       } catch (fetchError) {
-        console.error("[processAuditJob] Fetch failed:", fetchError);
-        pageSnippet = `(Could not fetch ${job.url} directly. Perform a thorough theoretical WCAG 2.1 AA audit for hostname ${new URL(job.url).hostname}.)`;
-        await appendLog("Direct fetch failed — falling back to heuristic audit", "running", {
-          progress_percent: 25,
-          current_step: "Heuristic fallback...",
-        });
+        await pushLog(sb, jobId, 15, "Fetch failed — theoretical audit",
+          "[WARN] Could not fetch page directly — performing pattern-based WCAG audit");
+        pageSnippet = `(Could not fetch ${job.url}. Perform theoretical WCAG audit for: ${new URL(job.url).hostname})`;
       }
 
-      await appendLog("Running WCAG 2.1 AA analysis (AI)", "running", {
-        progress_percent: 50,
-        current_step: "Analyzing WCAG criteria...",
-      });
+      const isJsRendered = detectJsRendered(pageSnippet);
+      if (isJsRendered) {
+        await pushLog(sb, jobId, 20, "JS-rendered site detected", "[WARN] JavaScript-rendered SPA detected — auditing HTML shell only. Some dynamic content violations may not be visible.");
+      }
+
+      await pushLog(sb, jobId, 22, "Scanning Perceivable...", "[STATUS] Category: Perceivable — scanning images, contrast, captions...");
+      await pushLog(sb, jobId, 34, "Scanning Operable...", "[STATUS] Category: Operable — checking keyboard, focus, touch targets...");
+      await pushLog(sb, jobId, 44, "Scanning Understandable...", "[STATUS] Category: Understandable — validating lang, labels, error messages...");
+      await pushLog(sb, jobId, 49, "Scanning Robust...", "[STATUS] Category: Robust — validating ARIA roles, landmarks, HTML structure...");
+      await pushLog(sb, jobId, 55, "Sending to AI Engine...", "[LOG] Sending DOM snapshot to Gemini Flash for deep WCAG analysis...");
 
       const includeCodeFixes = TIER[plan].codeFixes;
-      const system = `You are a senior WCAG 2.1 AA accessibility auditor. Return ONLY valid JSON matching this schema:
-{
-  "overall_score": number,
-  "category_scores": { "perceivable": number, "operable": number, "understandable": number, "robust": number },
-  "violations": [
-    {
-      "id": "kebab-case-id",
-      "severity": "critical" | "serious" | "moderate" | "minor",
-      "name": "Short descriptive title",
-      "wcag_criterion": "WCAG X.X.X",
-      "description": "Plain English explanation",
-      "element_affected": "Specific element or area",
-      "legal_impact": "Legal exposure under EAA/ADA/AODA/UK Equality Act",
-      "fix_instructions": "Concrete plain-English fix",
-      "estimated_fix_time": "X hours",
-      "revenue_impact": "How this affects conversions",
-      "fix_difficulty": "easy" | "medium" | "hard"${includeCodeFixes ? `,\n      "code_fix": "exact code snippet"` : ""}
-    }
-  ]
-}
-Rules:
-- Find every violation. Every instance is a separate entry. Aim for 26+ on real sites.
-- Be specific in element_affected (tag + class/id when possible).
-- ${includeCodeFixes ? "Include copy-paste ready code_fix." : "Do NOT include code_fix."}
-- Return ONLY JSON, no prose.`;
+      // AGGRESSIVE: Force 999 violations for admin regardless of plan
+      const promptViolationTarget = (userEmail === adminEmail) ? 999 : getAuditPromptViolationTarget(plan, userEmail);
+      const systemPrompt = isFree 
+        ? buildFreeAuditPrompt()
+        : getAuditSystemPrompt({ violationLimit: promptViolationTarget, includeCodeFixes, mode: 'full' });
 
-      const user = `Audit this website for WCAG 2.1 AA compliance. Be exhaustive.\n\nURL: ${job.url}\n\nHTML content:\n${pageSnippet}`;
+      const userPrompt = isJsRendered
+        ? `Audit this website for WCAG 2.1 AA compliance. 
+     
+     IMPORTANT: This appears to be a JavaScript-rendered Single Page Application (SPA). 
+     The raw HTML fetch returned minimal content because the page requires JavaScript to render.
+     
+     URL: ${job.url}
+     
+     For this SPA audit, focus on:
+     1. Analyze the URL structure and domain to determine site type and likely content
+     2. Audit the visible HTML skeleton for any real violations present
+     3. For SPA-specific violations, flag them clearly as "SPA Architecture Issue" 
+     4. Common SPA violations to check: missing lang attribute, missing title, missing meta viewport, 
+        missing skip links, missing ARIA landmarks in the shell, iframes without titles
+     5. Do NOT fabricate violations about content you cannot see
+     6. Do NOT add "(potential)" violations based on assumptions about dynamic content
+     7. Only report violations you can CONFIRM from the actual HTML provided
+     8. Be honest about the limitation — note in the audit that this is a server-side HTML snapshot
+     
+     Available HTML snapshot:
+     ${pageSnippet}
+     
+     Minimum violations to find: Report only REAL confirmed violations. Quality over quantity for SPAs.`
+        : `Audit this website for WCAG 2.1 AA compliance. Be exhaustive. Find every violation.
+     
+     URL: ${job.url}
+     
+     HTML content:
+     ${pageSnippet}`;
 
-      const raw = await callGemini(system, user, settings?.gemini_api_key);
+      const raw = await callGemini(systemPrompt, userPrompt, settings?.gemini_api_key, "gemini-2.5-flash", 65536);
+      await pushLog(sb, jobId, 72, "AI analysis complete", "[LOG] AI analysis complete — parsing violation inventory...");
+
       const result = parseJSON(raw);
-
-      await appendLog("Processing results and scoring", "running", {
-        progress_percent: 80,
-        current_step: "Processing results...",
-      });
-
-      const violationLimit = TIER[plan].violations;
       const allViolations = result.violations ?? [];
-      if (allViolations.length === 0) throw new Error("AI audit returned no violations.");
+      
+      if (allViolations.length === 0) throw new Error("AI audit returned no violations. This indicates a system error. Please try again.");
 
-      const limitedViolations =
-        plan === "free" ? allViolations.slice(0, violationLimit) : allViolations;
+      const criticalCount = allViolations.filter((v:any) => v.severity === 'critical').length;
+      const seriousCount = allViolations.filter((v:any) => v.severity === 'serious').length;
+      
+      await pushLog(sb, jobId, 82, "Tallying violations...", `[FINDING] ${criticalCount} CRITICAL | ${seriousCount} SERIOUS | ${allViolations.length} total violations detected`);
+      await pushLog(sb, jobId, 88, "Writing compliance report...", "[LOG] Writing compliance report to database...");
 
-      await sb
-        .from("settings")
-        .update({ audits_used: (settings?.audits_used ?? 0) + 1 })
-        .eq("user_id", context.userId);
+      const limitedViolations = plan === "free" ? allViolations.slice(0, TIER[plan].violations) : allViolations;
 
       const { data: inserted, error: insertError } = await sb
         .from("audits")
@@ -980,61 +940,38 @@ Rules:
 
       if (insertError) throw insertError;
 
+      // Only increment audits_used after successful insert
+      await incrementAuditUsage(sb, context.userId);
+
       const finalResult = {
         ...(inserted as any),
         plan,
         totalViolationsFound: allViolations.length,
         violationsShown: limitedViolations.length,
-        isLimited: plan === "free" && allViolations.length > violationLimit,
+        isLimited: plan === "free" && allViolations.length > TIER[plan].violations,
       };
 
-      // Final log entry + mark completed (single write includes progress_log)
-      const { data: row } = await sb
-        .from("audit_jobs")
-        .select("progress_log")
-        .eq("id", jobId)
-        .single();
-      const existing = Array.isArray(row?.progress_log) ? row.progress_log : [];
+      await pushLog(sb, jobId, 100, "Audit complete", `[COMPLETE] Score: ${result.overall_score ?? 0}/100 — ${limitedViolations.length} violations found`);
+
       await sb
         .from("audit_jobs")
         .update({
           status: "completed",
-          progress_percent: 100,
-          current_step: "Audit complete",
           result: finalResult,
-          progress_log: [
-            ...existing,
-            {
-              timestamp: new Date().toISOString(),
-              status: "completed",
-              message: `Complete — ${limitedViolations.length} violations reported`,
-            },
-          ],
         })
         .eq("id", jobId);
 
       return { success: true };
     } catch (error: any) {
       const msg = error?.message || "Unknown error";
-      try {
-        const { data: row } = await sb
-          .from("audit_jobs")
-          .select("progress_log")
-          .eq("id", jobId)
-          .single();
-        const existing = Array.isArray(row?.progress_log) ? row.progress_log : [];
-        await sb
-          .from("audit_jobs")
-          .update({
-            status: "failed",
-            error_message: msg,
-            progress_log: [
-              ...existing,
-              { timestamp: new Date().toISOString(), status: "failed", message: `Failed: ${msg}` },
-            ],
-          })
-          .eq("id", jobId);
-      } catch {}
+      await sb
+        .from("audit_jobs")
+        .update({
+          status: "failed",
+          error_message: msg,
+        })
+        .eq("id", jobId);
+      await pushLog(sb, jobId, 100, "Failed", `[ERROR] Failed: ${msg}`);
       throw error;
     }
   });
@@ -1064,11 +1001,13 @@ export const getAuditJobStatus = createServerFn({ method: "GET" })
     };
   });
 
-export const getPlanStatus = createServerFn({ method: "GET" })
+export const getPlanStatus = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const settings = await getUserSettings(context.supabase, context.userId);
-    const plan = getPlan(settings?.plan, 'srujanshankar64@gmail.com');
+    const { data: userData } = await context.supabase.auth.getUser();
+    const userEmail = userData?.user?.email;
+    const plan = getPlan(settings?.plan, userEmail);
     const used = settings?.audits_used ?? 0;
     const tier = TIER[plan];
 
@@ -1122,16 +1061,17 @@ export const searchLeads = createServerFn({ method: "POST" })
     if (realBusinesses.length >= 3) {
       try {
         const system = `For each business in the JSON array, add a realistic common_flaw based on typical WCAG issues for that business type. Return the SAME array with common_flaw filled in. Return ONLY valid JSON array.`;
-        const raw = await callGemini(system, JSON.stringify(realBusinesses), undefined);
+        const raw = await callGemini(system, JSON.stringify(realBusinesses), undefined, "gemini-2.5-flash", 2048);
         const parsed = parseJSON(raw);
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       } catch (error) {
-        throw new Error(`Failed to enrich business data with AI: ${error instanceof Error ? error.message : "Unknown error"}`);
+        console.warn('Enrichment failed, falling through to AI generation:', error);
+        // don't throw — let execution continue to AI generation fallback
       }
     }
     try {
       const system = `Generate 8 realistic local businesses for ${industry} in ${location} with poor web accessibility. Return ONLY a JSON array: [{"id":"string","name":"string","website":"string","ranking":"string","common_flaw":"string"}]`;
-      const raw = await callGemini(system, `Industry: ${industry}\nLocation: ${location}`, undefined);
+      const raw = await callGemini(system, `Industry: ${industry}\nLocation: ${location}`, undefined, "gemini-2.5-flash", 2048);
       const parsed = parseJSON(raw);
       return Array.isArray(parsed) ? parsed : (parsed.leads ?? []);
     } catch (error) {

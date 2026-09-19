@@ -11,10 +11,12 @@ export const TIER = {
 
 /**
  * Gets the current plan for a user. 
- * If the email matches yours, it forces 'business' for testing.
+ * If the email matches the admin email from env var, it forces 'business' for testing.
  */
 export function getPlan(raw: string | null | undefined, email?: string): Plan {
-  if (email === 'srujanshankar64@gmail.com') return 'business';
+  const adminEmail = process.env.ADMIN_EMAIL || process.env.VITE_ADMIN_EMAIL || "srujanshankar64@gmail.com";
+  // Force business tier for admin email - override everything
+  if (adminEmail && email === adminEmail) return 'business';
   
   if (raw === "starter" || raw === "agency" || raw === "business") return raw;
   return "free";

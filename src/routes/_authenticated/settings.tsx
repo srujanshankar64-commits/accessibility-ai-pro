@@ -10,6 +10,7 @@ import { isAdmin } from "@/lib/admin.utils";
 import { useServerFn } from "@tanstack/react-start";
 import { createCheckoutSession } from "@/lib/checkout.server";
 import { getReferralStats, generateReferralCode } from "@/lib/referral";
+import { setDevPlan as setDevPlanServer } from "@/lib/admin.server";
 
 export const Route = createFileRoute("/_authenticated/settings")({
   component: SettingsPage,
@@ -24,6 +25,7 @@ const PLAN_LABELS: Record<string, string> = {
 
 function SettingsPage() {
   const checkoutFn = useServerFn(createCheckoutSession);
+  const setDevPlanFn = useServerFn(setDevPlanServer);
   const { user } = Route.useRouteContext();
   const [agencyName, setAgencyName] = useState("");
   const [agencyLogo, setAgencyLogo] = useState("");
@@ -44,6 +46,14 @@ function SettingsPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.auth.getUser();
+      setUserEmail(data.user?.email ?? null);
+    })();
+  }, []);
 
   const changePassword = async () => {
     if (newPassword !== confirmPassword) { toast.error("Passwords don't match"); return; }
@@ -125,39 +135,34 @@ function SettingsPage() {
     }
   };
 
-  const setDevPlan = async (targetPlan: string) => {
+  const handleSetDevPlan = async (targetPlan: "free" | "starter" | "agency" | "business") => {
     setSettingPlan(true);
-    const { error } = await (supabase as any)
-      .from("settings")
-      .upsert({
-        user_id: user.id,
-        plan: targetPlan,
-        audits_used: 0,
-      });
-    setSettingPlan(false);
-    if (error) {
-      toast.error(error.message);
-    } else {
+    try {
+      await setDevPlanFn({ data: { targetPlan } });
       setPlan(targetPlan as any);
       toast.success(`Plan set to ${targetPlan}!`);
+    } catch (err: any) {
+      toast.error(err?.message ?? "Failed to set plan");
+    } finally {
+      setSettingPlan(false);
     }
   };
 
   const handleUpgradeCheckout = async (tierName: string) => {
     try {
       const productIds: Record<string, string> = {
-        starter: process.env.VITE_DODO_STARTER_PRODUCT_ID || "pdt_0Ngl3vET02otEHOXHqvAx",
-        agency: process.env.VITE_DODO_AGENCY_PRODUCT_ID || "pdt_0Ngl4mgraS8OdTZY3yGQN",
-        business: process.env.VITE_DODO_BUSINESS_PRODUCT_ID || "pdt_0Ngl5RCV0T6Vc40K5mtdr",
+        starter: import.meta.env.VITE_DODO_STARTER_PRODUCT_ID,
+        agency: import.meta.env.VITE_DODO_AGENCY_PRODUCT_ID,
+        business: import.meta.env.VITE_DODO_BUSINESS_PRODUCT_ID,
       };
 
       const priceId = productIds[tierName];
       if (!priceId) {
-        toast.error(`No product ID found for ${tierName} plan`);
-        return;
+        throw new Error(`Missing VITE_DODO_${tierName.toUpperCase()}_PRODUCT_ID environment variable`);
       }
 
-      const result = await checkoutFn({ data: { priceId, tier: tierName } });
+      const { data: { user } } = await supabase.auth.getUser();
+      const result = await checkoutFn({ data: { priceId, tier: tierName, userId: user?.id || "" } });
       
       if (result.success && result.checkout_url) {
         window.location.href = result.checkout_url;
@@ -172,7 +177,7 @@ function SettingsPage() {
     }
   };
 
-  const currentPlan = getPlan(plan);
+  const currentPlan = getPlan(plan, userEmail);
   const config = TIER[currentPlan];
   const auditLimit = config.audits;
   const isUnlimited = auditLimit >= 999999;
@@ -199,7 +204,7 @@ function SettingsPage() {
             {["free", "starter", "agency", "business"].map((p) => (
               <button
                 key={p}
-                onClick={() => setDevPlan(p)}
+                onClick={() => handleSetDevPlan(p as "free" | "starter" | "agency" | "business")}
                 disabled={settingPlan || currentPlan === p}
                 className={cn(
                   "text-xs px-3 py-1.5 rounded-md font-semibold border transition-all",

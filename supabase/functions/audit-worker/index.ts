@@ -56,7 +56,7 @@ async function callGeminiWithRetry(systemPrompt: string, userPrompt: string, api
           generationConfig: {
             responseMimeType: "application/json",
             temperature: 0.2,
-            maxOutputTokens: 81920,
+            maxOutputTokens: 65536,
           },
         }),
       });
@@ -93,6 +93,39 @@ async function pushLog(jobId: string, message: string, percent: number, step: st
   const log = Array.isArray((job as any)?.progress_log) ? (job as any).progress_log : [];
   log.push({ ts: new Date().toISOString(), message });
   await updateJob(jobId, { progress_log: log, progress_percent: percent, current_step: step });
+}
+
+function isCurrentAuditPeriod(periodStart?: string | null): boolean {
+  if (!periodStart) return false;
+  const now = new Date();
+  const period = new Date(periodStart);
+  return now.getUTCFullYear() === period.getUTCFullYear() &&
+    now.getUTCMonth() === period.getUTCMonth();
+}
+
+async function getMonthlySettings(userId: string) {
+  const { data: settings } = await admin
+    .from("settings")
+    .select("plan, audits_used, audit_period_start, gemini_api_key")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (!settings) {
+    return { plan: "free", audits_used: 0, audit_period_start: new Date().toISOString(), gemini_api_key: "" };
+  }
+
+  if (!isCurrentAuditPeriod((settings as any).audit_period_start)) {
+    const resetStartedAt = new Date().toISOString();
+    const { data: reset } = await admin
+      .from("settings")
+      .update({ audits_used: 0, audit_period_start: resetStartedAt })
+      .eq("user_id", userId)
+      .select("plan, audits_used, audit_period_start, gemini_api_key")
+      .maybeSingle();
+    return reset ?? { ...(settings as any), audits_used: 0, audit_period_start: resetStartedAt };
+  }
+
+  return settings as any;
 }
 
 function getHolisticSystemPrompt(includeCodeFixes: boolean, violationLimit: number, multiPageCrawlEnabled: boolean, competitorUrl: string): string {
@@ -149,13 +182,13 @@ async function runAuditWork(jobId: string, multiPageCrawlEnabled: boolean = fals
     const userId = (job as any).user_id as string;
     const url = (job as any).url as string;
 
-    const { data: settings } = await admin.from("settings").select("plan, audits_used, gemini_api_key").eq("user_id", userId).maybeSingle();
+    const settings = await getMonthlySettings(userId);
 
     const plan = ((settings as any)?.plan as string) || "free";
     const userApiKey = ((settings as any)?.gemini_api_key as string) || "";
     const includeCodeFixes = plan !== "free";
     const violationCap = plan === "free" ? 5 : Infinity;
-    const violationLimit = plan === "free" ? 5 : 26;
+    const violationLimit = plan === "free" ? 5 : 50;
 
     await updateJob(jobId, { status: "processing" });
     await pushLog(jobId, `Starting fast holistic audit for ${url}`, 5, "Initializing audit...");
@@ -250,7 +283,10 @@ async function runAuditWork(jobId: string, multiPageCrawlEnabled: boolean = fals
 
     await pushLog(jobId, `Saving audit (${limited.length} violations, score ${overall_score}/100)`, 94, "Saving results...");
 
-    await admin.from("settings").update({ audits_used: ((settings as any)?.audits_used ?? 0) + 1 }).eq("user_id", userId);
+    await admin
+      .from("settings")
+      .update({ audits_used: ((settings as any)?.audits_used ?? 0) + 1, audit_period_start: new Date().toISOString() })
+      .eq("user_id", userId);
     
     // Add competitor audit id if applicable (mocking the insertion of a competitor audit row for simplicity, or just embedding it)
     const auditData: any = {

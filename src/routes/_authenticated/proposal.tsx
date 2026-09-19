@@ -28,6 +28,22 @@ export const Route = createFileRoute("/_authenticated/proposal")({
 
 interface Seed { auditId?: string; url?: string; score?: number; violations?: Violation[]; competitorData?: { url?: string; score?: number; violations?: number } }
 
+// Global flag to prevent auto-generate from running multiple times per browser session
+let hasAutoRunGlobal = false;
+
+function deriveIndustry(url: string): string {
+  if (!url) return "Business Services";
+  const hostname = new URL(url).hostname.toLowerCase();
+  if (hostname.includes("dental") || hostname.includes("clinic") || hostname.includes("health")) return "Healthcare";
+  if (hostname.includes("law") || hostname.includes("legal") || hostname.includes("attorney")) return "Legal";
+  if (hostname.includes("school") || hostname.includes("edu") || hostname.includes("university")) return "Education";
+  if (hostname.includes("shop") || hostname.includes("store") || hostname.includes("buy")) return "E-commerce";
+  if (hostname.includes("gov") || hostname.includes("council") || hostname.includes("city")) return "Government";
+  if (hostname.includes("hotel") || hostname.includes("restaurant") || hostname.includes("cafe")) return "Hospitality";
+  if (hostname.includes("real") || hostname.includes("property") || hostname.includes("homes")) return "Real Estate";
+  return "Business Services";
+}
+
 function UpgradeBanner({ message, target }: { message: string; target: string }) {
   return (
     <div className="flex items-center gap-3 p-4 rounded-lg border border-amber-500/30 bg-amber-500/5 backdrop-blur-sm animate-fade-in">
@@ -77,7 +93,6 @@ function ProposalPage() {
   const proposalFn = useServerFn(generateProposal);
   const emailFn = useServerFn(generateColdEmail);
   const certificateFn = useServerFn(generateCertificate);
-  const planStatusFn = useServerFn(getPlanStatus);
 
   const [seed, setSeed] = useState<Seed>({});
   const [agency, setAgency] = useState("Your Agency");
@@ -213,7 +228,6 @@ function ProposalPage() {
   };
   const [autoLoading, setAutoLoading] = useState(false);
   const [certificate, setCertificate] = useState<any>(null);
-  const hasAutoRun = useRef(false);
 
   useEffect(() => {
     const raw = sessionStorage.getItem("proposal_seed");
@@ -228,14 +242,16 @@ function ProposalPage() {
       if (data && 'brand_color' in data) setBrandColor((data as any).brand_color);
       if (data && 'plan' in data) setPlan((data as any).plan ?? "free");
 
-      const currentPlan = getPlan((data as any)?.plan, 'srujanshankar64@gmail.com');
+      const { data: { user } } = await supabase.auth.getUser();
+      const userEmail = user?.email;
+      const currentPlan = getPlan((data as any)?.plan, userEmail);
       if (
-        !hasAutoRun.current &&
+        !hasAutoRunGlobal &&
         parsedSeed.violations?.length &&
         parsedSeed.auditId &&
         TIER[currentPlan].proposals
       ) {
-        hasAutoRun.current = true;
+        hasAutoRunGlobal = true;
         try {
           autoGenerate(parsedSeed, (data as any)?.agency_name ?? "Your Agency");
         } catch(e) {
@@ -251,9 +267,10 @@ function ProposalPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user?.id) return;
 
+      const derivedClientName = s.url ? new URL(s.url).hostname.replace(/^www\./, '') : "General Client";
       const out = await proposalFn({ data: {
         auditId: s.auditId, url: s.url, agencyName,
-        clientName: "", clientIndustry: "E-commerce",
+        clientName: derivedClientName, clientIndustry: deriveIndustry(s.url ?? ""),
         tone: "professional", priceMin: 2500, priceMax: 8000,
         violations: s.violations ?? [],
         competitorUrl: s.competitorData?.url,
@@ -264,7 +281,7 @@ function ProposalPage() {
       if (s.auditId) {
         await (supabase.from("audits") as any).update({ has_proposal: true }).eq("id", s.auditId);
         await (supabase.from("proposals") as any).insert({
-          audit_id: s.auditId, client_name: "", client_industry: "General Business",
+          audit_id: s.auditId, client_name: derivedClientName, client_industry: "General Business",
           tone: "professional", price_min: 2500, price_max: 8000,
           content: out as any, selected_violations: (s.violations ?? []) as any,
           user_id: user.id,
@@ -284,9 +301,10 @@ function ProposalPage() {
         return;
       }
 
+      const derivedClientName = client || (seed.url ? new URL(seed.url).hostname.replace(/^www\./, '') : "General Client");
       const out = await proposalFn({ data: {
-        auditId: seed.auditId, url: seed.url, agencyName: agency, clientName: client,
-        clientIndustry: industry || "E-commerce", tone, priceMin, priceMax,
+        auditId: seed.auditId, url: seed.url, agencyName: agency, clientName: derivedClientName,
+        clientIndustry: industry || deriveIndustry(seed.url ?? ""), tone, priceMin, priceMax,
         violations: seed.violations ?? [],
         competitorUrl: seed.competitorData?.url,
         competitorScore: seed.competitorData?.score,
@@ -296,7 +314,7 @@ function ProposalPage() {
       if (seed.auditId) {
         await (supabase.from("audits") as any).update({ has_proposal: true }).eq("id", seed.auditId);
         await (supabase.from("proposals") as any).insert({
-          audit_id: seed.auditId, client_name: client, client_industry: industry,
+          audit_id: seed.auditId, client_name: derivedClientName, client_industry: industry,
           tone, price_min: priceMin, price_max: priceMax,
           content: out as any, selected_violations: (seed.violations ?? []) as any,
           user_id: user.id,
@@ -309,7 +327,9 @@ function ProposalPage() {
   };
 
   const exportPDF = async () => {
-    const currentPlan = getPlan(plan, 'srujanshankar64@gmail.com');
+    const { data: { user } } = await supabase.auth.getUser();
+    const userEmail = user?.email;
+    const currentPlan = getPlan(plan, userEmail);
     const isWhiteLabel = TIER[currentPlan].whiteLabelPdf;
     const { jsPDF } = await import("jspdf");
     const doc = new jsPDF({ unit: "pt", format: "a4" });
@@ -340,8 +360,9 @@ function ProposalPage() {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(11);
     doc.setTextColor(100, 100, 115);
-    doc.text(`Prepared for: ${client || "Your Client"}`, 48, y); y += 16;
-    doc.text(`Site audited: ${seed.url ?? "—"}`, 48, y); y += 16;
+    const derivedClientName = client || (seed.url ? new URL(seed.url).hostname.replace(/^www\./, '') : "Your Client");
+    doc.text(`Prepared for: ${derivedClientName}`, 48, y); y += 16;
+    doc.text(`Site audited: ${seed.url || "—"}`, 48, y); y += 16;
     doc.text(`Compliance score: ${seed.score ?? 0}/100`, 48, y); y += 28;
 
     // Score badge
@@ -429,7 +450,7 @@ ${(content.follow_up_email as any)?.body || ""}` : (content.follow_up_email || "
       doc.text(`Page ${i} of ${pageCount}`, W - 48, doc.internal.pageSize.getHeight() - 20, { align: "right" });
     }
 
-    doc.save(`Accessibility_Report_${client || "Client"}.pdf`);
+    doc.save(`Accessibility_Report_${(client || (seed.url ? new URL(seed.url).hostname.replace(/^www\./, '') : "Client")).replace(/[^a-zA-Z0-9_-]/g, "_")}.pdf`);
     toast.success("PDF exported successfully");
   };
 
@@ -462,7 +483,16 @@ ${(content.follow_up_email as any)?.body || ""}` : (content.follow_up_email || "
     } finally { setBusy(false); }
   };
 
-  const currentPlan = getPlan(plan, 'srujanshankar64@gmail.com');
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.auth.getUser();
+      setUserEmail(data.user?.email ?? null);
+    })();
+  }, []);
+
+  const currentPlan = getPlan(plan, userEmail);
   const canPropose = TIER[currentPlan].proposals;
   const canWhiteLabel = TIER[currentPlan].whiteLabelPdf;
   const canColdEmail = TIER[currentPlan].coldEmail;
@@ -732,7 +762,7 @@ ${(content.follow_up_email as any)?.body || ""}` : (content.follow_up_email || "
           </div>
 
           <h2 className="text-2xl font-bold tracking-tight text-zinc-900 leading-tight">Website Accessibility Compliance Report</h2>
-          <p className="text-sm text-zinc-500 mt-1.5 font-medium">Prepared exclusively for: <span className="text-zinc-800 underline decoration-zinc-200 underline-offset-4">{client || "Unspecified Entity"}</span></p>
+          <p className="text-sm text-zinc-500 mt-1.5 font-medium">Prepared exclusively for: <span className="text-zinc-800 underline decoration-zinc-200 underline-offset-4">{client || (seed.url ? new URL(seed.url).hostname.replace(/^www\./, '') : "Your Client")}</span></p>
           <p className="text-xs text-zinc-400 mt-1 font-mono">{seed.url ? `${seed.url} — Core Score Vector: ${seed.score ?? 0}/100` : "No baseline audit metrics contextualized."}</p>
 
           {!hasContent && !isLoading && (
